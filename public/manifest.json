@@ -1,0 +1,16 @@
+{
+  "name": "Halloween NFC Party Pass",
+  "short_name": "PartyPass",
+  "description": "Monochrome NFC Drink Regulation & Guest Management System",
+  "start_url": "/barman",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}

@@ -1,0 +1,150 @@
+@import "tailwindcss";
+
+:root {
+  --font-cormorant: 'Cormorant Garamond', Georgia, serif;
+  --font-jakarta: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --background: #FFFFFF;
+  --foreground: #000000;
+  --surface-low: #F9F9F9;
+  --surface-container: #F2F2F2;
+  --outline: #E5E5E5;
+  --outline-variant: #CCCCCC;
+}
+
+@layer base {
+  body {
+    background-color: #FFFFFF;
+    background-image: 
+      linear-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 0, 0, 0.03) 1px, transparent 1px);
+    background-size: 100px 100px;
+    background-position: center center;
+    color: #000000;
+    font-family: var(--font-jakarta);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* luaws.pl Monochromatic Luxury Components */
+.font-display {
+  font-family: var(--font-cormorant);
+}
+
+.font-sans-clean {
+  font-family: var(--font-jakarta);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.04);
+  backdrop-filter: blur(24px);
+  border-radius: 24px;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-card:hover {
+  border-color: rgba(0, 0, 0, 0.16);
+  box-shadow: 0 24px 50px rgba(0, 0, 0, 0.06);
+}
+
+.glass-card-dark {
+  background: rgba(14, 14, 14, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(24px);
+  border-radius: 24px;
+  color: #FFFFFF;
+}
+
+.btn-premium {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  border-radius: 9999px;
+  font-family: var(--font-jakarta);
+  text-transform: lowercase;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+  font-size: 12px;
+  color: #000000;
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(10px);
+  padding: 12px 24px;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+}
+
+.btn-premium:hover {
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.25);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -10px rgba(0, 0, 0, 0.12);
+}
+
+.btn-premium-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  border-radius: 9999px;
+  font-family: var(--font-jakarta);
+  text-transform: lowercase;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+  font-size: 12px;
+  color: #FFFFFF;
+  background: #000000;
+  border: 1px solid #000000;
+  padding: 14px 28px;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+}
+
+.btn-premium-primary:hover {
+  background: #262626;
+  border-color: #262626;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px -8px rgba(0, 0, 0, 0.3);
+}
+
+.btn-premium-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  border-radius: 9999px;
+  font-family: var(--font-jakarta);
+  text-transform: lowercase;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+  font-size: 12px;
+  color: #FFFFFF;
+  background: #DC2626;
+  border: 1px solid #DC2626;
+  padding: 12px 24px;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+}
+
+.btn-premium-danger:hover {
+  background: #B91C1C;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -10px rgba(220, 38, 38, 0.4);
+}
+
+/* Subtle Starfield & Celestial Atmosphere from luaws.pl */
+.star-dot {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 50%;
+  pointer-events: none;
+}
