@@ -23,6 +23,17 @@ export default function DoorCheckInPage() {
     return guests.find(g => !g.is_entered && !g.name);
   }, [guests]);
 
+  // Read URL query parameter if opened from /t/[id]
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const urlTag = params.get('tag');
+      if (urlTag) {
+        setTagId(decodeURIComponent(urlTag).toUpperCase());
+      }
+    }
+  }, []);
+
   const checkedInCount = guests.filter(g => g.is_entered).length;
   const recentCheckedIn = guests
     .filter(g => g.is_entered)
