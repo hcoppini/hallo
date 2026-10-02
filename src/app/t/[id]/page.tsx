@@ -58,11 +58,12 @@ export default function DirectTapPage() {
         return;
       }
 
-      // Direct Supabase lookup for authoritative cloud state
+      // Direct Supabase lookup for authoritative cloud state with safety timeout
       try {
-        const cloudGuest = await fetchGuestByTag(tagId);
+        const timeoutPromise = new Promise<null>(resolve => setTimeout(() => resolve(null), 3000));
+        const cloudGuest = await Promise.race([fetchGuestByTag(tagId), timeoutPromise]);
         if (isMounted) {
-          setActiveGuest(cloudGuest);
+          setActiveGuest(cloudGuest || memGuest || null);
           setIsLoading(false);
         }
       } catch (err) {

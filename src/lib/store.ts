@@ -79,6 +79,8 @@ let globalSettings = initialSettings;
 let globalGuests: Guest[] = [];
 let globalLogs: DrinkLog[] = [];
 let isInitialized = false;
+let isSyncingGlobal = false;
+let isRealtimeInitialized = false;
 
 function notifySubscribers() {
   listeners.forEach(fn => fn());
@@ -96,36 +98,65 @@ function persistLocalState() {
 }
 
 /**
+ * Singleton background synchronization with Supabase
+ */
+async function syncFromSupabaseGlobal() {
+  if (!isSupabaseConfigured || !supabase || isSyncingGlobal) return;
+  try {
+    isSyncingGlobal = true;
+    const [settingsRes, guestsRes, logsRes] = await Promise.all([
+      supabase.from('party_settings').select('*').single(),
+      supabase.from('guests').select('*').order('id', { ascending: true }),
+      supabase.from('drink_logs').select('*').order('served_at', { ascending: false }).limit(100),
+    ]);
+
+    if (settingsRes.data) globalSettings = { ...initialSettings, ...settingsRes.data };
+    if (guestsRes.data && guestsRes.data.length > 0) globalGuests = guestsRes.data;
+    if (logsRes.data) globalLogs = logsRes.data;
+
+    persistLocalState();
+    notifySubscribers();
+  } catch (err) {
+    console.warn('Supabase sync fallback to local storage:', err);
+  } finally {
+    isSyncingGlobal = false;
+  }
+}
+
+/**
+ * Singleton Realtime subscription - prevents "cannot add callbacks after subscribe" error
+ */
+function initGlobalRealtime() {
+  if (isRealtimeInitialized || typeof window === 'undefined' || !isSupabaseConfigured || !supabase) return;
+  isRealtimeInitialized = true;
+
+  try {
+    supabase
+      .channel('party_realtime_singleton')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'guests' }, () => {
+        syncFromSupabaseGlobal();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'drink_logs' }, () => {
+        syncFromSupabaseGlobal();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'party_settings' }, () => {
+        syncFromSupabaseGlobal();
+      })
+      .subscribe((status, err) => {
+        if (err) {
+          console.warn('[Realtime] Subscription error:', status, err);
+        }
+      });
+  } catch (err) {
+    console.warn('[Realtime] Setup exception caught:', err);
+  }
+}
+
+/**
  * Core Party Store Hook
  */
 export function usePartyStore() {
   const [, setTick] = useState(0);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [isLoaded, setIsLoaded] = useState(isInitialized);
-
-  const syncFromSupabase = useCallback(async () => {
-    if (!isSupabaseConfigured || !supabase) return;
-    try {
-      setIsSyncing(true);
-      const [settingsRes, guestsRes, logsRes] = await Promise.all([
-        supabase.from('party_settings').select('*').single(),
-        supabase.from('guests').select('*').order('id', { ascending: true }),
-        supabase.from('drink_logs').select('*').order('served_at', { ascending: false }).limit(100),
-      ]);
-
-      if (settingsRes.data) globalSettings = { ...initialSettings, ...settingsRes.data };
-      if (guestsRes.data && guestsRes.data.length > 0) globalGuests = guestsRes.data;
-      if (logsRes.data) globalLogs = logsRes.data;
-
-      persistLocalState();
-      notifySubscribers();
-    } catch (err) {
-      console.warn('Supabase sync fallback to local storage:', err);
-    } finally {
-      setIsSyncing(false);
-      setIsLoaded(true);
-    }
-  }, []);
 
   useEffect(() => {
     if (!isInitialized) {
@@ -134,40 +165,21 @@ export function usePartyStore() {
       globalGuests = data.guests;
       globalLogs = data.logs;
       isInitialized = true;
-      setIsLoaded(true);
     }
 
     const rerender = () => setTick(t => t + 1);
     listeners.add(rerender);
 
-    // If Supabase is connected, sync remote state
+    // Initialize singleton remote sync & realtime once
     if (isSupabaseConfigured && supabase) {
-      syncFromSupabase();
-
-      // Realtime subscription
-      const channel = supabase
-        .channel('party_realtime')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'guests' }, () => {
-          syncFromSupabase();
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'drink_logs' }, () => {
-          syncFromSupabase();
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'party_settings' }, () => {
-          syncFromSupabase();
-        })
-        .subscribe();
-
-      return () => {
-        listeners.delete(rerender);
-        supabase?.removeChannel(channel);
-      };
+      syncFromSupabaseGlobal();
+      initGlobalRealtime();
     }
 
     return () => {
       listeners.delete(rerender);
     };
-  }, [syncFromSupabase]);
+  }, []);
 
   /**
    * Directly fetches a guest by tag from Supabase, syncing with local memory
@@ -207,7 +219,6 @@ export function usePartyStore() {
             globalGuests = [guest, ...globalGuests];
           }
           persistLocalState();
-          notifySubscribers();
           return guest;
         }
       } catch (err) {
@@ -430,7 +441,6 @@ export function usePartyStore() {
           .select();
 
         if (updateError || !updateData || updateData.length === 0) {
-          // If update didn't match existing row, insert/upsert
           await supabase.from('guests').upsert(updatedGuest, { onConflict: 'id' });
         }
       } catch (err) {
@@ -557,8 +567,7 @@ export function usePartyStore() {
     settings: globalSettings,
     guests: globalGuests,
     logs: globalLogs,
-    isSyncing,
-    isLoaded,
+    isSyncing: isSyncingGlobal,
     isSupabaseConnected: isSupabaseConfigured,
     serveDrink,
     revertLastDrink,
@@ -567,7 +576,7 @@ export function usePartyStore() {
     updateSettings,
     resetParty,
     exportCsv,
-    refresh: syncFromSupabase,
+    refresh: syncFromSupabaseGlobal,
     fetchGuestByTag,
   };
 }
