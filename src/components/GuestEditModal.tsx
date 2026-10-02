@@ -37,6 +37,7 @@ export function GuestEditModal({ guest, isOpen, onClose }: GuestEditModalProps) 
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    const hasName = Boolean(name.trim());
     await updateGuest({
       id: guest.id,
       name: name.trim() || null,
@@ -44,6 +45,8 @@ export function GuestEditModal({ guest, isOpen, onClose }: GuestEditModalProps) 
       custom_drink_limit: customLimit !== '' ? parseInt(customLimit, 10) : null,
       drinks_consumed: drinksConsumed,
       is_blocked: isBlocked,
+      is_entered: hasName ? true : guest.is_entered,
+      entered_at: hasName && !guest.entered_at ? new Date().toISOString() : guest.entered_at,
       notes: notes.trim() || null,
     });
     soundSystem.playApprovedSound();

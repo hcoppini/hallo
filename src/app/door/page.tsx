@@ -6,6 +6,7 @@ import { usePartyStore } from '@/lib/store';
 import { GuestCategory } from '@/lib/types';
 import { UserCheck, Shield, CheckCircle2, ArrowRight, Sparkles, AlertCircle } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { findGuestByTag } from '@/lib/tag-utils';
 
 export default function DoorCheckInPage() {
   const { guests, checkIn, settings } = usePartyStore();
@@ -43,7 +44,7 @@ export default function DoorCheckInPage() {
   const handleTagScanned = (scannedTag: string) => {
     setTagId(scannedTag);
     // Check if this tag is already known
-    const existing = guests.find(g => g.tag_id.toUpperCase() === scannedTag.toUpperCase());
+    const existing = findGuestByTag(guests, scannedTag);
     if (existing?.name) {
       setName(existing.name);
       setCategory(existing.category);

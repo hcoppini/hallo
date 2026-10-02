@@ -10,6 +10,7 @@ import {
 } from './party-engine';
 import { supabase, isSupabaseConfigured } from './supabase';
 import { soundSystem } from './audio';
+import { parseTagId, findGuestByTag, isTagMatch } from './tag-utils';
 
 const STORAGE_KEY_SETTINGS = 'halloween_party_settings_v1';
 const STORAGE_KEY_GUESTS = 'halloween_party_guests_v1';
@@ -54,31 +55,6 @@ function getInitialLocalData() {
 
   if (!guests || guests.length === 0) {
     guests = generateWristbandBatch(100);
-    // Seed a couple mock checked-in guests for instant rich UI demo
-    guests[0] = {
-      ...guests[0],
-      name: 'Janek Smagieł',
-      category: 'standard',
-      is_entered: true,
-      entered_at: new Date(Date.now() - 3600000 * 2).toISOString(),
-      drinks_consumed: 3,
-    };
-    guests[1] = {
-      ...guests[1],
-      name: 'Kasia (Host)',
-      category: 'vip',
-      is_entered: true,
-      entered_at: new Date(Date.now() - 3600000 * 3).toISOString(),
-      drinks_consumed: 2,
-    };
-    guests[2] = {
-      ...guests[2],
-      name: 'Mikołaj (Driver)',
-      category: 'driver_minor',
-      is_entered: true,
-      entered_at: new Date(Date.now() - 3600000 * 1.5).toISOString(),
-      drinks_consumed: 0,
-    };
     try {
       localStorage.setItem(STORAGE_KEY_GUESTS, JSON.stringify(guests));
     } catch {}
@@ -125,6 +101,31 @@ function persistLocalState() {
 export function usePartyStore() {
   const [, setTick] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(isInitialized);
+
+  const syncFromSupabase = useCallback(async () => {
+    if (!isSupabaseConfigured || !supabase) return;
+    try {
+      setIsSyncing(true);
+      const [settingsRes, guestsRes, logsRes] = await Promise.all([
+        supabase.from('party_settings').select('*').single(),
+        supabase.from('guests').select('*').order('id', { ascending: true }),
+        supabase.from('drink_logs').select('*').order('served_at', { ascending: false }).limit(100),
+      ]);
+
+      if (settingsRes.data) globalSettings = { ...initialSettings, ...settingsRes.data };
+      if (guestsRes.data && guestsRes.data.length > 0) globalGuests = guestsRes.data;
+      if (logsRes.data) globalLogs = logsRes.data;
+
+      persistLocalState();
+      notifySubscribers();
+    } catch (err) {
+      console.warn('Supabase sync fallback to local storage:', err);
+    } finally {
+      setIsSyncing(false);
+      setIsLoaded(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (!isInitialized) {
@@ -133,6 +134,7 @@ export function usePartyStore() {
       globalGuests = data.guests;
       globalLogs = data.logs;
       isInitialized = true;
+      setIsLoaded(true);
     }
 
     const rerender = () => setTick(t => t + 1);
@@ -165,29 +167,55 @@ export function usePartyStore() {
     return () => {
       listeners.delete(rerender);
     };
-  }, []);
+  }, [syncFromSupabase]);
 
-  const syncFromSupabase = useCallback(async () => {
-    if (!isSupabaseConfigured || !supabase) return;
-    try {
-      setIsSyncing(true);
-      const [settingsRes, guestsRes, logsRes] = await Promise.all([
-        supabase.from('party_settings').select('*').single(),
-        supabase.from('guests').select('*').order('id', { ascending: true }),
-        supabase.from('drink_logs').select('*').order('served_at', { ascending: false }).limit(100),
-      ]);
-
-      if (settingsRes.data) globalSettings = { ...initialSettings, ...settingsRes.data };
-      if (guestsRes.data && guestsRes.data.length > 0) globalGuests = guestsRes.data;
-      if (logsRes.data) globalLogs = logsRes.data;
-
-      persistLocalState();
-      notifySubscribers();
-    } catch (err) {
-      console.warn('Supabase sync fallback to local storage:', err);
-    } finally {
-      setIsSyncing(false);
+  /**
+   * Directly fetches a guest by tag from Supabase, syncing with local memory
+   */
+  const fetchGuestByTag = useCallback(async (tagSearch: string): Promise<Guest | null> => {
+    // 1. Check in-memory first
+    const memoryMatch = findGuestByTag(globalGuests, tagSearch);
+    if (memoryMatch && memoryMatch.name && memoryMatch.is_entered) {
+      return memoryMatch;
     }
+
+    // 2. Query Supabase directly for most up-to-date state
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const parsed = parseTagId(tagSearch);
+        const queryOr = [
+          `tag_id.eq.${parsed.canonicalTag}`,
+          `tag_id.eq.${parsed.decoded}`,
+          `tag_id.ilike.${parsed.canonicalTag}%`,
+          `id.eq.${parsed.canonicalTag.replace('TAG', 'GUEST')}`,
+        ].join(',');
+
+        const { data, error } = await supabase
+          .from('guests')
+          .select('*')
+          .or(queryOr)
+          .limit(1)
+          .maybeSingle();
+
+        if (data && !error) {
+          const guest = data as Guest;
+          const idx = globalGuests.findIndex(g => g.id === guest.id || g.tag_id === guest.tag_id);
+          if (idx >= 0) {
+            globalGuests[idx] = guest;
+            globalGuests = [...globalGuests];
+          } else {
+            globalGuests = [guest, ...globalGuests];
+          }
+          persistLocalState();
+          notifySubscribers();
+          return guest;
+        }
+      } catch (err) {
+        console.warn('Error fetching guest from Supabase:', err);
+      }
+    }
+
+    return memoryMatch || null;
   }, []);
 
   /**
@@ -195,17 +223,18 @@ export function usePartyStore() {
    */
   const serveDrink = useCallback(
     async (tagId: string, drinkType: DrinkType = 'cocktail'): Promise<ServeDrinkResult> => {
-      const cleanTag = tagId.trim().toUpperCase();
-      const guest = globalGuests.find(
-        g => g.tag_id.toUpperCase() === cleanTag || g.id.toUpperCase() === cleanTag
-      );
+      let guest = findGuestByTag(globalGuests, tagId);
+
+      if (!guest && isSupabaseConfigured && supabase) {
+        guest = (await fetchGuestByTag(tagId)) || undefined;
+      }
 
       if (!guest) {
         soundSystem.playErrorSound();
         return {
           success: false,
           error: 'GUEST_NOT_FOUND',
-          message: `Wristband '${cleanTag}' is not registered in the system.`,
+          message: `Wristband '${tagId}' is not registered in the system.`,
         };
       }
 
@@ -216,7 +245,7 @@ export function usePartyStore() {
           ...activeGuest,
           is_entered: true,
           entered_at: new Date().toISOString(),
-          name: activeGuest.name || `Guest (${cleanTag})`,
+          name: activeGuest.name || `Guest (${guest.tag_id})`,
         };
       }
 
@@ -248,19 +277,32 @@ export function usePartyStore() {
           soundSystem.playApprovedSound();
         }
 
-        // Push to Supabase if connected
+        // Push to Supabase and await confirmation
         if (isSupabaseConfigured && supabase) {
-          supabase.from('guests').upsert(newGuest).then(() => {});
-          supabase.from('drink_logs').insert(newLog).then(() => {});
+          try {
+            await Promise.allSettled([
+              supabase
+                .from('guests')
+                .update({
+                  drinks_consumed: newGuest.drinks_consumed,
+                  updated_at: newGuest.updated_at,
+                  is_entered: true,
+                  name: newGuest.name,
+                })
+                .eq('id', newGuest.id),
+              supabase.from('drink_logs').insert(newLog),
+            ]);
+          } catch (err) {
+            console.error('Failed to sync drink serve to Supabase:', err);
+          }
         }
       } else {
-        // Failed / Limit reached
         soundSystem.playLimitSound();
       }
 
       return result;
     },
-    []
+    [fetchGuestByTag]
   );
 
   /**
@@ -283,22 +325,127 @@ export function usePartyStore() {
     soundSystem.playUndoSound();
 
     if (isSupabaseConfigured && supabase) {
-      supabase.from('guests').update({ drinks_consumed: updatedGuest.drinks_consumed }).eq('id', guestId).then(() => {});
-      supabase.from('drink_logs').update({ is_reverted: true, reverted_at: new Date().toISOString() }).eq('id', lastLog.id).then(() => {});
+      try {
+        await Promise.allSettled([
+          supabase.from('guests').update({ drinks_consumed: updatedGuest.drinks_consumed }).eq('id', guestId),
+          supabase.from('drink_logs').update({ is_reverted: true, reverted_at: new Date().toISOString() }).eq('id', lastLog.id),
+        ]);
+      } catch (err) {
+        console.error('Failed to revert drink in Supabase:', err);
+      }
     }
 
     return true;
   }, []);
 
   /**
-   * Door Check-in
+   * Door Check-in & First Tap Wristband Activation
    */
   const checkIn = useCallback(async (input: DoorCheckInInput): Promise<Guest> => {
-    const updatedGuest = engineCheckIn(globalGuests, input);
+    const trimmedName = input.name?.trim();
+    if (!trimmedName) {
+      throw new Error('Guest name cannot be empty');
+    }
 
-    const exists = globalGuests.some(g => g.id === updatedGuest.id);
-    if (exists) {
-      globalGuests = globalGuests.map(g => (g.id === updatedGuest.id ? updatedGuest : g));
+    // 1. Find existing guest in memory using fuzzy tag matching
+    let existingGuest = findGuestByTag(globalGuests, input.tag_id);
+
+    // 2. If not found in memory, query Supabase directly
+    if (!existingGuest && isSupabaseConfigured && supabase) {
+      const parsed = parseTagId(input.tag_id);
+      const queryOr = [
+        `tag_id.eq.${parsed.canonicalTag}`,
+        `tag_id.eq.${parsed.decoded}`,
+        `tag_id.ilike.${parsed.canonicalTag}%`,
+        `id.eq.${parsed.canonicalTag.replace('TAG', 'GUEST')}`,
+      ].join(',');
+
+      try {
+        const { data } = await supabase
+          .from('guests')
+          .select('*')
+          .or(queryOr)
+          .limit(1)
+          .maybeSingle();
+
+        if (data) {
+          existingGuest = data as Guest;
+        }
+      } catch (err) {
+        console.warn('Supabase lookup during check-in failed:', err);
+      }
+    }
+
+    const now = new Date().toISOString();
+    let updatedGuest: Guest;
+
+    if (existingGuest) {
+      updatedGuest = {
+        ...existingGuest,
+        name: trimmedName,
+        category: input.category || existingGuest.category || 'standard',
+        custom_drink_limit: input.custom_drink_limit !== undefined ? input.custom_drink_limit : existingGuest.custom_drink_limit,
+        is_entered: true,
+        entered_at: existingGuest.entered_at || now,
+        notes: input.notes !== undefined ? input.notes : existingGuest.notes,
+        updated_at: now,
+      };
+    } else {
+      const parsed = parseTagId(input.tag_id);
+      const newGuestId = parsed.tagNumber
+        ? `GUEST-${parsed.tagNumber.toString().padStart(3, '0')}`
+        : `GUEST-${(globalGuests.length + 1).toString().padStart(3, '0')}`;
+
+      updatedGuest = {
+        id: newGuestId,
+        tag_id: parsed.canonicalTag,
+        name: trimmedName,
+        category: input.category || 'standard',
+        custom_drink_limit: input.custom_drink_limit ?? null,
+        drinks_consumed: 0,
+        is_entered: true,
+        entered_at: now,
+        is_blocked: false,
+        notes: input.notes || null,
+        created_at: now,
+        updated_at: now,
+      };
+    }
+
+    // 3. Write to Supabase and await confirmation
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: updateData, error: updateError } = await supabase
+          .from('guests')
+          .update({
+            name: updatedGuest.name,
+            category: updatedGuest.category,
+            is_entered: true,
+            entered_at: updatedGuest.entered_at,
+            custom_drink_limit: updatedGuest.custom_drink_limit,
+            notes: updatedGuest.notes,
+            updated_at: now,
+          })
+          .or(`id.eq.${updatedGuest.id},tag_id.eq.${updatedGuest.tag_id}`)
+          .select();
+
+        if (updateError || !updateData || updateData.length === 0) {
+          // If update didn't match existing row, insert/upsert
+          await supabase.from('guests').upsert(updatedGuest, { onConflict: 'id' });
+        }
+      } catch (err) {
+        console.error('Supabase write error during checkIn:', err);
+      }
+    }
+
+    // 4. Update memory state
+    const index = globalGuests.findIndex(
+      g => g.id === updatedGuest.id || g.tag_id === updatedGuest.tag_id || isTagMatch(g, input.tag_id)
+    );
+
+    if (index >= 0) {
+      globalGuests[index] = updatedGuest;
+      globalGuests = [...globalGuests];
     } else {
       globalGuests = [updatedGuest, ...globalGuests];
     }
@@ -307,15 +454,12 @@ export function usePartyStore() {
     notifySubscribers();
     soundSystem.playApprovedSound();
 
-    if (isSupabaseConfigured && supabase) {
-      supabase.from('guests').upsert(updatedGuest).then(() => {});
-    }
-
     return updatedGuest;
   }, []);
 
   /**
    * Update Guest properties (Name, custom limit, notes, category, blocked)
+   * Only callable from Admin Panel
    */
   const updateGuest = useCallback(async (updates: Partial<Guest> & { id: string }): Promise<Guest | null> => {
     const guest = globalGuests.find(g => g.id === updates.id);
@@ -332,7 +476,11 @@ export function usePartyStore() {
     notifySubscribers();
 
     if (isSupabaseConfigured && supabase) {
-      supabase.from('guests').update(updates).eq('id', updates.id).then(() => {});
+      try {
+        await supabase.from('guests').update(updates).eq('id', updates.id);
+      } catch (err) {
+        console.error('Failed to update guest in Supabase:', err);
+      }
     }
 
     return updated;
@@ -352,7 +500,11 @@ export function usePartyStore() {
     notifySubscribers();
 
     if (isSupabaseConfigured && supabase) {
-      supabase.from('party_settings').upsert(globalSettings).then(() => {});
+      try {
+        await supabase.from('party_settings').upsert(globalSettings);
+      } catch (err) {
+        console.error('Failed to update settings in Supabase:', err);
+      }
     }
 
     return globalSettings;
@@ -370,9 +522,13 @@ export function usePartyStore() {
     notifySubscribers();
 
     if (isSupabaseConfigured && supabase) {
-      await supabase.from('drink_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('guests').delete().neq('id', 'NONE');
-      await supabase.from('guests').insert(globalGuests);
+      try {
+        await supabase.from('drink_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+        await supabase.from('guests').delete().neq('id', 'NONE');
+        await supabase.from('guests').insert(globalGuests);
+      } catch (err) {
+        console.error('Failed to reset party in Supabase:', err);
+      }
     }
   }, []);
 
@@ -402,6 +558,7 @@ export function usePartyStore() {
     guests: globalGuests,
     logs: globalLogs,
     isSyncing,
+    isLoaded,
     isSupabaseConnected: isSupabaseConfigured,
     serveDrink,
     revertLastDrink,
@@ -411,5 +568,6 @@ export function usePartyStore() {
     resetParty,
     exportCsv,
     refresh: syncFromSupabase,
+    fetchGuestByTag,
   };
 }

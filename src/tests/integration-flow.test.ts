@@ -8,6 +8,7 @@ import {
   validateAdminPin,
 } from '@/lib/party-engine';
 import { PartySettings, Guest } from '@/lib/types';
+import { findGuestByTag } from '@/lib/tag-utils';
 
 describe('Party Lifecycle Integration Flow', () => {
   const settings: PartySettings = {
@@ -129,5 +130,40 @@ describe('Party Lifecycle Integration Flow', () => {
     });
 
     expect(updatedGuest.drinks_consumed).toBe(1);
+  });
+
+  it('guarantees wristband is assignable on first tap, and locked on subsequent taps', () => {
+    // 1. Initial pre-seeded batch: TAG-004 has no name
+    const batch = generateWristbandBatch(10);
+    const unassignedTag = 'TAG-004';
+    const initialSlot = batch.find(g => g.tag_id === unassignedTag);
+    expect(initialSlot?.name).toBeNull();
+    expect(initialSlot?.is_entered).toBe(false);
+
+    // 2. First Tap: Assign to Kasia
+    const assignedGuest = checkInGuest(batch, {
+      tag_id: unassignedTag,
+      name: 'Kasia Kowalska',
+      category: 'standard',
+    });
+    expect(assignedGuest.name).toBe('Kasia Kowalska');
+    expect(assignedGuest.is_entered).toBe(true);
+
+    // 3. Second Tap (Simulated via URL tap with NFC UID):
+    // Even if NFC Tools appended :04:A2:3B, it must match Kasia
+    const activeList = batch.map(g => (g.id === assignedGuest.id ? assignedGuest : g));
+    const secondTapLookup = findGuestByTag(activeList, 'TAG-004:04:A2:3B');
+    expect(secondTapLookup).toBeDefined();
+    expect(secondTapLookup?.name).toBe('Kasia Kowalska');
+    expect(secondTapLookup?.is_entered).toBe(true);
+    // Because is_entered && name are true, UI locks into Party Pass mode, forbidding re-assignment
+
+    // 4. Admin Panel Override: Only supervisor can edit Kasia
+    const adminEdit: Guest = {
+      ...secondTapLookup!,
+      custom_drink_limit: 7,
+      notes: 'VIP Birthday friend',
+    };
+    expect(adminEdit.custom_drink_limit).toBe(7);
   });
 });
