@@ -2,13 +2,15 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { GlassWater, DoorOpen, Settings, ShieldCheck, Radio, Sparkles, AlertTriangle, ArrowRight } from 'lucide-react';
+import { GlassWater, DoorOpen, Settings, ShieldCheck, Radio, Sparkles, AlertTriangle, ArrowRight, HelpCircle } from 'lucide-react';
 import { usePartyStore } from '@/lib/store';
 import { AdminPinModal } from '@/components/AdminPinModal';
+import { HelpGuideModal } from '@/components/HelpGuideModal';
 
 export default function HomePage() {
   const { settings, guests, logs, updateSettings } = usePartyStore();
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   const enteredCount = guests.filter(g => g.is_entered).length;
   const totalDrinksServed = logs.filter(l => !l.is_reverted && l.drink_type !== 'soft').length;
@@ -38,9 +40,17 @@ export default function HomePage() {
           <h1 className="font-display text-5xl sm:text-7xl md:text-8xl font-bold tracking-tight text-black lowercase leading-none mb-6">
             nfc drink regulation.
           </h1>
-          <p className="font-sans-clean text-base sm:text-lg text-black/60 max-w-2xl lowercase leading-relaxed">
+          <p className="font-sans-clean text-base sm:text-lg text-black/60 max-w-2xl lowercase leading-relaxed mb-6">
             engineered for 100 wristbands. one-tap drink logging on the barman’s phone, automatic safety cutoffs, and effortless door check-in.
           </p>
+          <button
+            type="button"
+            onClick={() => setIsGuideOpen(true)}
+            className="btn-premium gap-2 py-2 px-4 text-xs"
+          >
+            <HelpCircle className="w-3.5 h-3.5" />
+            <span>open step-by-step setup guide</span>
+          </button>
         </section>
 
         {/* Live Party Telemetry Strip */}
@@ -211,6 +221,12 @@ export default function HomePage() {
         subtitle="enter parent pin to change party state"
         onSuccess={handlePinSuccess}
         onClose={() => setIsPinModalOpen(false)}
+      />
+
+      {/* In-App Helper Guide Modal */}
+      <HelpGuideModal
+        isOpen={isGuideOpen}
+        onClose={() => setIsGuideOpen(false)}
       />
     </div>
   );
