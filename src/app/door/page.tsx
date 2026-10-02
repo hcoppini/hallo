@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { LuawsHeader } from '@/components/LuawsHeader';
 import { NfcReader } from '@/components/NfcReader';
 import { usePartyStore } from '@/lib/store';
 import { GuestCategory } from '@/lib/types';
@@ -86,10 +85,7 @@ export default function DoorCheckInPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-white">
-      <LuawsHeader />
-
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-8 py-8 sm:py-12">
+    <div className="w-full py-4 space-y-6">
         {/* Page Title & Stats */}
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
           <div>
@@ -300,7 +296,6 @@ export default function DoorCheckInPage() {
             </div>
           </div>
         </div>
-      </main>
     </div>
   );
 }

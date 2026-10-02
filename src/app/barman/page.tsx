@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState } from 'react';
-import { LuawsHeader } from '@/components/LuawsHeader';
 import { NfcReader } from '@/components/NfcReader';
 import { BarmanDisplay } from '@/components/BarmanDisplay';
 import { QuickSearchModal } from '@/components/QuickSearchModal';
@@ -9,7 +8,7 @@ import { usePartyStore } from '@/lib/store';
 import { DrinkType, ServeDrinkResult, Guest } from '@/lib/types';
 
 export default function BarmanPage() {
-  const { serveDrink, guests } = usePartyStore();
+  const { serveDrink } = usePartyStore();
   const [selectedDrinkType, setSelectedDrinkType] = useState<DrinkType>('cocktail');
   const [lastResult, setLastResult] = useState<ServeDrinkResult | null>(null);
   const [activeTagId, setActiveTagId] = useState<string | null>(null);
@@ -32,44 +31,28 @@ export default function BarmanPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-white">
-      <LuawsHeader />
+    <div className="w-full py-4 space-y-6">
+      {/* High-Contrast Drink Counter / Limit Alert Screen */}
+      <div>
+        <BarmanDisplay
+          lastResult={lastResult}
+          selectedDrinkType={selectedDrinkType}
+          onDrinkTypeChange={setSelectedDrinkType}
+          onManualServe={handleManualServe}
+          onOpenSearch={() => setIsSearchOpen(true)}
+        />
+      </div>
 
-      <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-8 py-8 sm:py-12">
-        {/* Page Title */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <span className="font-mono text-[11px] uppercase tracking-widest text-black/50 block">
-              bar station // single-tap regulation
-            </span>
-            <h1 className="font-display text-4xl sm:text-5xl font-bold lowercase text-black">
-              barman interface
-            </h1>
-          </div>
-        </div>
+      {/* NFC Tap Area & Simulator */}
+      <section>
+        <NfcReader
+          onTagScanned={handleTagScanned}
+          activeTagId={activeTagId}
+          modeLabel="tap guest wristband"
+        />
+      </section>
 
-        {/* High-Contrast Drink Counter / Limit Alert Screen */}
-        <div className="mb-10">
-          <BarmanDisplay
-            lastResult={lastResult}
-            selectedDrinkType={selectedDrinkType}
-            onDrinkTypeChange={setSelectedDrinkType}
-            onManualServe={handleManualServe}
-            onOpenSearch={() => setIsSearchOpen(true)}
-          />
-        </div>
-
-        {/* NFC Tap Area & Simulator */}
-        <section>
-          <NfcReader
-            onTagScanned={handleTagScanned}
-            activeTagId={activeTagId}
-            modeLabel="tap guest wristband here"
-          />
-        </section>
-      </main>
-
-      {/* Manual Search Modal */}
+      {/* Manual Search Modal (Bottom Sheet on phone) */}
       <QuickSearchModal
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}

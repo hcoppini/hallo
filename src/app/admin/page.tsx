@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState } from 'react';
-import { LuawsHeader } from '@/components/LuawsHeader';
 import { GuestTable } from '@/components/GuestTable';
 import { DrinkHistoryList } from '@/components/DrinkHistoryList';
 import { NfcWriterModal } from '@/components/NfcWriterModal';
@@ -64,10 +63,7 @@ export default function AdminPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-white">
-      <LuawsHeader />
-
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-8 py-8 sm:py-12">
+    <div className="w-full py-4 space-y-6">
         {/* Page Title & Actions */}
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-10 pb-6 border-b border-black/10">
           <div>
@@ -214,7 +210,6 @@ export default function AdminPage() {
             <DrinkHistoryList />
           </div>
         </div>
-      </main>
 
       {/* NFC Writer Modal */}
       <NfcWriterModal

@@ -65,11 +65,14 @@ export function NfcWriterModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="glass-card max-w-md w-full p-8 relative border border-black/15 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bottom-sheet max-w-md w-full p-6 sm:p-8 relative bg-white border-t sm:border border-black/15 shadow-2xl rounded-t-[32px] sm:rounded-3xl pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)] sm:pb-8">
+        {/* Mobile Pull Handle */}
+        <div className="w-10 h-1 rounded-full bg-black/20 mx-auto mb-4 sm:hidden shrink-0" />
+
         <button
           onClick={onClose}
-          className="absolute top-6 right-6 p-1.5 rounded-full text-black/40 hover:text-black hover:bg-black/5 transition-colors"
+          className="absolute top-5 right-5 p-2 rounded-full text-black/40 hover:text-black hover:bg-black/5 transition-colors"
         >
           <X className="w-5 h-5" />
         </button>

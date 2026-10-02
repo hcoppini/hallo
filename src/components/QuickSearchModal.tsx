@@ -39,8 +39,11 @@ export function QuickSearchModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="glass-card max-w-lg w-full p-6 relative border border-black/15 shadow-2xl flex flex-col max-h-[85vh]">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bottom-sheet max-w-lg w-full p-6 relative bg-white border-t sm:border border-black/15 shadow-2xl flex flex-col max-h-[85dvh] rounded-t-[32px] sm:rounded-3xl pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] sm:pb-6">
+        {/* Mobile Pull Handle */}
+        <div className="w-10 h-1 rounded-full bg-black/20 mx-auto mb-3 sm:hidden shrink-0" />
+
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-black/10">
           <div>

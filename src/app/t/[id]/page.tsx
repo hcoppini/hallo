@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { LuawsHeader } from '@/components/LuawsHeader';
 import { usePartyStore } from '@/lib/store';
 import { calculateEffectiveLimit } from '@/lib/party-engine';
 import { GlassWater, CheckCircle2, AlertOctagon, ArrowLeft, Beer, Sparkles, CupSoda } from 'lucide-react';
@@ -40,10 +39,7 @@ export default function DirectTapPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-white">
-      <LuawsHeader />
-
-      <main className="flex-1 max-w-md w-full mx-auto px-4 py-12 flex flex-col justify-center">
+    <div className="w-full py-6 flex flex-col justify-center">
         {!guest ? (
           <div className="glass-card p-8 text-center border border-black/10">
             <h2 className="font-display text-3xl font-bold lowercase text-black mb-2">
@@ -175,7 +171,6 @@ export default function DirectTapPage() {
             </button>
           </div>
         )}
-      </main>
     </div>
   );
 }

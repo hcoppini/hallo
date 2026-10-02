@@ -3,7 +3,6 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { GlassWater, DoorOpen, Settings, ShieldCheck, Radio, Sparkles, AlertTriangle, ArrowRight } from 'lucide-react';
-import { LuawsHeader } from '@/components/LuawsHeader';
 import { usePartyStore } from '@/lib/store';
 import { AdminPinModal } from '@/components/AdminPinModal';
 
@@ -28,10 +27,7 @@ export default function HomePage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-white">
-      <LuawsHeader />
-
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-8 py-12 sm:py-16">
+    <div className="w-full py-4 sm:py-8">
         {/* Hero Section matching luaws.pl */}
         <section className="mb-16 text-center sm:text-left">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-black/10 bg-black/[0.02] text-[11px] font-sans-clean font-semibold tracking-widest lowercase text-black/60 mb-6">
@@ -207,7 +203,6 @@ export default function HomePage() {
             {settings.is_party_active ? 'pause bar service' : 'resume bar service'}
           </button>
         </section>
-      </main>
 
       {/* Admin PIN confirmation modal */}
       <AdminPinModal
