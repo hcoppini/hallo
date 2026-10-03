@@ -18,6 +18,7 @@ import confetti from 'canvas-confetti';
 import { Guest, DrinkType, ServeDrinkResult } from '@/lib/types';
 import { usePartyStore } from '@/lib/store';
 import { calculateEffectiveLimit } from '@/lib/party-engine';
+import { getGuestDisplayName } from '@/lib/tag-utils';
 import { AdminPinModal } from './AdminPinModal';
 
 interface BarmanDisplayProps {
@@ -184,7 +185,7 @@ export function BarmanDisplay({
                 limit reached
               </h2>
               <p className="text-white/90 text-lg font-sans-clean font-semibold">
-                {activeGuest?.name || 'Guest'} has had {activeGuest?.drinks_consumed} of {effectiveLimit} drinks.
+                {activeGuest ? getGuestDisplayName(activeGuest) : 'Guest'} has had {activeGuest?.drinks_consumed} of {effectiveLimit} drinks.
               </p>
             </div>
           </div>
@@ -246,7 +247,7 @@ export function BarmanDisplay({
           <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-4 mb-8">
             <div>
               <h2 className="font-display text-4xl sm:text-5xl font-bold lowercase text-black mb-1">
-                {activeGuest?.name || 'Guest'}
+                {activeGuest ? getGuestDisplayName(activeGuest) : 'Guest'}
               </h2>
               <span className="font-sans-clean text-xs text-black/50 lowercase">
                 entered {activeGuest?.entered_at ? new Date(activeGuest.entered_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'recently'}

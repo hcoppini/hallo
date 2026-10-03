@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS guests (
   category TEXT NOT NULL DEFAULT 'standard', -- 'standard', 'driver_minor', 'vip'
   custom_drink_limit INTEGER, -- NULL inherits party_settings.default_drink_limit
   drinks_consumed INTEGER NOT NULL DEFAULT 0,
+  hardware_uid TEXT, -- Hardware UID of physical NFC chip
   is_entered BOOLEAN NOT NULL DEFAULT false,
   entered_at TIMESTAMPTZ,
   is_blocked BOOLEAN NOT NULL DEFAULT false,
@@ -38,6 +39,7 @@ CREATE TABLE IF NOT EXISTS guests (
 
 -- Index for high-speed NFC tag lookups on the barman's phone
 CREATE INDEX IF NOT EXISTS idx_guests_tag_id ON guests(tag_id);
+CREATE INDEX IF NOT EXISTS idx_guests_hardware_uid ON guests(hardware_uid);
 CREATE INDEX IF NOT EXISTS idx_guests_name ON guests(name);
 CREATE INDEX IF NOT EXISTS idx_guests_is_entered ON guests(is_entered);
 
@@ -115,7 +117,7 @@ BEGIN
   -- 2. Lock guest row for update to prevent race conditions during rapid taps
   SELECT * INTO v_guest
   FROM guests
-  WHERE tag_id = p_tag_id
+  WHERE tag_id = p_tag_id OR hardware_uid = p_tag_id
   FOR UPDATE;
 
   IF NOT FOUND THEN

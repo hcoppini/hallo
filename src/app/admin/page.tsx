@@ -1,28 +1,27 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { GuestTable } from '@/components/GuestTable';
 import { DrinkHistoryList } from '@/components/DrinkHistoryList';
 import { NfcWriterModal } from '@/components/NfcWriterModal';
 import { AdminPinModal } from '@/components/AdminPinModal';
 import { usePartyStore } from '@/lib/store';
+import { useStaffAuth } from '@/lib/auth';
 import {
   Sliders,
   Radio,
   Download,
   RotateCcw,
-  Shield,
   Save,
   CheckCircle2,
-  Users,
-  GlassWater,
-  AlertOctagon,
   Lock,
+  ShieldCheck,
 } from 'lucide-react';
 import { soundSystem } from '@/lib/audio';
 
 export default function AdminPage() {
-  const { settings, guests, logs, updateSettings, exportCsv, resetParty } = usePartyStore();
+  const { settings, updateSettings, exportCsv, resetParty } = usePartyStore();
+  const { isAuthenticated } = useStaffAuth();
 
   const [defaultLimit, setDefaultLimit] = useState(settings.default_drink_limit);
   const [partyName, setPartyName] = useState(settings.party_name);
@@ -30,6 +29,13 @@ export default function AdminPage() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isWriterOpen, setIsWriterOpen] = useState(false);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+
+  useEffect(() => {
+    setDefaultLimit(settings.default_drink_limit);
+    setPartyName(settings.party_name);
+    setAdminPin(settings.admin_pin);
+  }, [settings]);
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,154 +68,195 @@ export default function AdminPage() {
     soundSystem.playApprovedSound();
   };
 
+  // If not authenticated, require PIN before viewing admin controls
+  if (!isAuthenticated) {
+    return (
+      <div className="w-full py-16 flex flex-col items-center justify-center max-w-sm mx-auto text-center">
+        <div className="glass-card p-10 border border-black/15 shadow-2xl space-y-5 w-full">
+          <div className="w-14 h-14 rounded-2xl bg-black/5 flex items-center justify-center mx-auto text-black border border-black/10">
+            <Lock className="w-7 h-7" />
+          </div>
+          <div>
+            <span className="font-mono text-[10px] text-black/40 uppercase tracking-widest block mb-1">
+              SECURITY GATEWAY
+            </span>
+            <h2 className="font-display text-3xl font-bold lowercase text-black">
+              admin locked
+            </h2>
+          </div>
+          <p className="font-sans-clean text-xs text-black/60 leading-relaxed">
+            Enter the 4-digit supervisor PIN to access party limits, guest rules, and raw system tools.
+          </p>
+
+          <button
+            type="button"
+            onClick={() => setIsAuthModalOpen(true)}
+            className="btn-premium-primary w-full py-3.5 text-xs gap-2"
+          >
+            <ShieldCheck className="w-4 h-4" />
+            <span>enter supervisor pin</span>
+          </button>
+        </div>
+
+        <AdminPinModal
+          isOpen={isAuthModalOpen}
+          title="admin panel unlock"
+          subtitle="enter 4-digit supervisor pin"
+          onSuccess={() => setIsAuthModalOpen(false)}
+          onClose={() => setIsAuthModalOpen(false)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="w-full py-4 space-y-6">
-        {/* Page Title & Actions */}
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-10 pb-6 border-b border-black/10">
-          <div>
-            <span className="font-mono text-[11px] uppercase tracking-widest text-black/50 block">
-              parental & supervisory control
-            </span>
-            <h1 className="font-display text-4xl sm:text-6xl font-bold lowercase text-black">
-              administration
-            </h1>
+      {/* Page Title & Actions */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-10 pb-6 border-b border-black/10">
+        <div>
+          <span className="font-mono text-[11px] uppercase tracking-widest text-black/50 block">
+            parental & supervisory control
+          </span>
+          <h1 className="font-display text-4xl sm:text-6xl font-bold lowercase text-black">
+            administration
+          </h1>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsWriterOpen(true)}
+            className="btn-premium gap-2 py-2.5 px-4 text-xs"
+          >
+            <Radio className="w-3.5 h-3.5" />
+            <span>nfc batch writer</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleExport}
+            className="btn-premium gap-2 py-2.5 px-4 text-xs"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>export csv</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsResetConfirmOpen(true)}
+            className="btn-premium gap-2 py-2.5 px-4 text-xs text-red-600 hover:text-red-700 hover:border-red-300"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>reset 100 slots</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Global Party Settings Card */}
+      <section className="glass-card p-6 sm:p-8 mb-10 border border-black/10">
+        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-black/10">
+          <div className="w-10 h-10 rounded-full bg-black/5 flex items-center justify-center text-black">
+            <Sliders className="w-5 h-5" />
           </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setIsWriterOpen(true)}
-              className="btn-premium gap-2 py-2.5 px-4 text-xs"
-            >
-              <Radio className="w-3.5 h-3.5" />
-              <span>nfc batch writer</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleExport}
-              className="btn-premium gap-2 py-2.5 px-4 text-xs"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>export csv</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setIsResetConfirmOpen(true)}
-              className="btn-premium gap-2 py-2.5 px-4 text-xs text-red-600 hover:text-red-700 hover:border-red-300"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>reset 100 slots</span>
-            </button>
+          <div>
+            <h2 className="font-display text-2xl font-bold lowercase text-black">
+              party rules & limits configuration
+            </h2>
+            <p className="font-sans-clean text-xs text-black/50 lowercase">
+              changes take effect instantly across all connected devices
+            </p>
           </div>
         </div>
 
-        {/* Global Party Settings Card */}
-        <section className="glass-card p-6 sm:p-8 mb-10 border border-black/10">
-          <div className="flex items-center gap-3 mb-6 pb-4 border-b border-black/10">
-            <div className="w-10 h-10 rounded-full bg-black/5 flex items-center justify-center text-black">
-              <Sliders className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="font-display text-2xl font-bold lowercase text-black">
-                party rules & limits configuration
-              </h2>
-              <p className="font-sans-clean text-xs text-black/50 lowercase">
-                changes take effect instantly across all connected devices
-              </p>
-            </div>
+        {saveSuccess && (
+          <div className="p-3.5 mb-6 rounded-2xl bg-emerald-50 text-emerald-800 text-xs font-sans-clean flex items-center gap-2 border border-emerald-200">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            <span>settings updated and propagated successfully!</span>
           </div>
+        )}
 
-          {saveSuccess && (
-            <div className="p-3.5 mb-6 rounded-2xl bg-emerald-50 text-emerald-800 text-xs font-sans-clean flex items-center gap-2 border border-emerald-200">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span>settings updated and propagated successfully!</span>
-            </div>
-          )}
-
-          <form onSubmit={handleSaveSettings} className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-            <div>
-              <label className="block text-xs font-sans-clean font-semibold text-black/70 lowercase mb-2">
-                default drink limit per guest
-              </label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="number"
-                  min="1"
-                  max="20"
-                  required
-                  value={defaultLimit}
-                  onChange={e => setDefaultLimit(parseInt(e.target.value || '1', 10))}
-                  className="w-24 px-4 py-3 bg-black/5 border border-black/15 rounded-xl font-display text-2xl font-bold text-black outline-none focus:border-black text-center"
-                />
-                <span className="text-xs font-sans-clean text-black/50 lowercase">
-                  drinks before automatic cut-off
-                </span>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-sans-clean font-semibold text-black/70 lowercase mb-2">
-                party display title
-              </label>
+        <form onSubmit={handleSaveSettings} className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+          <div>
+            <label className="block text-xs font-sans-clean font-semibold text-black/70 lowercase mb-2">
+              default drink limit per guest
+            </label>
+            <div className="flex items-center gap-3">
               <input
-                type="text"
+                type="number"
+                min="1"
+                max="20"
                 required
-                value={partyName}
-                onChange={e => setPartyName(e.target.value)}
-                className="w-full px-4 py-3 bg-black/5 border border-black/15 rounded-xl font-sans-clean text-sm text-black outline-none focus:border-black"
+                value={defaultLimit}
+                onChange={e => setDefaultLimit(parseInt(e.target.value || '1', 10))}
+                className="w-24 px-4 py-3 bg-black/5 border border-black/15 rounded-xl font-display text-2xl font-bold text-black outline-none focus:border-black text-center"
               />
-            </div>
-
-            <div>
-              <label className="block text-xs font-sans-clean font-semibold text-black/70 lowercase mb-2">
-                security pin (for supervisor override)
-              </label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="password"
-                  maxLength={4}
-                  required
-                  value={adminPin}
-                  onChange={e => setAdminPin(e.target.value)}
-                  className="w-28 px-4 py-3 bg-black/5 border border-black/15 rounded-xl font-mono text-center tracking-widest text-lg text-black outline-none focus:border-black"
-                />
-                <button
-                  type="submit"
-                  className="btn-premium-primary py-3 px-5 text-xs gap-2 flex-1"
-                >
-                  <Save className="w-3.5 h-3.5" />
-                  <span>apply rules</span>
-                </button>
-              </div>
-            </div>
-          </form>
-        </section>
-
-        {/* Live Monitoring & Guest Directory Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-12">
-          {/* Guest Management Table */}
-          <div className="lg:col-span-8 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="font-display text-3xl font-bold lowercase text-black">
-                wristband & guest registry
-              </h2>
-              <span className="text-xs font-mono text-black/50">
-                100 pregenerated tags
+              <span className="text-xs font-sans-clean text-black/50 lowercase">
+                drinks before automatic cut-off
               </span>
             </div>
-            <GuestTable />
           </div>
 
-          {/* Live Drink Activity Stream */}
-          <div className="lg:col-span-4">
-            <h2 className="font-display text-3xl font-bold lowercase text-black mb-4">
-              party activity
-            </h2>
-            <DrinkHistoryList />
+          <div>
+            <label className="block text-xs font-sans-clean font-semibold text-black/70 lowercase mb-2">
+              party display title
+            </label>
+            <input
+              type="text"
+              required
+              value={partyName}
+              onChange={e => setPartyName(e.target.value)}
+              className="w-full px-4 py-3 bg-black/5 border border-black/15 rounded-xl font-sans-clean text-sm text-black outline-none focus:border-black"
+            />
           </div>
+
+          <div>
+            <label className="block text-xs font-sans-clean font-semibold text-black/70 lowercase mb-2">
+              security pin (supervisor override)
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="password"
+                maxLength={4}
+                required
+                value={adminPin}
+                onChange={e => setAdminPin(e.target.value)}
+                className="w-28 px-4 py-3 bg-black/5 border border-black/15 rounded-xl font-mono text-center tracking-widest text-lg text-black outline-none focus:border-black"
+              />
+              <button
+                type="submit"
+                className="btn-premium-primary py-3 px-5 text-xs gap-2 flex-1"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>apply rules</span>
+              </button>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      {/* Live Monitoring & Guest Directory Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-12">
+        {/* Guest Management Table */}
+        <div className="lg:col-span-8 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="font-display text-3xl font-bold lowercase text-black">
+              wristband & guest registry
+            </h2>
+            <span className="text-xs font-mono text-black/50">
+              live registry
+            </span>
+          </div>
+          <GuestTable />
         </div>
+
+        {/* Live Drink Activity Stream */}
+        <div className="lg:col-span-4">
+          <h2 className="font-display text-3xl font-bold lowercase text-black mb-4">
+            party activity
+          </h2>
+          <DrinkHistoryList />
+        </div>
+      </div>
 
       {/* NFC Writer Modal */}
       <NfcWriterModal

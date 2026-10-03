@@ -5,7 +5,6 @@ import { Guest, PartySettings, DrinkLog, ServeDrinkResult, DoorCheckInInput, Dri
 import {
   processDrinkRequest,
   revertDrinkRequest,
-  checkInGuest as engineCheckIn,
   generateWristbandBatch,
 } from './party-engine';
 import { supabase, isSupabaseConfigured } from './supabase';
@@ -24,6 +23,17 @@ const initialSettings: PartySettings = {
   admin_pin: '1031',
   cutoff_time: null,
 };
+
+function generateUuid(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 /**
  * Reads initial state safely from localStorage or defaults
@@ -124,7 +134,7 @@ async function syncFromSupabaseGlobal() {
 }
 
 /**
- * Singleton Realtime subscription - prevents "cannot add callbacks after subscribe" error
+ * Singleton Realtime subscription
  */
 function initGlobalRealtime() {
   if (isRealtimeInitialized || typeof window === 'undefined' || !isSupabaseConfigured || !supabase) return;
@@ -147,6 +157,16 @@ function initGlobalRealtime() {
           console.warn('[Realtime] Subscription error:', status, err);
         }
       });
+
+    // Also auto-refresh when browser window refocuses or wakes up from lock
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        syncFromSupabaseGlobal();
+      }
+    });
+    window.addEventListener('focus', () => {
+      syncFromSupabaseGlobal();
+    });
   } catch (err) {
     console.warn('[Realtime] Setup exception caught:', err);
   }
@@ -191,21 +211,25 @@ export function usePartyStore() {
       return memoryMatch;
     }
 
-    // 2. Query Supabase directly for most up-to-date state
+    // 2. Query Supabase directly for authoritative state
     if (isSupabaseConfigured && supabase) {
       try {
         const parsed = parseTagId(tagSearch);
-        const queryOr = [
+        const queryOrConditions = [
           `tag_id.eq.${parsed.canonicalTag}`,
           `tag_id.eq.${parsed.decoded}`,
           `tag_id.ilike.${parsed.canonicalTag}%`,
           `id.eq.${parsed.canonicalTag.replace('TAG', 'GUEST')}`,
-        ].join(',');
+        ];
+
+        if (parsed.cleanAlphanumeric) {
+          queryOrConditions.push(`notes.ilike.%${parsed.cleanAlphanumeric}%`);
+        }
 
         const { data, error } = await supabase
           .from('guests')
           .select('*')
-          .or(queryOr)
+          .or(queryOrConditions.join(','))
           .limit(1)
           .maybeSingle();
 
@@ -230,7 +254,7 @@ export function usePartyStore() {
   }, []);
 
   /**
-   * Serve Drink action (called by Barman or URL tap)
+   * Serve Drink action (called by Barman or staff on /t/[id])
    */
   const serveDrink = useCallback(
     async (tagId: string, drinkType: DrinkType = 'cocktail'): Promise<ServeDrinkResult> => {
@@ -267,7 +291,7 @@ export function usePartyStore() {
         globalGuests = globalGuests.map(g => (g.id === newGuest.id ? newGuest : g));
 
         const newLog: DrinkLog = {
-          id: result.log_id || `log-${Date.now()}`,
+          id: generateUuid(),
           guest_id: newGuest.id,
           drink_type: drinkType,
           served_at: new Date().toISOString(),
@@ -320,15 +344,16 @@ export function usePartyStore() {
    * Revert the most recent drink for a guest (Undo action)
    */
   const revertLastDrink = useCallback(async (guestId: string): Promise<boolean> => {
-    const guest = globalGuests.find(g => g.id === guestId);
+    const guest = globalGuests.find(g => g.id === guestId || isTagMatch(g, guestId));
     if (!guest) return false;
 
-    const lastLog = globalLogs.find(l => l.guest_id === guestId && !l.is_reverted);
+    const actualGuestId = guest.id;
+    const lastLog = globalLogs.find(l => l.guest_id === actualGuestId && !l.is_reverted);
     if (!lastLog) return false;
 
     const { updatedGuest, revertedLog } = revertDrinkRequest(guest, lastLog);
 
-    globalGuests = globalGuests.map(g => (g.id === guestId ? updatedGuest : g));
+    globalGuests = globalGuests.map(g => (g.id === actualGuestId ? updatedGuest : g));
     globalLogs = globalLogs.map(l => (l.id === revertedLog.id ? revertedLog : l));
 
     persistLocalState();
@@ -338,7 +363,7 @@ export function usePartyStore() {
     if (isSupabaseConfigured && supabase) {
       try {
         await Promise.allSettled([
-          supabase.from('guests').update({ drinks_consumed: updatedGuest.drinks_consumed }).eq('id', guestId),
+          supabase.from('guests').update({ drinks_consumed: updatedGuest.drinks_consumed }).eq('id', actualGuestId),
           supabase.from('drink_logs').update({ is_reverted: true, reverted_at: new Date().toISOString() }).eq('id', lastLog.id),
         ]);
       } catch (err) {
@@ -369,13 +394,16 @@ export function usePartyStore() {
         `tag_id.eq.${parsed.decoded}`,
         `tag_id.ilike.${parsed.canonicalTag}%`,
         `id.eq.${parsed.canonicalTag.replace('TAG', 'GUEST')}`,
-      ].join(',');
+      ];
+      if (parsed.cleanAlphanumeric) {
+        queryOr.push(`notes.ilike.%${parsed.cleanAlphanumeric}%`);
+      }
 
       try {
         const { data } = await supabase
           .from('guests')
           .select('*')
-          .or(queryOr)
+          .or(queryOr.join(','))
           .limit(1)
           .maybeSingle();
 
@@ -388,17 +416,29 @@ export function usePartyStore() {
     }
 
     const now = new Date().toISOString();
+
+    // Encode hardware UID in notes if provided for persistent chip matching
+    let finalNotes = input.notes || existingGuest?.notes || null;
+    if (input.hardware_uid) {
+      const cleanUid = input.hardware_uid.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      const existingUserNotes = (input.notes ?? existingGuest?.notes ?? '')
+        .replace(/\[UID:[^\]]+\]/gi, '')
+        .trim();
+      finalNotes = existingUserNotes ? `[UID:${cleanUid}] ${existingUserNotes}` : `[UID:${cleanUid}]`;
+    }
+
     let updatedGuest: Guest;
 
     if (existingGuest) {
       updatedGuest = {
         ...existingGuest,
+        hardware_uid: input.hardware_uid || existingGuest.hardware_uid,
         name: trimmedName,
         category: input.category || existingGuest.category || 'standard',
         custom_drink_limit: input.custom_drink_limit !== undefined ? input.custom_drink_limit : existingGuest.custom_drink_limit,
         is_entered: true,
         entered_at: existingGuest.entered_at || now,
-        notes: input.notes !== undefined ? input.notes : existingGuest.notes,
+        notes: finalNotes,
         updated_at: now,
       };
     } else {
@@ -410,6 +450,7 @@ export function usePartyStore() {
       updatedGuest = {
         id: newGuestId,
         tag_id: parsed.canonicalTag,
+        hardware_uid: input.hardware_uid || null,
         name: trimmedName,
         category: input.category || 'standard',
         custom_drink_limit: input.custom_drink_limit ?? null,
@@ -417,31 +458,49 @@ export function usePartyStore() {
         is_entered: true,
         entered_at: now,
         is_blocked: false,
-        notes: input.notes || null,
+        notes: finalNotes,
         created_at: now,
         updated_at: now,
       };
     }
 
-    // 3. Write to Supabase and await confirmation
+    // 3. Write to Supabase with resilient update/upsert
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data: updateData, error: updateError } = await supabase
-          .from('guests')
-          .update({
-            name: updatedGuest.name,
-            category: updatedGuest.category,
-            is_entered: true,
-            entered_at: updatedGuest.entered_at,
-            custom_drink_limit: updatedGuest.custom_drink_limit,
-            notes: updatedGuest.notes,
-            updated_at: now,
-          })
-          .or(`id.eq.${updatedGuest.id},tag_id.eq.${updatedGuest.tag_id}`)
-          .select();
+        const dbPayload = {
+          name: updatedGuest.name,
+          category: updatedGuest.category,
+          is_entered: true,
+          entered_at: updatedGuest.entered_at,
+          custom_drink_limit: updatedGuest.custom_drink_limit,
+          notes: updatedGuest.notes,
+          updated_at: now,
+        };
 
-        if (updateError || !updateData || updateData.length === 0) {
-          await supabase.from('guests').upsert(updatedGuest, { onConflict: 'id' });
+        if (existingGuest?.id) {
+          const { error: updateError } = await supabase
+            .from('guests')
+            .update(dbPayload)
+            .eq('id', existingGuest.id);
+
+          if (updateError) {
+            console.error('Supabase update error during checkIn:', updateError);
+          }
+        } else {
+          const { error: upsertError } = await supabase
+            .from('guests')
+            .upsert({
+              id: updatedGuest.id,
+              tag_id: updatedGuest.tag_id,
+              drinks_consumed: 0,
+              is_blocked: false,
+              ...dbPayload,
+              created_at: now,
+            }, { onConflict: 'id' });
+
+          if (upsertError) {
+            console.error('Supabase upsert error during checkIn:', upsertError);
+          }
         }
       } catch (err) {
         console.error('Supabase write error during checkIn:', err);
@@ -487,7 +546,18 @@ export function usePartyStore() {
 
     if (isSupabaseConfigured && supabase) {
       try {
-        await supabase.from('guests').update(updates).eq('id', updates.id);
+        const { id, name, category, custom_drink_limit, drinks_consumed, is_entered, entered_at, is_blocked, notes } = updates;
+        const dbUpdates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+        if (name !== undefined) dbUpdates.name = name;
+        if (category !== undefined) dbUpdates.category = category;
+        if (custom_drink_limit !== undefined) dbUpdates.custom_drink_limit = custom_drink_limit;
+        if (drinks_consumed !== undefined) dbUpdates.drinks_consumed = drinks_consumed;
+        if (is_entered !== undefined) dbUpdates.is_entered = is_entered;
+        if (entered_at !== undefined) dbUpdates.entered_at = entered_at;
+        if (is_blocked !== undefined) dbUpdates.is_blocked = is_blocked;
+        if (notes !== undefined) dbUpdates.notes = notes;
+
+        await supabase.from('guests').update(dbUpdates).eq('id', id);
       } catch (err) {
         console.error('Failed to update guest in Supabase:', err);
       }

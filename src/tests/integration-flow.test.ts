@@ -166,4 +166,26 @@ describe('Party Lifecycle Integration Flow', () => {
     };
     expect(adminEdit.custom_drink_limit).toBe(7);
   });
+
+  it('validates staff authentication lifecycle and security isolation', async () => {
+    const { authenticateStaff, isStaffAuthenticated, logoutStaff } = await import('@/lib/auth');
+
+    // Initially unauthenticated (or reset)
+    logoutStaff();
+    expect(isStaffAuthenticated()).toBe(false);
+
+    // Incorrect PIN fails
+    const badAuth = authenticateStaff('0000', settings.admin_pin);
+    expect(badAuth).toBe(false);
+    expect(isStaffAuthenticated()).toBe(false);
+
+    // Correct PIN succeeds
+    const goodAuth = authenticateStaff('1031', settings.admin_pin);
+    expect(goodAuth).toBe(true);
+    expect(isStaffAuthenticated()).toBe(true);
+
+    // Logout locks terminal
+    logoutStaff();
+    expect(isStaffAuthenticated()).toBe(false);
+  });
 });

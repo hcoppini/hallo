@@ -57,4 +57,82 @@ describe('Tag Utils Parsing & Matching', () => {
     expect(findGuestByTag(list, 'tag-4')?.name).toBe('Kasia Kowalska');
     expect(findGuestByTag(list, 'TAG-999')).toBeUndefined();
   });
+
+  it('matches guest by hardware_uid even when tag_id differs', () => {
+    const mockGuestWithUid: Guest = {
+      id: 'GUEST-012',
+      tag_id: 'TAG-012',
+      hardware_uid: '04:A2:3B:5F:81:70:80',
+      name: 'Piotr Zieliński',
+      category: 'standard',
+      custom_drink_limit: null,
+      drinks_consumed: 0,
+      is_entered: true,
+      entered_at: '2026-10-02T18:00:00Z',
+      is_blocked: false,
+      notes: null,
+    };
+
+    expect(isTagMatch(mockGuestWithUid, '04:A2:3B:5F:81:70:80')).toBe(true);
+    expect(isTagMatch(mockGuestWithUid, '04A23B5F817080')).toBe(true);
+    expect(isTagMatch(mockGuestWithUid, '04:a2:3b:5f:81:70:80')).toBe(true);
+    expect(isTagMatch(mockGuestWithUid, 'TAG-012')).toBe(true);
+    expect(isTagMatch(mockGuestWithUid, '04A23B00000000')).toBe(false);
+
+    const list = [mockGuestWithUid];
+    expect(findGuestByTag(list, '04A23B5F817080')?.name).toBe('Piotr Zieliński');
+  });
+
+  it('matches guest by hardware_uid encoded in notes', () => {
+    const mockGuestWithNotesUid: Guest = {
+      id: 'GUEST-015',
+      tag_id: 'TAG-015',
+      name: 'Marek Nowak',
+      category: 'standard',
+      custom_drink_limit: null,
+      drinks_consumed: 0,
+      is_entered: true,
+      entered_at: '2026-10-02T18:00:00Z',
+      is_blocked: false,
+      notes: '[UID:04B56C7D8E9F] Table 4',
+    };
+
+    expect(isTagMatch(mockGuestWithNotesUid, '04:B5:6C:7D:8E:9F')).toBe(true);
+    expect(isTagMatch(mockGuestWithNotesUid, '04B56C7D8E9F')).toBe(true);
+    expect(isTagMatch(mockGuestWithNotesUid, 'TAG-015')).toBe(true);
+    expect(isTagMatch(mockGuestWithNotesUid, '04A23B5F817080')).toBe(false);
+  });
+
+  it('formats human-readable guest display names correctly', async () => {
+    const { getGuestDisplayName } = await import('../lib/tag-utils');
+
+    const guest1: Guest = {
+      id: 'GUEST-001',
+      tag_id: 'TAG-001',
+      name: 'Kasia Kowalska',
+      category: 'standard',
+      custom_drink_limit: null,
+      drinks_consumed: 2,
+      is_entered: true,
+      entered_at: '2026-10-02T18:00:00Z',
+      is_blocked: false,
+      notes: null,
+    };
+
+    const guest2: Guest = {
+      id: 'GUEST-002',
+      tag_id: 'TAG-002',
+      name: null,
+      category: 'standard',
+      custom_drink_limit: null,
+      drinks_consumed: 0,
+      is_entered: false,
+      entered_at: null,
+      is_blocked: false,
+      notes: null,
+    };
+
+    expect(getGuestDisplayName(guest1)).toBe('Kasia Kowalska (Tag #1)');
+    expect(getGuestDisplayName(guest2)).toBe('Tag #2 (Unassigned)');
+  });
 });

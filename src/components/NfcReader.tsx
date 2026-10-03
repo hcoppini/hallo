@@ -1,20 +1,23 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Radio, Wifi, Smartphone, CheckCircle, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Radio, Smartphone, CheckCircle, AlertTriangle } from 'lucide-react';
 import { isWebNfcSupported, nfcController } from '@/lib/nfc';
 import { usePartyStore } from '@/lib/store';
+import { getGuestDisplayName } from '@/lib/tag-utils';
 
 interface NfcReaderProps {
-  onTagScanned: (tagId: string) => void;
+  onTagScanned: (tagId: string, hardwareUid?: string) => void;
   activeTagId?: string | null;
   modeLabel?: string;
+  autoStart?: boolean;
 }
 
 export function NfcReader({
   onTagScanned,
   activeTagId,
   modeLabel = 'ready for wristband tap',
+  autoStart = false,
 }: NfcReaderProps) {
   const { guests } = usePartyStore();
   const [isSupported, setIsSupported] = useState(false);
@@ -23,16 +26,12 @@ export function NfcReader({
   const [simTag, setSimTag] = useState('');
   const [lastScanned, setLastScanned] = useState<string | null>(null);
 
-  useEffect(() => {
-    setIsSupported(isWebNfcSupported());
-  }, []);
-
-  const startPhysicalNfc = async () => {
+  const startPhysicalNfc = useCallback(async () => {
     setErrorMsg(null);
     const ok = await nfcController.startScan(
-      tagId => {
-        setLastScanned(tagId);
-        onTagScanned(tagId);
+      (tagId, hardwareUid) => {
+        setLastScanned(tagId || hardwareUid || '');
+        onTagScanned(tagId, hardwareUid);
       },
       err => {
         setErrorMsg(err.message);
@@ -42,7 +41,15 @@ export function NfcReader({
     if (ok) {
       setIsScanning(true);
     }
-  };
+  }, [onTagScanned]);
+
+  useEffect(() => {
+    const supported = isWebNfcSupported();
+    setIsSupported(supported);
+    if (supported && autoStart && !nfcController.getScanningState()) {
+      startPhysicalNfc();
+    }
+  }, [autoStart, startPhysicalNfc]);
 
   const handleSimulate = (tag: string) => {
     const clean = tag.trim().toUpperCase();
@@ -72,7 +79,7 @@ export function NfcReader({
         </h3>
         <p className="font-sans-clean text-xs text-black/60 lowercase max-w-md mx-auto mb-6">
           {isSupported
-            ? 'hold physical wristband sticker to back of phone'
+            ? 'hold physical wristband sticker against back of phone'
             : 'web nfc active / simulator enabled for development and testing'}
         </p>
 
@@ -91,7 +98,7 @@ export function NfcReader({
             ) : (
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 text-emerald-800 border border-emerald-500/20 text-xs font-semibold">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                <span>phone nfc listening for wristbands...</span>
+                <span>phone nfc listening for wristbands (screen awake)...</span>
               </div>
             )}
           </div>
@@ -122,7 +129,7 @@ export function NfcReader({
             </span>
           </div>
           <span className="text-[10px] text-black/40 font-sans-clean lowercase">
-            pre-party testing mode
+            tap simulation
           </span>
         </div>
 
@@ -130,6 +137,7 @@ export function NfcReader({
         <div className="flex flex-wrap gap-2 mb-4">
           {quickTags.map(g => {
             const isSelected = activeTagId === g.tag_id;
+            const displayName = getGuestDisplayName(g);
             return (
               <button
                 key={g.id}
@@ -141,10 +149,7 @@ export function NfcReader({
                     : 'bg-white hover:bg-black/5 text-black border-black/10'
                 }`}
               >
-                <span className="font-mono font-bold">{g.tag_id}</span>
-                <span className="text-black/50 text-[11px]">
-                  ({g.name || 'unassigned'})
-                </span>
+                <span className="font-bold">{displayName}</span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/10 text-black font-semibold">
                   {g.drinks_consumed}🍹
                 </span>

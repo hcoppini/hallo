@@ -48,6 +48,12 @@ export function AdminPinModal({
       soundSystem.playApprovedSound();
       setPin('');
       setError(false);
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('halloween_party_staff_auth_v1', 'true');
+          window.dispatchEvent(new Event('halloween_party_auth_change'));
+        } catch {}
+      }
       onSuccess();
     } else {
       soundSystem.playErrorSound();
@@ -146,7 +152,7 @@ export function AdminPinModal({
 
         <div className="mt-6 text-center">
           <span className="text-[10px] text-black/40 font-sans-clean lowercase">
-            default security pin: 1031 (changeable in admin)
+            authorized organizers and staff only
           </span>
         </div>
       </div>

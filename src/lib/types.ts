@@ -16,6 +16,7 @@ export interface PartySettings {
 export interface Guest {
   id: string;
   tag_id: string;
+  hardware_uid?: string | null;
   name: string | null;
   category: GuestCategory;
   custom_drink_limit: number | null; // null inherits default_drink_limit
@@ -56,8 +57,10 @@ export interface ServeDrinkResult {
 
 export interface DoorCheckInInput {
   tag_id: string;
+  hardware_uid?: string | null;
   name: string;
   category?: GuestCategory;
   custom_drink_limit?: number | null;
   notes?: string;
 }
+

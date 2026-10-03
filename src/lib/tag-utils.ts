@@ -20,7 +20,19 @@ export interface TagParseResult {
  * - "04:A2:3B:5F" -> canonicalTag: "04:A2:3B:5F", tagNumber: null
  */
 export function parseTagId(rawTag: string): TagParseResult {
-  const decoded = decodeURIComponent(rawTag || '').trim();
+  let decoded = decodeURIComponent(rawTag || '').trim();
+
+  // If input is a URL (e.g. https://domain.com/t/TAG-004 or http://localhost:3000/t/4), extract the slug or query
+  const urlPathMatch = decoded.match(/\/t\/([^/?#]+)/i);
+  if (urlPathMatch && urlPathMatch[1]) {
+    decoded = urlPathMatch[1];
+  } else {
+    const urlQueryMatch = decoded.match(/[?&](?:tag|id)=([^&]+)/i);
+    if (urlQueryMatch && urlQueryMatch[1]) {
+      decoded = urlQueryMatch[1];
+    }
+  }
+
   const upper = decoded.toUpperCase();
 
   // 1. Try to extract tag number from standard formats: TAG-004, TAG4, GUEST-004, #4, or just 4
@@ -49,6 +61,7 @@ export function parseTagId(rawTag: string): TagParseResult {
 
 /**
  * Robustly matches a tag string against a guest record.
+ * Supports canonical tag (TAG-001), hardware UID (04:A2:3B... / 04A23B...), or tag number.
  */
 export function isTagMatch(guest: Guest, searchTag: string): boolean {
   if (!searchTag || !guest) return false;
@@ -63,32 +76,55 @@ export function isTagMatch(guest: Guest, searchTag: string): boolean {
     return true;
   }
 
-  // 2. Canonical tag match (e.g. TAG-004 matches tag-4 or 4)
+  // 2. Hardware UID match (comparing stripped alphanumerics)
+  let effectiveHardwareUid = guest.hardware_uid;
+  if (!effectiveHardwareUid && guest.notes) {
+    const uidMatch = guest.notes.match(/\[UID:([A-Za-z0-9:]+)\]/i);
+    if (uidMatch && uidMatch[1]) {
+      effectiveHardwareUid = uidMatch[1];
+    }
+  }
+
+  if (effectiveHardwareUid && parsedSearch.cleanAlphanumeric) {
+    const guestUidClean = effectiveHardwareUid.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (guestUidClean === parsedSearch.cleanAlphanumeric) {
+      return true;
+    }
+  }
+
+  // Also check if guest.tag_id itself is a hardware UID
+  if (parsedGuestTag.cleanAlphanumeric && parsedSearch.cleanAlphanumeric) {
+    if (parsedGuestTag.cleanAlphanumeric === parsedSearch.cleanAlphanumeric) {
+      return true;
+    }
+  }
+
+  // 3. Canonical tag match (e.g. TAG-004 matches tag-4 or 4)
   if (parsedSearch.canonicalTag && parsedGuestTag.canonicalTag) {
     if (parsedSearch.canonicalTag === parsedGuestTag.canonicalTag) {
       return true;
     }
   }
 
-  // 3. Tag number match (e.g. #4 matches TAG-004 or GUEST-004)
+  // 4. Tag number match (e.g. #4 matches TAG-004 or GUEST-004)
   if (parsedSearch.tagNumber !== null) {
     if (parsedGuestTag.tagNumber === parsedSearch.tagNumber || parsedGuestId.tagNumber === parsedSearch.tagNumber) {
       return true;
     }
   }
 
-  // 4. Clean alphanumeric match (ignoring colons, dashes, etc.)
+  // 5. Clean alphanumeric match (ignoring colons, dashes, etc.)
   if (parsedSearch.cleanAlphanumeric && parsedGuestTag.cleanAlphanumeric) {
     if (parsedSearch.cleanAlphanumeric === parsedGuestTag.cleanAlphanumeric) {
       return true;
     }
-    // Prefix match if NFC Tools appended hardware UID
+    // Prefix match if NFC Tools appended hardware UID to URL
     if (parsedSearch.cleanAlphanumeric.startsWith(parsedGuestTag.cleanAlphanumeric)) {
       return true;
     }
   }
 
-  // 5. Prefix match for NFC Tools variables (e.g. "TAG-004:04:A2..." starts with "TAG-004")
+  // 6. Prefix match for NFC Tools variables (e.g. "TAG-004:04:A2..." starts with "TAG-004")
   if (searchUpper.startsWith(guest.tag_id.toUpperCase())) {
     return true;
   }
@@ -97,9 +133,25 @@ export function isTagMatch(guest: Guest, searchTag: string): boolean {
 }
 
 /**
- * Searches a list of guests for a match using fuzzy tag parsing.
+ * Searches a list of guests for a match using fuzzy tag parsing and UID lookup.
  */
 export function findGuestByTag(guests: Guest[], searchTag: string): Guest | undefined {
   if (!searchTag || !guests || guests.length === 0) return undefined;
   return guests.find(g => isTagMatch(g, searchTag));
 }
+
+/**
+ * Formats a clean, human-readable display title for any guest.
+ * Avoids displaying raw hex hardware UIDs to bartenders or users.
+ */
+export function getGuestDisplayName(guest: Guest): string {
+  const parsed = parseTagId(guest.tag_id);
+  const tagLabel = parsed.tagNumber !== null ? `Tag #${parsed.tagNumber}` : guest.tag_id;
+
+  if (guest.name && guest.name.trim().length > 0) {
+    return parsed.tagNumber !== null ? `${guest.name.trim()} (${tagLabel})` : guest.name.trim();
+  }
+
+  return `${tagLabel} (Unassigned)`;
+}
+
