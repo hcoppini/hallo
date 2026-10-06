@@ -103,6 +103,11 @@ class SoundSystem {
     this.vibrate([300, 100, 300, 100, 500]);
   }
 
+  // Alias for limit cutoff
+  playCutoffSound(): void {
+    this.playLimitSound();
+  }
+
   // Play subtle error click
   playErrorSound(): void {
     const ctx = this.getContext();

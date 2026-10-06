@@ -17,6 +17,7 @@ import confetti from 'canvas-confetti';
 import { findGuestByTag, parseTagId } from '@/lib/tag-utils';
 import { isWebNfcSupported, nfcController } from '@/lib/nfc';
 import { soundSystem } from '@/lib/audio';
+import { setStaffAuthenticated } from '@/lib/auth';
 
 export default function DoorCheckInPage() {
   const { guests, checkIn, settings } = usePartyStore();
@@ -41,6 +42,7 @@ export default function DoorCheckInPage() {
 
   useEffect(() => {
     setIsNfcSupported(isWebNfcSupported());
+    setStaffAuthenticated(true);
     if (typeof window !== 'undefined') {
       setBaseUrl(window.location.origin);
       const params = new URLSearchParams(window.location.search);

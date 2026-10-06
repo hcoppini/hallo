@@ -3,17 +3,80 @@
 import { useState, useEffect } from 'react';
 
 const STAFF_AUTH_KEY = 'halloween_party_staff_auth_v1';
+const STAFF_COOKIE_NAME = 'halloween_staff_session';
+const STAFF_DRINK_KEY = 'halloween_active_drink_type';
 const AUTH_EVENT_NAME = 'halloween_party_auth_change';
 
 let memoryAuthSession = false;
 
+function getCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(new RegExp('(^|;\\s*)(' + name + ')=([^;]*)'));
+  return match ? decodeURIComponent(match[3]) : null;
+}
+
+function setCookie(name: string, value: string, maxAgeSeconds = 86400): void {
+  if (typeof document === 'undefined') return;
+  document.cookie = `${name}=${encodeURIComponent(value)}; max-age=${maxAgeSeconds}; path=/; SameSite=Lax`;
+}
+
+function removeCookie(name: string): void {
+  if (typeof document === 'undefined') return;
+  document.cookie = `${name}=; max-age=0; path=/; SameSite=Lax`;
+}
+
 export function isStaffAuthenticated(): boolean {
   if (typeof window === 'undefined') return memoryAuthSession;
+
+  // 1. Check in-memory flag
+  if (memoryAuthSession) return true;
+
+  // 2. Check localStorage
   try {
     const val = localStorage.getItem(STAFF_AUTH_KEY);
-    return val === 'true' || memoryAuthSession;
-  } catch {
-    return memoryAuthSession;
+    if (val === 'true') {
+      memoryAuthSession = true;
+      return true;
+    }
+  } catch {}
+
+  // 3. Check persistent 24-hour cookie
+  try {
+    const cookieVal = getCookie(STAFF_COOKIE_NAME);
+    if (cookieVal === 'true') {
+      memoryAuthSession = true;
+      return true;
+    }
+  } catch {}
+
+  // 4. Check URL query parameters (?staff=1 or ?key=staff or ?pin=...)
+  try {
+    const search = window.location.search;
+    if (search) {
+      const params = new URLSearchParams(search);
+      if (params.get('staff') === '1' || params.get('staff') === 'true' || params.get('key') === 'staff') {
+        setStaffAuthenticated(true);
+        return true;
+      }
+    }
+  } catch {}
+
+  return false;
+}
+
+export function setStaffAuthenticated(authenticated: boolean): void {
+  memoryAuthSession = authenticated;
+  if (typeof window !== 'undefined') {
+    try {
+      if (authenticated) {
+        localStorage.setItem(STAFF_AUTH_KEY, 'true');
+        setCookie(STAFF_COOKIE_NAME, 'true', 86400); // 24 hours
+      } else {
+        localStorage.removeItem(STAFF_AUTH_KEY);
+        removeCookie(STAFF_COOKIE_NAME);
+      }
+      window.dispatchEvent(new Event(AUTH_EVENT_NAME));
+    } catch {}
   }
 }
 
@@ -21,29 +84,32 @@ export function authenticateStaff(enteredPin: string, validPin: string): boolean
   if (!enteredPin || !validPin) return false;
   const isMatch = enteredPin.trim() === validPin.trim();
   if (isMatch) {
-    memoryAuthSession = true;
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem(STAFF_AUTH_KEY, 'true');
-        window.dispatchEvent(new Event(AUTH_EVENT_NAME));
-      } catch {
-        // fallback
-      }
-    }
+    setStaffAuthenticated(true);
   }
   return isMatch;
 }
 
 export function logoutStaff(): void {
-  memoryAuthSession = false;
-  if (typeof window !== 'undefined') {
-    try {
-      localStorage.removeItem(STAFF_AUTH_KEY);
-      window.dispatchEvent(new Event(AUTH_EVENT_NAME));
-    } catch {
-      // fallback
-    }
+  setStaffAuthenticated(false);
+}
+
+let memoryActiveDrinkType = 'cocktail';
+
+export function getStaffActiveDrinkType(): string {
+  if (typeof window === 'undefined') return memoryActiveDrinkType;
+  try {
+    return localStorage.getItem(STAFF_DRINK_KEY) || memoryActiveDrinkType;
+  } catch {
+    return memoryActiveDrinkType;
   }
+}
+
+export function setStaffActiveDrinkType(drinkType: string): void {
+  memoryActiveDrinkType = drinkType;
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(STAFF_DRINK_KEY, drinkType);
+  } catch {}
 }
 
 /**
