@@ -17,10 +17,14 @@ import confetti from 'canvas-confetti';
 import { findGuestByTag, parseTagId } from '@/lib/tag-utils';
 import { isWebNfcSupported, nfcController } from '@/lib/nfc';
 import { soundSystem } from '@/lib/audio';
-import { setStaffAuthenticated } from '@/lib/auth';
+import { useStaffAuth } from '@/lib/auth';
+import { AdminPinModal } from '@/components/AdminPinModal';
+import { Lock, LogOut, ShieldCheck } from 'lucide-react';
 
 export default function DoorCheckInPage() {
   const { guests, checkIn, settings } = usePartyStore();
+  const { isAuthenticated, logout } = useStaffAuth();
+  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
 
   const [tagId, setTagId] = useState('');
   const [name, setName] = useState('');
@@ -42,7 +46,6 @@ export default function DoorCheckInPage() {
 
   useEffect(() => {
     setIsNfcSupported(isWebNfcSupported());
-    setStaffAuthenticated(true);
     if (typeof window !== 'undefined') {
       setBaseUrl(window.location.origin);
       const params = new URLSearchParams(window.location.search);
@@ -150,8 +153,62 @@ export default function DoorCheckInPage() {
     executeCheckIn(false);
   };
 
+  if (!isAuthenticated) {
+    return (
+      <div className="w-full py-12 px-4 max-w-sm mx-auto text-center space-y-6">
+        <div className="w-16 h-16 rounded-3xl bg-black/5 flex items-center justify-center mx-auto text-black border border-black/10">
+          <Lock className="w-8 h-8" />
+        </div>
+        <div>
+          <span className="font-mono text-[10px] text-black/40 uppercase tracking-widest block mb-1">
+            STAFF SECURITY LOCK
+          </span>
+          <h2 className="font-display text-3xl font-bold lowercase text-black">
+            door reception
+          </h2>
+          <p className="font-sans-clean text-xs text-black/60 mt-1 max-w-xs mx-auto">
+            Authorized greeters only. Enter 4-digit staff PIN to unlock door check-in.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setIsPinModalOpen(true)}
+          className="btn-premium-primary w-full py-4 text-xs gap-2"
+        >
+          <Lock className="w-4 h-4" />
+          <span>Unlock Door Reception</span>
+        </button>
+
+        <AdminPinModal
+          isOpen={isPinModalOpen}
+          title="staff authorization"
+          subtitle="enter 4-digit staff pin to unlock door check-in"
+          onSuccess={() => setIsPinModalOpen(false)}
+          onClose={() => setIsPinModalOpen(false)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="w-full py-4 space-y-6">
+      {/* Staff Status Header & Lock Button */}
+      <div className="p-3 rounded-2xl bg-black text-white text-xs font-sans-clean flex items-center justify-between shadow-lg">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-emerald-400" />
+          <span className="font-bold text-[10px] tracking-wide uppercase">Door Reception Active</span>
+        </div>
+        <button
+          type="button"
+          onClick={logout}
+          className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[11px] font-semibold flex items-center gap-1.5 transition-colors"
+        >
+          <LogOut className="w-3 h-3" />
+          <span>Lock Station</span>
+        </button>
+      </div>
+
       {/* Page Title & Stats */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
         <div>

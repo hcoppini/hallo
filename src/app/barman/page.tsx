@@ -5,14 +5,18 @@ import { NfcReader } from '@/components/NfcReader';
 import { BarmanDisplay } from '@/components/BarmanDisplay';
 import { SpeedKeypad } from '@/components/SpeedKeypad';
 import { QuickSearchModal } from '@/components/QuickSearchModal';
+import { AdminPinModal } from '@/components/AdminPinModal';
 import { usePartyStore } from '@/lib/store';
 import { DrinkType, ServeDrinkResult, Guest } from '@/lib/types';
 import { nfcController } from '@/lib/nfc';
-import { setStaffAuthenticated, setStaffActiveDrinkType, getStaffActiveDrinkType } from '@/lib/auth';
-import { Zap, Radio, Search } from 'lucide-react';
+import { useStaffAuth, setStaffActiveDrinkType, getStaffActiveDrinkType } from '@/lib/auth';
+import { Zap, Radio, Search, Lock, LogOut, ShieldCheck } from 'lucide-react';
 
 export default function BarmanPage() {
   const { serveDrink, settings } = usePartyStore();
+  const { isAuthenticated, logout } = useStaffAuth();
+  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+
   const [selectedDrinkType, setSelectedDrinkType] = useState<DrinkType>(() => {
     return (getStaffActiveDrinkType() as DrinkType) || 'cocktail';
   });
@@ -21,14 +25,15 @@ export default function BarmanPage() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [inputMode, setInputMode] = useState<'keypad' | 'nfc'>('keypad');
 
-  // Auto-acquire wake lock on barman desk so screen stays awake & ensure staff auth is locked in
+  // Auto-acquire wake lock on barman desk so screen stays awake
   useEffect(() => {
-    nfcController.requestWakeLock();
-    setStaffAuthenticated(true);
+    if (isAuthenticated) {
+      nfcController.requestWakeLock();
+    }
     return () => {
       nfcController.releaseWakeLock();
     };
-  }, []);
+  }, [isAuthenticated]);
 
   // Sync drink type changes with staff session storage
   const handleDrinkTypeChange = (type: DrinkType) => {
@@ -38,14 +43,14 @@ export default function BarmanPage() {
 
   // Handle incoming redirect from /t/[id]?tag=...
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && isAuthenticated) {
       const params = new URLSearchParams(window.location.search);
       const tagParam = params.get('tag') || params.get('served');
       if (tagParam) {
         handleManualServe(decodeURIComponent(tagParam).toUpperCase(), selectedDrinkType);
       }
     }
-  }, [selectedDrinkType]);
+  }, [selectedDrinkType, isAuthenticated]);
 
   const handleTagScanned = async (tagId: string, hardwareUid?: string) => {
     const targetTag = tagId || hardwareUid || '';
@@ -64,8 +69,63 @@ export default function BarmanPage() {
     await handleManualServe(guest.tag_id, selectedDrinkType);
   };
 
+  // If not authenticated, require the 4-digit staff PIN
+  if (!isAuthenticated) {
+    return (
+      <div className="w-full py-12 px-4 max-w-sm mx-auto text-center space-y-6">
+        <div className="w-16 h-16 rounded-3xl bg-black/5 flex items-center justify-center mx-auto text-black border border-black/10">
+          <Lock className="w-8 h-8" />
+        </div>
+        <div>
+          <span className="font-mono text-[10px] text-black/40 uppercase tracking-widest block mb-1">
+            STAFF SECURITY LOCK
+          </span>
+          <h2 className="font-display text-3xl font-bold lowercase text-black">
+            barman station
+          </h2>
+          <p className="font-sans-clean text-xs text-black/60 mt-1 max-w-xs mx-auto">
+            This terminal is locked. Enter the 4-digit staff PIN to enable drink logging.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setIsPinModalOpen(true)}
+          className="btn-premium-primary w-full py-4 text-xs gap-2"
+        >
+          <Lock className="w-4 h-4" />
+          <span>Enter Staff PIN</span>
+        </button>
+
+        <AdminPinModal
+          isOpen={isPinModalOpen}
+          title="staff authorization"
+          subtitle="enter 4-digit staff pin to unlock bar desk"
+          onSuccess={() => setIsPinModalOpen(false)}
+          onClose={() => setIsPinModalOpen(false)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="w-full py-4 space-y-6">
+      {/* Staff Status Header & Lock Button */}
+      <div className="p-3 rounded-2xl bg-black text-white text-xs font-sans-clean flex items-center justify-between shadow-lg max-w-md mx-auto">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-emerald-400" />
+          <span className="font-bold text-[10px] tracking-wide uppercase">Barman Terminal Active</span>
+        </div>
+        <button
+          type="button"
+          onClick={logout}
+          className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[11px] font-semibold flex items-center gap-1.5 transition-colors"
+        >
+          <LogOut className="w-3 h-3" />
+          <span>Lock Station</span>
+        </button>
+      </div>
+
       {/* High-Contrast Drink Counter / Limit Alert Screen */}
       <div>
         <BarmanDisplay

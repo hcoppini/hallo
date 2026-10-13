@@ -5,6 +5,8 @@ import { Lock, X, Check, ShieldAlert } from 'lucide-react';
 import { usePartyStore } from '@/lib/store';
 import { soundSystem } from '@/lib/audio';
 
+import { setStaffAuthenticated } from '@/lib/auth';
+
 interface AdminPinModalProps {
   isOpen: boolean;
   title?: string;
@@ -48,12 +50,7 @@ export function AdminPinModal({
       soundSystem.playApprovedSound();
       setPin('');
       setError(false);
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.setItem('halloween_party_staff_auth_v1', 'true');
-          window.dispatchEvent(new Event('halloween_party_auth_change'));
-        } catch {}
-      }
+      setStaffAuthenticated(true);
       onSuccess();
     } else {
       soundSystem.playErrorSound();
