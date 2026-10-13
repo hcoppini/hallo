@@ -49,12 +49,13 @@ export function isStaffAuthenticated(): boolean {
     }
   } catch {}
 
-  // 4. Check URL query parameters (?staff=1 or ?key=staff or ?pin=...)
+  // 4. Check URL query parameters with secret PIN (?pin=1031 or ?key=1031)
   try {
     const search = window.location.search;
     if (search) {
       const params = new URLSearchParams(search);
-      if (params.get('staff') === '1' || params.get('staff') === 'true' || params.get('key') === 'staff') {
+      const pinParam = params.get('pin') || params.get('key');
+      if (pinParam && pinParam.trim() === '1031') {
         setStaffAuthenticated(true);
         return true;
       }
