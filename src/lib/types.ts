@@ -1,6 +1,48 @@
 export type GuestCategory = 'standard' | 'driver_minor' | 'vip';
 
-export type DrinkType = 'beer' | 'cocktail' | 'shot' | 'wine' | 'soft';
+export type SpecificDrinkType =
+  | 'beer'
+  | 'whiskey sour'
+  | 'mojito'
+  | 'jagerbomba'
+  | 'cosmopolitan'
+  | 'red wine'
+  | 'sparkling wine';
+
+export type DrinkType =
+  | SpecificDrinkType
+  | 'cocktail'
+  | 'shot'
+  | 'wine'
+  | 'soft';
+
+export interface BarDrinkOption {
+  type: SpecificDrinkType;
+  label: string;
+  historyLabel: string;
+  category: 'beer' | 'cocktail' | 'shot' | 'wine';
+}
+
+export const BAR_DRINKS: BarDrinkOption[] = [
+  { type: 'beer', label: 'beer', historyLabel: 'Beer', category: 'beer' },
+  { type: 'whiskey sour', label: 'whiskey sour', historyLabel: 'Cocktail - Whiskey Sour', category: 'cocktail' },
+  { type: 'mojito', label: 'mojito', historyLabel: 'Cocktail - Mojito', category: 'cocktail' },
+  { type: 'jagerbomba', label: 'jagerbomba', historyLabel: 'Shot - Jagerbomba', category: 'shot' },
+  { type: 'cosmopolitan', label: 'cosmopolitan', historyLabel: 'Cocktail - Cosmopolitan', category: 'cocktail' },
+  { type: 'red wine', label: 'red wine', historyLabel: 'Wine - Red Wine', category: 'wine' },
+  { type: 'sparkling wine', label: 'sparkling wine', historyLabel: 'Wine - Sparkling Wine', category: 'wine' },
+];
+
+export function formatDrinkHistoryLabel(drinkType: string): string {
+  const normalized = drinkType.trim().toLowerCase();
+  const found = BAR_DRINKS.find(d => d.type === normalized);
+  if (found) return found.historyLabel;
+  if (normalized === 'cocktail') return 'Cocktail';
+  if (normalized === 'shot') return 'Shot';
+  if (normalized === 'wine') return 'Wine';
+  if (normalized === 'soft') return 'Soft Drink';
+  return drinkType.charAt(0).toUpperCase() + drinkType.slice(1);
+}
 
 export interface PartySettings {
   id: string;
@@ -63,4 +105,3 @@ export interface DoorCheckInInput {
   custom_drink_limit?: number | null;
   notes?: string;
 }
-

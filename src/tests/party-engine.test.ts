@@ -7,7 +7,7 @@ import {
   validateAdminPin,
   generateWristbandBatch,
 } from '@/lib/party-engine';
-import { Guest, PartySettings, DrinkLog } from '@/lib/types';
+import { Guest, PartySettings, DrinkLog, BAR_DRINKS, formatDrinkHistoryLabel } from '@/lib/types';
 
 const defaultSettings: PartySettings = {
   id: 'default_party',
@@ -53,6 +53,43 @@ describe('Party Engine - Effective Limit Calculation', () => {
   });
 });
 
+describe('Barman Hub - Hardcoded Specific Drinks & History Formatting', () => {
+  it('exposes the 7 required specific drinks without soft drink', () => {
+    const drinkTypes = BAR_DRINKS.map(d => d.type);
+    expect(drinkTypes).toEqual([
+      'beer',
+      'whiskey sour',
+      'mojito',
+      'jagerbomba',
+      'cosmopolitan',
+      'red wine',
+      'sparkling wine',
+    ]);
+    expect(drinkTypes).not.toContain('soft');
+  });
+
+  it('formats drink history labels cleanly for customer history section', () => {
+    expect(formatDrinkHistoryLabel('beer')).toBe('Beer');
+    expect(formatDrinkHistoryLabel('mojito')).toBe('Cocktail - Mojito');
+    expect(formatDrinkHistoryLabel('whiskey sour')).toBe('Cocktail - Whiskey Sour');
+    expect(formatDrinkHistoryLabel('jagerbomba')).toBe('Shot - Jagerbomba');
+    expect(formatDrinkHistoryLabel('cosmopolitan')).toBe('Cocktail - Cosmopolitan');
+    expect(formatDrinkHistoryLabel('red wine')).toBe('Wine - Red Wine');
+    expect(formatDrinkHistoryLabel('sparkling wine')).toBe('Wine - Sparkling Wine');
+  });
+
+  it('serves all 7 specific drinks and increments guest drink count', () => {
+    let guest = createMockGuest({ category: 'vip', drinks_consumed: 0 });
+    for (const drink of BAR_DRINKS) {
+      const res = processDrinkRequest(guest, defaultSettings, drink.type);
+      expect(res.success).toBe(true);
+      expect(res.drink_type).toBe(drink.type);
+      guest = res.guest!;
+    }
+    expect(guest.drinks_consumed).toBe(7);
+  });
+});
+
 describe('Party Engine - Drink Serving Logic', () => {
   it('should allow serving a drink when below limit and increment count', () => {
     const guest = createMockGuest({ drinks_consumed: 2 });
@@ -67,7 +104,7 @@ describe('Party Engine - Drink Serving Logic', () => {
 
   it('should flag is_final_drink and is_limit_reached when reaching exact limit', () => {
     const guest = createMockGuest({ drinks_consumed: 4 });
-    const result = processDrinkRequest(guest, defaultSettings, 'cocktail');
+    const result = processDrinkRequest(guest, defaultSettings, 'mojito');
 
     expect(result.success).toBe(true);
     expect(result.drinks_consumed).toBe(5);
@@ -78,7 +115,7 @@ describe('Party Engine - Drink Serving Logic', () => {
 
   it('should REJECT drink when guest is already at limit', () => {
     const guest = createMockGuest({ drinks_consumed: 5 });
-    const result = processDrinkRequest(guest, defaultSettings, 'shot');
+    const result = processDrinkRequest(guest, defaultSettings, 'jagerbomba');
 
     expect(result.success).toBe(false);
     expect(result.error).toBe('LIMIT_REACHED');
@@ -89,7 +126,7 @@ describe('Party Engine - Drink Serving Logic', () => {
 
   it('should reject alcoholic drinks immediately for driver/minor (limit 0)', () => {
     const guest = createMockGuest({ category: 'driver_minor', drinks_consumed: 0 });
-    const result = processDrinkRequest(guest, defaultSettings, 'wine');
+    const result = processDrinkRequest(guest, defaultSettings, 'red wine');
 
     expect(result.success).toBe(false);
     expect(result.error).toBe('LIMIT_REACHED');
@@ -123,7 +160,7 @@ describe('Party Engine - Drink Serving Logic', () => {
 
   it('should allow unlimited drinks for VIPs', () => {
     const guest = createMockGuest({ category: 'vip', drinks_consumed: 12 });
-    const result = processDrinkRequest(guest, defaultSettings, 'cocktail');
+    const result = processDrinkRequest(guest, defaultSettings, 'whiskey sour');
 
     expect(result.success).toBe(true);
     expect(result.drinks_consumed).toBe(13);
@@ -137,7 +174,7 @@ describe('Party Engine - Undo & Revert Drink', () => {
     const log: DrinkLog = {
       id: 'log-123',
       guest_id: guest.id,
-      drink_type: 'beer',
+      drink_type: 'mojito',
       served_at: new Date().toISOString(),
       served_by: 'barman',
       is_reverted: false,

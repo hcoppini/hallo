@@ -50,7 +50,11 @@ function getInitialLocalData() {
   let settings = initialSettings;
   try {
     const raw = localStorage.getItem(STORAGE_KEY_SETTINGS);
-    if (raw) { const p = JSON.parse(raw); if (p.admin_pin === '1031') p.admin_pin = '2113'; settings = { ...initialSettings, ...p }; }
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (p.admin_pin === '1031') p.admin_pin = '2113';
+      settings = { ...initialSettings, ...p };
+    }
   } catch {
     // fallback
   }
@@ -88,6 +92,8 @@ const listeners = new Set<Listener>();
 let globalSettings = initialSettings;
 let globalGuests: Guest[] = [];
 let globalLogs: DrinkLog[] = [];
+let globalSelectedGuestId: string | null = null;
+let globalIsSearchOpen = false;
 let isInitialized = false;
 let isSyncingGlobal = false;
 let isRealtimeInitialized = false;
@@ -120,7 +126,11 @@ async function syncFromSupabaseGlobal() {
       supabase.from('drink_logs').select('*').order('served_at', { ascending: false }).limit(100),
     ]);
 
-    if (settingsRes.data) { const s = { ...initialSettings, ...settingsRes.data }; if (s.admin_pin === '1031') s.admin_pin = '2113'; globalSettings = s; }
+    if (settingsRes.data) {
+      const s = { ...initialSettings, ...settingsRes.data };
+      if (s.admin_pin === '1031') s.admin_pin = '2113';
+      globalSettings = s;
+    }
     if (guestsRes.data && guestsRes.data.length > 0) globalGuests = guestsRes.data;
     if (logsRes.data) globalLogs = logsRes.data;
 
@@ -201,6 +211,16 @@ export function usePartyStore() {
     };
   }, []);
 
+  const setSelectedGuestId = useCallback((guestId: string | null) => {
+    globalSelectedGuestId = guestId;
+    notifySubscribers();
+  }, []);
+
+  const setIsSearchOpen = useCallback((open: boolean) => {
+    globalIsSearchOpen = open;
+    notifySubscribers();
+  }, []);
+
   /**
    * Directly fetches a guest by tag from Supabase, syncing with local memory
    */
@@ -257,7 +277,7 @@ export function usePartyStore() {
    * Serve Drink action (called by Barman or staff on /t/[id])
    */
   const serveDrink = useCallback(
-    async (tagId: string, drinkType: DrinkType = 'cocktail'): Promise<ServeDrinkResult> => {
+    async (tagId: string, drinkType: DrinkType = 'beer'): Promise<ServeDrinkResult> => {
       let guest = findGuestByTag(globalGuests, tagId);
 
       if (!guest && isSupabaseConfigured && supabase) {
@@ -284,6 +304,7 @@ export function usePartyStore() {
         };
       }
 
+      globalSelectedGuestId = activeGuest.id;
       const result = processDrinkRequest(activeGuest, globalSettings, drinkType);
 
       if (result.success && result.guest) {
@@ -332,6 +353,7 @@ export function usePartyStore() {
           }
         }
       } else {
+        notifySubscribers();
         soundSystem.playLimitSound();
       }
 
@@ -341,17 +363,19 @@ export function usePartyStore() {
   );
 
   /**
-   * Revert the most recent drink for a guest (Undo action)
+   * Revert a drink for a guest (Undo action - either specific logId or most recent active log)
    */
-  const revertLastDrink = useCallback(async (guestId: string): Promise<boolean> => {
+  const revertLastDrink = useCallback(async (guestId: string, logId?: string): Promise<boolean> => {
     const guest = globalGuests.find(g => g.id === guestId || isTagMatch(g, guestId));
     if (!guest) return false;
 
     const actualGuestId = guest.id;
-    const lastLog = globalLogs.find(l => l.guest_id === actualGuestId && !l.is_reverted);
-    if (!lastLog) return false;
+    const targetLog = logId
+      ? globalLogs.find(l => l.id === logId && l.guest_id === actualGuestId && !l.is_reverted)
+      : globalLogs.find(l => l.guest_id === actualGuestId && !l.is_reverted);
+    if (!targetLog) return false;
 
-    const { updatedGuest, revertedLog } = revertDrinkRequest(guest, lastLog);
+    const { updatedGuest, revertedLog } = revertDrinkRequest(guest, targetLog);
 
     globalGuests = globalGuests.map(g => (g.id === actualGuestId ? updatedGuest : g));
     globalLogs = globalLogs.map(l => (l.id === revertedLog.id ? revertedLog : l));
@@ -364,7 +388,7 @@ export function usePartyStore() {
       try {
         await Promise.allSettled([
           supabase.from('guests').update({ drinks_consumed: updatedGuest.drinks_consumed }).eq('id', actualGuestId),
-          supabase.from('drink_logs').update({ is_reverted: true, reverted_at: new Date().toISOString() }).eq('id', lastLog.id),
+          supabase.from('drink_logs').update({ is_reverted: true, reverted_at: new Date().toISOString() }).eq('id', targetLog.id),
         ]);
       } catch (err) {
         console.error('Failed to revert drink in Supabase:', err);
@@ -532,6 +556,7 @@ export function usePartyStore() {
       globalGuests = [updatedGuest, ...globalGuests];
     }
 
+    globalSelectedGuestId = updatedGuest.id;
     persistLocalState();
     notifySubscribers();
     soundSystem.playApprovedSound();
@@ -620,6 +645,7 @@ export function usePartyStore() {
     globalGuests = generateWristbandBatch(count);
     globalLogs = [];
     globalSettings = { ...initialSettings };
+    globalSelectedGuestId = null;
 
     persistLocalState();
     notifySubscribers();
@@ -660,6 +686,10 @@ export function usePartyStore() {
     settings: globalSettings,
     guests: globalGuests,
     logs: globalLogs,
+    selectedGuestId: globalSelectedGuestId,
+    setSelectedGuestId,
+    isSearchOpen: globalIsSearchOpen,
+    setIsSearchOpen,
     isSyncing: isSyncingGlobal,
     isSupabaseConnected: isSupabaseConfigured,
     serveDrink,

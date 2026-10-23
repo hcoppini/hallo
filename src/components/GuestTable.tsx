@@ -1,223 +1,463 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
-import { Search, Edit2, Ban, CheckCircle, UserCheck, Shield, AlertTriangle } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import {
+  Search,
+  Ban,
+  CheckCircle,
+  UserPlus,
+  X,
+  ArrowUpDown,
+  ChevronRight,
+  SlidersHorizontal,
+  Sparkles,
+  ShieldAlert,
+  Car,
+  Users,
+} from 'lucide-react';
 import { Guest } from '@/lib/types';
 import { usePartyStore } from '@/lib/store';
 import { calculateEffectiveLimit } from '@/lib/party-engine';
+import {
+  AdminGuestFilter,
+  AdminGuestSort,
+  computeAdminKpis,
+  extractCleanNotes,
+  filterAndSortGuests,
+  isGuestActiveOrAssigned,
+} from '@/lib/admin-utils';
 import { GuestEditModal } from './GuestEditModal';
 
-export function GuestTable() {
-  const { guests, settings } = usePartyStore();
+interface GuestTableProps {
+  activeFilter?: AdminGuestFilter;
+  onFilterChange?: (filter: AdminGuestFilter) => void;
+}
+
+const INITIAL_VISIBLE_COUNT = 24;
+
+export function GuestTable({ activeFilter, onFilterChange }: GuestTableProps) {
+  const { guests, logs, settings } = usePartyStore();
   const [search, setSearch] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState<'all' | 'entered' | 'at_limit' | 'vip' | 'driver'>('all');
+  const [internalFilter, setInternalFilter] = useState<AdminGuestFilter>('active');
+  const [sortBy, setSortBy] = useState<AdminGuestSort>('tag_asc');
   const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
+  const [showAllRows, setShowAllRows] = useState(false);
 
-  const filteredGuests = useMemo(() => {
-    return guests.filter(g => {
-      // Text search
-      const q = search.trim().toLowerCase();
-      const matchesSearch =
-        !q ||
-        (g.name && g.name.toLowerCase().includes(q)) ||
-        g.tag_id.toLowerCase().includes(q) ||
-        g.id.toLowerCase().includes(q);
+  const currentFilter = activeFilter ?? internalFilter;
 
-      if (!matchesSearch) return false;
+  const setFilter = (next: AdminGuestFilter) => {
+    setInternalFilter(next);
+    setShowAllRows(false);
+    onFilterChange?.(next);
+  };
 
-      const limit = calculateEffectiveLimit(g, settings);
-      const isAtLimit = g.category !== 'vip' && g.drinks_consumed >= limit;
+  useEffect(() => {
+    setShowAllRows(false);
+  }, [currentFilter, search, sortBy]);
 
-      // Category filter
-      if (categoryFilter === 'entered') return g.is_entered;
-      if (categoryFilter === 'at_limit') return isAtLimit;
-      if (categoryFilter === 'vip') return g.category === 'vip';
-      if (categoryFilter === 'driver') return g.category === 'driver_minor';
+  const kpis = useMemo(
+    () => computeAdminKpis(guests, logs, settings),
+    [guests, logs, settings]
+  );
 
-      return true;
-    });
-  }, [guests, search, categoryFilter, settings]);
+  const filteredGuests = useMemo(
+    () =>
+      filterAndSortGuests(guests, settings, {
+        search,
+        filter: currentFilter,
+        sort: sortBy,
+      }),
+    [guests, settings, search, currentFilter, sortBy]
+  );
+
+  const nextUnassignedGuest = useMemo(
+    () => guests.find(g => !isGuestActiveOrAssigned(g)) || null,
+    [guests]
+  );
+
+  const visibleGuests = useMemo(() => {
+    if (showAllRows || search.trim().length > 0) {
+      return filteredGuests;
+    }
+    return filteredGuests.slice(0, INITIAL_VISIBLE_COUNT);
+  }, [filteredGuests, showAllRows, search]);
+
+  // Keep editingGuest synced with latest store updates while modal is open
+  const liveEditingGuest = useMemo(() => {
+    if (!editingGuest) return null;
+    return guests.find(g => g.id === editingGuest.id) || editingGuest;
+  }, [guests, editingGuest]);
+
+  const filterTabs: Array<{
+    id: AdminGuestFilter;
+    label: string;
+    count: number;
+    accent?: 'danger' | 'amber' | 'blue';
+  }> = [
+    { id: 'active', label: 'checked in', count: kpis.activeCount },
+    {
+      id: 'at_limit',
+      label: 'at limit',
+      count: kpis.atLimitCount,
+      accent: kpis.atLimitCount > 0 ? 'danger' : undefined,
+    },
+    { id: 'vip', label: 'vip', count: kpis.vipCount, accent: 'amber' },
+    { id: 'driver', label: 'drivers / 0 alc', count: kpis.driverCount, accent: 'blue' },
+    {
+      id: 'blocked',
+      label: 'blocked',
+      count: kpis.blockedCount,
+      accent: kpis.blockedCount > 0 ? 'danger' : undefined,
+    },
+    { id: 'unassigned', label: 'unassigned', count: kpis.unassignedCount },
+    { id: 'all', label: 'all slots', count: kpis.totalSlots },
+  ];
 
   return (
-    <div className="w-full">
-      {/* Controls Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 mb-6">
-        {/* Search */}
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-black/40" />
+    <div className="w-full space-y-4">
+      {/* Top Search, Sort & Quick Assign Bar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+        {/* Search Input */}
+        <div className="relative flex-1">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-black/40 pointer-events-none" />
           <input
             type="text"
-            placeholder="Search by name, bracelet tag (TAG-001)..."
+            placeholder="Search guest name, tag (e.g. 14 or TAG-014), notes..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-black/5 border border-black/10 rounded-2xl text-xs font-sans-clean outline-none focus:border-black transition-colors"
+            className="w-full pl-10 pr-9 py-2.5 bg-white border border-black/12 rounded-2xl text-xs font-sans-clean text-black outline-none focus:border-black shadow-2xs transition-colors"
           />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-black/40 hover:text-black hover:bg-black/5"
+              aria-label="Clear search"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
-        {/* Filter Pills */}
-        <div className="flex flex-wrap gap-1.5">
-          {(
-            [
-              { id: 'all', label: 'all (100)' },
-              { id: 'entered', label: 'entered' },
-              { id: 'at_limit', label: 'at limit' },
-              { id: 'driver', label: 'drivers/minors' },
-              { id: 'vip', label: 'vip' },
-            ] as const
-          ).map(tab => (
+        {/* Sort & Quick Assign Controls */}
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 sm:flex-initial">
+            <ArrowUpDown className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-black/45 pointer-events-none" />
+            <select
+              value={sortBy}
+              onChange={e => setSortBy(e.target.value as AdminGuestSort)}
+              aria-label="Sort guests"
+              className="w-full sm:w-auto pl-8 pr-7 py-2.5 bg-white border border-black/12 rounded-2xl text-xs font-sans-clean font-semibold text-black/75 lowercase outline-none focus:border-black cursor-pointer shadow-2xs"
+            >
+              <option value="tag_asc">sort: tag #</option>
+              <option value="drinks_desc">sort: most drinks</option>
+              <option value="recent_entry">sort: recent entry</option>
+              <option value="name_asc">sort: name a–z</option>
+            </select>
+          </div>
+
+          {nextUnassignedGuest && (
+            <button
+              type="button"
+              onClick={() => setEditingGuest(nextUnassignedGuest)}
+              className="btn-premium-primary py-2.5 px-4 text-xs gap-1.5 shrink-0"
+              title={`Assign next available wristband (${nextUnassignedGuest.tag_id})`}
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>assign {nextUnassignedGuest.tag_id}</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Filter Pills Strip */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+        {filterTabs.map(tab => {
+          const isSelected = currentFilter === tab.id;
+          return (
             <button
               key={tab.id}
               type="button"
-              onClick={() => setCategoryFilter(tab.id)}
-              className={`px-3 py-1.5 rounded-full text-xs font-sans-clean font-semibold tracking-wider lowercase transition-all ${
-                categoryFilter === tab.id
-                  ? 'bg-black text-white shadow-sm'
-                  : 'bg-black/5 hover:bg-black/10 text-black/60'
+              onClick={() => setFilter(tab.id)}
+              className={`px-3 py-1.5 rounded-full text-xs font-sans-clean font-semibold tracking-wide lowercase transition-all flex items-center gap-1.5 shrink-0 border ${
+                isSelected
+                  ? 'bg-black text-white border-black shadow-xs'
+                  : tab.accent === 'danger' && tab.count > 0
+                  ? 'bg-red-50 hover:bg-red-100 text-red-800 border-red-200'
+                  : 'bg-white/80 hover:bg-black/5 text-black/65 border-black/10'
               }`}
             >
-              {tab.label}
+              <span>{tab.label}</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
+                  isSelected
+                    ? 'bg-white/20 text-white'
+                    : tab.accent === 'danger' && tab.count > 0
+                    ? 'bg-red-200/70 text-red-900'
+                    : 'bg-black/6 text-black/60'
+                }`}
+              >
+                {tab.count}
+              </span>
             </button>
-          ))}
-        </div>
+          );
+        })}
       </div>
 
-      {/* Guests Table */}
-      <div className="glass-card overflow-hidden border border-black/10 shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-black/10 bg-black/[0.02] text-[11px] font-sans-clean uppercase tracking-widest text-black/50">
-                <th className="py-3.5 px-4 font-semibold">Wristband</th>
-                <th className="py-3.5 px-4 font-semibold">Guest Name</th>
-                <th className="py-3.5 px-4 font-semibold">Category</th>
-                <th className="py-3.5 px-4 font-semibold">Status</th>
-                <th className="py-3.5 px-4 font-semibold">Drinks / Limit</th>
-                <th className="py-3.5 px-4 font-semibold text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-black/5 text-xs font-sans-clean">
-              {filteredGuests.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-12 text-center text-black/40 lowercase">
-                    no guests match the current filter
-                  </td>
-                </tr>
-              ) : (
-                filteredGuests.map(guest => {
-                  const limit = calculateEffectiveLimit(guest, settings);
-                  const isAtLimit = guest.category !== 'vip' && guest.drinks_consumed >= limit;
-                  const isNearLimit = guest.category !== 'vip' && guest.drinks_consumed === limit - 1;
+      {/* Guest Cards List / Responsive 2-Column Grid */}
+      {filteredGuests.length === 0 ? (
+        <div className="glass-card p-10 text-center border border-black/10 space-y-3">
+          <div className="w-12 h-12 rounded-2xl bg-black/5 flex items-center justify-center mx-auto text-black/40">
+            <Users className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="font-display text-2xl font-bold lowercase text-black">
+              {currentFilter === 'active' && !search
+                ? 'no guests checked in yet'
+                : 'no matching wristbands'}
+            </h3>
+            <p className="font-sans-clean text-xs text-black/50 lowercase max-w-sm mx-auto mt-1">
+              {currentFilter === 'active' && !search
+                ? 'unassigned wristband slots are hidden by default to keep your view uncluttered.'
+                : 'try clearing your search query or switching to a different filter pill above.'}
+            </p>
+          </div>
 
-                  return (
-                    <tr
-                      key={guest.id}
-                      className="hover:bg-black/[0.02] transition-colors group cursor-pointer"
-                      onClick={() => setEditingGuest(guest)}
-                    >
-                      {/* Wristband Tag */}
-                      <td className="py-3.5 px-4 font-mono font-bold text-black">
+          <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+            {currentFilter === 'active' && !search && nextUnassignedGuest && (
+              <button
+                type="button"
+                onClick={() => setEditingGuest(nextUnassignedGuest)}
+                className="btn-premium-primary py-2.5 px-4 text-xs gap-1.5"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>assign first guest ({nextUnassignedGuest.tag_id})</span>
+              </button>
+            )}
+            {currentFilter !== 'all' && (
+              <button
+                type="button"
+                onClick={() => setFilter('all')}
+                className="btn-premium py-2.5 px-4 text-xs gap-1.5"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                <span>view all {kpis.totalSlots} slots</span>
+              </button>
+            )}
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="btn-premium py-2.5 px-4 text-xs"
+              >
+                clear search
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            {visibleGuests.map(guest => {
+              const limit = calculateEffectiveLimit(guest, settings);
+              const isAssigned = isGuestActiveOrAssigned(guest);
+              const isAtLimit =
+                guest.category !== 'vip' &&
+                guest.category !== 'driver_minor' &&
+                limit > 0 &&
+                guest.drinks_consumed >= limit;
+              const isNearLimit =
+                guest.category !== 'vip' &&
+                guest.category !== 'driver_minor' &&
+                limit > 1 &&
+                guest.drinks_consumed === limit - 1;
+              const cleanNotes = extractCleanNotes(guest.notes);
+
+              return (
+                <button
+                  key={guest.id}
+                  type="button"
+                  onClick={() => setEditingGuest(guest)}
+                  className={`w-full text-left p-4 rounded-2xl border transition-all flex items-center justify-between gap-3 group cursor-pointer active:scale-[0.99] ${
+                    guest.is_blocked
+                      ? 'bg-red-50/40 border-red-200 hover:border-red-300'
+                      : isAtLimit
+                      ? 'bg-red-50/25 border-red-200/80 hover:border-red-300'
+                      : isAssigned
+                      ? 'bg-white/90 border-black/10 hover:border-black/25 shadow-2xs'
+                      : 'bg-white/50 border-black/8 hover:bg-white/80 hover:border-black/15'
+                  }`}
+                >
+                  {/* Left Info Column */}
+                  <div className="min-w-0 flex-1 space-y-1">
+                    {/* Top Row: Tag Pill + Name */}
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg font-mono text-[11px] font-bold shrink-0 ${
+                          guest.is_blocked
+                            ? 'bg-red-600 text-white'
+                            : isAssigned
+                            ? 'bg-black text-white'
+                            : 'bg-black/6 text-black/60'
+                        }`}
+                      >
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            guest.is_blocked
+                              ? 'bg-white'
+                              : guest.is_entered
+                              ? 'bg-emerald-400'
+                              : 'bg-black/25'
+                          }`}
+                        />
                         {guest.tag_id}
-                      </td>
+                      </span>
 
-                      {/* Guest Name */}
-                      <td className="py-3.5 px-4">
-                        <div className="font-semibold text-black text-sm">
-                          {guest.name || <span className="text-black/30 font-normal italic">unassigned</span>}
-                        </div>
-                        {guest.notes && (
-                          <span className="text-[10px] text-black/50 block truncate max-w-xs">
-                            {guest.notes}
-                          </span>
-                        )}
-                      </td>
+                      <span
+                        className={`font-sans-clean text-sm truncate ${
+                          guest.name
+                            ? 'font-bold text-black'
+                            : 'font-normal italic text-black/35'
+                        }`}
+                      >
+                        {guest.name || 'unassigned slot'}
+                      </span>
+                    </div>
 
+                    {/* Sub Row: Category, Status & Notes */}
+                    <div className="flex flex-wrap items-center gap-1.5">
                       {/* Category Badge */}
-                      <td className="py-3.5 px-4">
-                        {guest.category === 'vip' && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 uppercase">
-                            VIP
-                          </span>
-                        )}
-                        {guest.category === 'driver_minor' && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-900 uppercase">
-                            DRIVER / 0 ALC
-                          </span>
-                        )}
-                        {guest.category === 'standard' && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-black/5 text-black/70 lowercase">
-                            standard
-                          </span>
-                        )}
-                      </td>
+                      {guest.category === 'vip' && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-sans-clean font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 uppercase">
+                          <Sparkles className="w-2.5 h-2.5" />
+                          VIP
+                        </span>
+                      )}
+                      {guest.category === 'driver_minor' && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-sans-clean font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-900 uppercase">
+                          <Car className="w-2.5 h-2.5" />
+                          0 ALC
+                        </span>
+                      )}
+                      {guest.category === 'standard' && isAssigned && (
+                        <span className="inline-flex items-center text-[10px] font-sans-clean font-medium px-2 py-0.5 rounded-full bg-black/5 text-black/60 lowercase">
+                          standard
+                        </span>
+                      )}
 
-                      {/* Check-in Status */}
-                      <td className="py-3.5 px-4">
-                        {guest.is_blocked ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-800 uppercase">
-                            <Ban className="w-3 h-3" /> BLOCKED
-                          </span>
-                        ) : guest.is_entered ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 lowercase">
-                            <CheckCircle className="w-3 h-3" /> entered
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[10px] text-black/40 lowercase">
-                            outside
-                          </span>
-                        )}
-                      </td>
+                      {/* Custom Limit Indicator */}
+                      {guest.custom_drink_limit !== null && guest.category === 'standard' && (
+                        <span className="inline-flex items-center text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded-full bg-black/5 text-black/70">
+                          limit: {guest.custom_drink_limit}
+                        </span>
+                      )}
 
-                      {/* Drinks Consumed & Limit */}
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-2">
-                          <span className={`font-display text-base font-bold ${
-                            isAtLimit ? 'text-red-600' : isNearLimit ? 'text-amber-600' : 'text-black'
-                          }`}>
-                            {guest.drinks_consumed} / {guest.category === 'vip' ? '∞' : limit}
-                          </span>
+                      {/* Status Badges */}
+                      {guest.is_blocked ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-sans-clean font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-800 uppercase">
+                          <Ban className="w-2.5 h-2.5" />
+                          blocked
+                        </span>
+                      ) : isAtLimit ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-sans-clean font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-800 uppercase">
+                          <ShieldAlert className="w-2.5 h-2.5" />
+                          at limit
+                        </span>
+                      ) : guest.is_entered ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-sans-clean font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 lowercase">
+                          <CheckCircle className="w-2.5 h-2.5 text-emerald-600" />
+                          {guest.entered_at
+                            ? new Date(guest.entered_at).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })
+                            : 'inside'}
+                        </span>
+                      ) : null}
 
-                          {guest.category !== 'vip' && (
-                            <div className="w-16 bg-black/10 rounded-full h-1.5 overflow-hidden">
-                              <div
-                                className={`h-full rounded-full ${
-                                  isAtLimit ? 'bg-red-600' : isNearLimit ? 'bg-amber-500' : 'bg-black'
-                                }`}
-                                style={{
-                                  width: `${Math.min(100, (guest.drinks_consumed / (limit || 1)) * 100)}%`,
-                                }}
-                              />
-                            </div>
-                          )}
+                      {/* Clean Notes Preview */}
+                      {cleanNotes && (
+                        <span className="text-[11px] font-sans-clean text-black/50 truncate max-w-[180px]">
+                          • {cleanNotes}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Right Drink Counter & Progress Column */}
+                  <div className="flex items-center gap-2.5 shrink-0">
+                    <div className="text-right">
+                      <div
+                        className={`font-display text-xl font-bold leading-none ${
+                          guest.is_blocked || isAtLimit
+                            ? 'text-red-600'
+                            : isNearLimit
+                            ? 'text-amber-600'
+                            : isAssigned
+                            ? 'text-black'
+                            : 'text-black/35'
+                        }`}
+                      >
+                        {guest.drinks_consumed}
+                        <span className="text-sm font-normal text-black/35">
+                          /{guest.category === 'vip' ? '∞' : limit}
+                        </span>
+                      </div>
+
+                      {guest.category !== 'vip' ? (
+                        <div className="w-14 bg-black/10 rounded-full h-1.5 overflow-hidden mt-1.5 ml-auto">
+                          <div
+                            className={`h-full rounded-full transition-all ${
+                              guest.is_blocked || isAtLimit
+                                ? 'bg-red-600'
+                                : isNearLimit
+                                ? 'bg-amber-500'
+                                : 'bg-black'
+                            }`}
+                            style={{
+                              width: `${
+                                limit === 0
+                                  ? guest.is_entered
+                                    ? 100
+                                    : 0
+                                  : Math.min(100, (guest.drinks_consumed / limit) * 100)
+                              }%`,
+                            }}
+                          />
                         </div>
-                      </td>
+                      ) : (
+                        <span className="text-[9px] font-mono uppercase tracking-wider text-amber-700 block mt-1">
+                          unlimited
+                        </span>
+                      )}
+                    </div>
 
-                      {/* Actions */}
-                      <td className="py-3.5 px-4 text-right">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingGuest(guest);
-                          }}
-                          className="p-1.5 rounded-full hover:bg-black/5 text-black/50 hover:text-black transition-colors"
-                          title="Edit profile & limit"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                    <ChevronRight className="w-4 h-4 text-black/25 group-hover:text-black/60 group-hover:translate-x-0.5 transition-all" />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
 
-      {/* Guest Edit Modal */}
+          {/* Progressive Show All Footer */}
+          {filteredGuests.length > visibleGuests.length && (
+            <div className="pt-2 text-center">
+              <button
+                type="button"
+                onClick={() => setShowAllRows(true)}
+                className="btn-premium py-2.5 px-6 text-xs"
+              >
+                show all {filteredGuests.length} wristbands ({filteredGuests.length - visibleGuests.length} more)
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Enhanced Guest Profile / Edit Modal */}
       <GuestEditModal
-        guest={editingGuest}
-        isOpen={Boolean(editingGuest)}
+        guest={liveEditingGuest}
+        isOpen={Boolean(liveEditingGuest)}
         onClose={() => setEditingGuest(null)}
       />
     </div>

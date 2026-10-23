@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { usePartyStore } from '@/lib/store';
 import { calculateEffectiveLimit } from '@/lib/party-engine';
-import { Guest, GuestCategory, DrinkType } from '@/lib/types';
+import { Guest, GuestCategory, DrinkType, BAR_DRINKS } from '@/lib/types';
 import { parseTagId, findGuestByTag } from '@/lib/tag-utils';
 import {
   useStaffAuth,
@@ -23,8 +23,9 @@ import {
   Shield,
   ShieldCheck,
   AlertOctagon,
-  CupSoda,
   Beer,
+  GlassWater,
+  Wine,
   CheckCircle2,
   Loader2,
   DoorOpen,
@@ -38,6 +39,13 @@ import {
 import confetti from 'canvas-confetti';
 import { soundSystem } from '@/lib/audio';
 
+const categoryIcons: Record<'beer' | 'cocktail' | 'shot' | 'wine', React.ElementType> = {
+  beer: Beer,
+  cocktail: Sparkles,
+  shot: GlassWater,
+  wine: Wine,
+};
+
 export default function DirectTapPage() {
   const params = useParams();
   const router = useRouter();
@@ -45,7 +53,15 @@ export default function DirectTapPage() {
   const parsedTag = parseTagId(rawId);
   const tagId = parsedTag.canonicalTag || parsedTag.decoded.toUpperCase();
 
-  const { guests, settings, serveDrink, revertLastDrink, checkIn, fetchGuestByTag } = usePartyStore();
+  const {
+    guests,
+    settings,
+    serveDrink,
+    revertLastDrink,
+    checkIn,
+    fetchGuestByTag,
+    setSelectedGuestId,
+  } = usePartyStore();
   const {
     isAuthenticated,
     stationMode,
@@ -81,8 +97,6 @@ export default function DirectTapPage() {
   const [category, setCategory] = useState<GuestCategory>('standard');
 
   // 0. Real-time Tab Relay & Duplicate Tab Cleanup:
-  //    - Notify any older /t/... tabs that a new NFC tap arrived so old tabs close or update in-place.
-  //    - Ping any open /barman or /door dashboard tab on this phone.
   useEffect(() => {
     if (!tagId) return;
 
@@ -105,7 +119,6 @@ export default function DirectTapPage() {
           attemptAutoCloseTab();
         }
       } else if (msg.type === 'NEW_TAP_TAB_OPENED' && msg.tagId) {
-        // Another NFC tap just opened a newer tab! Close this older tab, or update it to the new tag
         attemptAutoCloseTab();
         if (msg.tagId !== tagId) {
           router.replace(`/t/${encodeURIComponent(msg.tagId)}`);
@@ -213,18 +226,21 @@ export default function DirectTapPage() {
     assignedGuest.drinks_consumed >= effectiveLimit
   );
 
-  // 3. AUTO-SERVE ON STAFF PHONES (when in 'barman' station mode):
-  // When an authorized staff phone opens this tag page via NFC tap, auto-log the drink and relay to /barman!
+  // 3. Select guest in store & auto-serve on staff phones (when in 'barman' station mode)
+  useEffect(() => {
+    if (isAuthenticated && assignedGuest) {
+      setSelectedGuestId(assignedGuest.id);
+    }
+  }, [isAuthenticated, assignedGuest, setSelectedGuestId]);
+
   useEffect(() => {
     if (!isAuthenticated || !assignedGuest || isLoading || hasAutoServedRef.current) return;
 
-    // If an open /door tab replied or this phone is in 'door' check-in mode, do NOT auto-serve a drink
     if (relayedStation === 'door' || getStaffStationMode() === 'door') {
       hasAutoServedRef.current = true;
       return;
     }
 
-    // Allow view-only mode if URL contains ?mode=view
     if (typeof window !== 'undefined') {
       const sp = new URLSearchParams(window.location.search);
       if (sp.get('mode') === 'view' || sp.get('noserve') === '1') {
@@ -238,11 +254,9 @@ export default function DirectTapPage() {
     async function executeAutoServe() {
       if (!assignedGuest) return;
 
-      // Wait 80ms in case an open /door tab on this phone is replying to PING_STATION
       await new Promise(resolve => setTimeout(resolve, 80));
       if (getStaffStationMode() === 'door') return;
 
-      // Check if driver / minor
       if (assignedGuest.category === 'driver_minor') {
         soundSystem.playErrorSound();
         setAutoServedResult({
@@ -252,7 +266,6 @@ export default function DirectTapPage() {
         return;
       }
 
-      // Check if limit reached
       const curLimit = calculateEffectiveLimit(assignedGuest, settings);
       if (assignedGuest.category !== 'vip' && assignedGuest.drinks_consumed >= curLimit) {
         soundSystem.playCutoffSound();
@@ -263,13 +276,11 @@ export default function DirectTapPage() {
         return;
       }
 
-      // Execute auto-serve with staff's active drink preference
-      const preferredDrink = (getStaffActiveDrinkType() as DrinkType) || 'cocktail';
+      const preferredDrink = (getStaffActiveDrinkType() as DrinkType) || 'beer';
       setIsProcessing(true);
       const res = await serveDrink(assignedGuest.tag_id, preferredDrink);
       setIsProcessing(false);
 
-      // Broadcast drink result to any open /barman tab or cross-device dashboard
       sendTagRelayMessage(
         {
           type: 'DRINK_SERVED',
@@ -292,7 +303,6 @@ export default function DirectTapPage() {
           message: `Logged ${preferredDrink} (+1)`,
         });
         setUndoSeconds(10);
-        // If /barman tab is already open on this device, attempt to auto-close this spawned tab
         if (relayedStation === 'barman') {
           attemptAutoCloseTab();
         }
@@ -361,11 +371,10 @@ export default function DirectTapPage() {
 
     if (res.success) {
       soundSystem.playApprovedSound();
-      const typeName = type === 'soft' ? 'soft drink' : type;
-      setServedSuccess(`Logged ${typeName} (+1)`);
+      setServedSuccess(`Logged ${type} (+1)`);
       setAutoServedResult({
         status: 'served',
-        message: `Logged ${typeName} (+1)`,
+        message: `Logged ${type} (+1)`,
       });
       setUndoSeconds(10);
       setTimeout(() => setServedSuccess(null), 3000);
@@ -406,7 +415,6 @@ export default function DirectTapPage() {
       setIsProcessing(true);
       setErrorMsg(null);
 
-      // Mark hasAutoServedRef true so right after checking in at the door, it doesn't immediately auto-serve +1 drink!
       hasAutoServedRef.current = true;
 
       const checkedInGuest = await checkIn({
@@ -546,7 +554,7 @@ export default function DirectTapPage() {
             </div>
           </div>
         ) : (
-          /* Regular Guest View on Unassigned Tag (with PIN-Protected Staff Unlock at bottom) */
+          /* Regular Guest View on Unassigned Tag */
           <div className="glass-card p-8 text-center border border-black/15 shadow-xl space-y-4">
             <div
               onClick={handleSecretTap}
@@ -585,9 +593,6 @@ export default function DirectTapPage() {
       ) : (
         /* CASE 2: Assigned Active Guest Pass */
         <div className="space-y-4">
-          {/* ============================================================== */}
-          {/* VIEW A: AUTHENTICATED STAFF TERMINAL (The Bartender's Phone)   */}
-          {/* ============================================================== */}
           {isAuthenticated ? (
             <div className="space-y-4">
               {/* Staff Navigation & Station Mode Header */}
@@ -595,11 +600,17 @@ export default function DirectTapPage() {
                 <div className="flex items-center justify-between">
                   <button
                     type="button"
-                    onClick={() => router.push(stationMode === 'door' ? '/door' : '/barman')}
+                    onClick={() =>
+                      router.push(
+                        stationMode === 'door'
+                          ? '/door'
+                          : `/barman?tag=${encodeURIComponent(assignedGuest.tag_id)}`
+                      )
+                    }
                     className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-[11px] font-semibold flex items-center gap-1.5 transition-colors"
                   >
                     <ArrowLeft className="w-3.5 h-3.5" />
-                    <span>{stationMode === 'door' ? 'Door Desk' : 'Bar Desk'}</span>
+                    <span>{stationMode === 'door' ? 'Door Desk' : 'Open in Barman Station'}</span>
                   </button>
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-[10px] text-emerald-400 uppercase font-bold tracking-wider flex items-center gap-1">
@@ -657,99 +668,25 @@ export default function DirectTapPage() {
               )}
 
               {/* Status Alert Banners */}
-              {isLimitReached || autoServedResult.status === 'limit_reached' ? (
-                /* RED CUT-OFF ALERT */
-                <div className="rounded-3xl bg-red-600 text-white p-6 text-center shadow-2xl animate-pulse border-4 border-white/20 space-y-3">
-                  <AlertOctagon className="w-12 h-12 text-white mx-auto" />
-                  <div>
-                    <h2 className="font-display text-3xl font-bold lowercase text-white">
-                      limit reached
-                    </h2>
-                    <p className="font-sans-clean text-xs text-white/95 font-semibold mt-1">
-                      DO NOT SERVE ALCOHOL
-                    </p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-black/25 text-xs text-white/90 font-sans-clean">
-                    {assignedGuest.name} has consumed {assignedGuest.drinks_consumed} of {effectiveLimit} drinks.
-                    Water and soft drinks only.
+              {autoServedResult.status === 'served' && (
+                <div className="rounded-3xl bg-emerald-600 text-white p-5 text-center shadow-xl space-y-2 animate-in fade-in zoom-in-95 duration-200">
+                  <CheckCircle2 className="w-10 h-10 text-white mx-auto" />
+                  <div className="font-sans-clean text-xs font-bold">
+                    {servedSuccess || autoServedResult.message}
                   </div>
                   {undoSeconds > 0 && (
                     <button
                       type="button"
                       onClick={handleUndo}
                       disabled={isProcessing}
-                      className="w-full py-2.5 rounded-xl bg-black/30 hover:bg-black/40 text-white font-sans-clean font-bold text-xs flex items-center justify-center gap-2 border border-white/25 transition-all"
+                      className="w-full py-2.5 rounded-xl bg-white/20 hover:bg-white/30 text-white font-sans-clean font-bold text-xs flex items-center justify-center gap-2 border border-white/30 transition-all mt-2"
                     >
                       <RotateCcw className="w-4 h-4" />
                       <span>Undo Last Drink (-1) [{undoSeconds}s]</span>
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => handleServe('soft')}
-                    disabled={isProcessing}
-                    className="w-full py-3 rounded-xl bg-white text-red-700 font-sans-clean font-bold text-xs shadow-md hover:bg-white/90 transition-colors"
-                  >
-                    Log Soft Drink (Water / Cola)
-                  </button>
                 </div>
-              ) : assignedGuest.category === 'driver_minor' ? (
-                /* BLUE DRIVER / MINOR ALERT */
-                <div className="rounded-3xl bg-blue-600 text-white p-6 text-center shadow-xl space-y-3">
-                  <Shield className="w-10 h-10 text-white mx-auto" />
-                  <h2 className="font-display text-2xl font-bold lowercase text-white">
-                    driver / minor (0 alcohol)
-                  </h2>
-                  <p className="font-sans-clean text-xs text-white/90">
-                    This guest is registered with zero alcohol limit. Soft drinks only.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => handleServe('soft')}
-                    disabled={isProcessing}
-                    className="w-full py-3 rounded-xl bg-white text-blue-700 font-sans-clean font-bold text-xs shadow-md hover:bg-white/90 transition-colors"
-                  >
-                    Log Soft Drink (Water / Cola)
-                  </button>
-                </div>
-              ) : autoServedResult.status === 'served' ? (
-                /* GREEN AUTO-SERVED CONFIRMATION */
-                <div className="rounded-3xl bg-emerald-600 text-white p-6 text-center shadow-xl space-y-3 animate-in fade-in zoom-in-95 duration-200">
-                  <CheckCircle2 className="w-12 h-12 text-white mx-auto" />
-                  <div>
-                    <span className="font-mono text-[10px] uppercase tracking-widest text-emerald-200 font-bold block">
-                      AUTO-LOGGED ON TAP ({activeDrinkType.toUpperCase()})
-                    </span>
-                    <h2 className="font-display text-3xl font-bold lowercase text-white mt-1">
-                      {assignedGuest.name}
-                    </h2>
-                  </div>
-                  <div className="text-3xl font-display font-bold text-white">
-                    {assignedGuest.drinks_consumed}{' '}
-                    <span className="text-xl font-normal text-white/70">
-                      / {assignedGuest.category === 'vip' ? '∞' : effectiveLimit}
-                    </span>
-                  </div>
-                  <span className="font-sans-clean text-xs text-emerald-100 font-semibold block">
-                    {assignedGuest.category === 'vip'
-                      ? 'VIP Host (Unlimited)'
-                      : `${Math.max(0, effectiveLimit - assignedGuest.drinks_consumed)} drinks remaining`}
-                  </span>
-
-                  {/* 10-Second Undo Button */}
-                  {undoSeconds > 0 && (
-                    <button
-                      type="button"
-                      onClick={handleUndo}
-                      disabled={isProcessing}
-                      className="w-full py-3 rounded-xl bg-white/20 hover:bg-white/30 text-white font-sans-clean font-bold text-xs flex items-center justify-center gap-2 border border-white/30 transition-all mt-2"
-                    >
-                      <RotateCcw className="w-4 h-4 animate-spin-slow" />
-                      <span>Undo Last Drink (-1) [{undoSeconds}s]</span>
-                    </button>
-                  )}
-                </div>
-              ) : null}
+              )}
 
               {/* Main Card */}
               <div className="glass-card p-6 border border-black/15 shadow-xl space-y-5">
@@ -783,51 +720,32 @@ export default function DirectTapPage() {
                   </span>
                 </div>
 
-                {/* Quick Drink Switch / Manual Controls */}
-                <div className="space-y-2 pt-3 border-t border-black/10">
-                  <span className="font-mono text-[10px] text-black/40 uppercase tracking-widest block text-center mb-1">
+                {/* Specific Drink Controls */}
+                <div className="space-y-3 pt-3 border-t border-black/10">
+                  <span className="font-mono text-[10px] text-black/40 uppercase tracking-widest block text-center">
                     SERVE DRINK / SET DEFAULT FOR NEXT TAP
                   </span>
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleServe('cocktail')}
-                      disabled={isProcessing || isLimitReached}
-                      className={`p-2.5 rounded-xl text-[11px] font-sans-clean font-bold flex flex-col items-center gap-1 transition-all disabled:opacity-40 ${
-                        activeDrinkType === 'cocktail'
-                          ? 'bg-black text-white shadow-md'
-                          : 'bg-black/5 hover:bg-black/10 text-black border border-black/10'
-                      }`}
-                    >
-                      <Sparkles className="w-4 h-4" />
-                      <span>Cocktail</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleServe('beer')}
-                      disabled={isProcessing || isLimitReached}
-                      className={`p-2.5 rounded-xl text-[11px] font-sans-clean font-bold flex flex-col items-center gap-1 transition-all disabled:opacity-40 ${
-                        activeDrinkType === 'beer'
-                          ? 'bg-black text-white shadow-md'
-                          : 'bg-black/5 hover:bg-black/10 text-black border border-black/10'
-                      }`}
-                    >
-                      <Beer className="w-4 h-4" />
-                      <span>Beer</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleServe('soft')}
-                      disabled={isProcessing}
-                      className={`p-2.5 rounded-xl text-[11px] font-sans-clean font-bold flex flex-col items-center gap-1 transition-all ${
-                        activeDrinkType === 'soft'
-                          ? 'bg-black text-white shadow-md'
-                          : 'bg-black/5 hover:bg-black/10 text-black border border-black/10'
-                      }`}
-                    >
-                      <CupSoda className="w-4 h-4" />
-                      <span>Soft Drink</span>
-                    </button>
+                  <div className="flex flex-wrap gap-2 justify-center">
+                    {BAR_DRINKS.map(({ type, label, category }) => {
+                      const Icon = categoryIcons[category];
+                      const isActive = activeDrinkType === type;
+                      return (
+                        <button
+                          key={type}
+                          type="button"
+                          onClick={() => handleServe(type)}
+                          disabled={isProcessing || isLimitReached}
+                          className={`px-3.5 py-2 rounded-xl text-xs font-sans-clean font-semibold lowercase flex items-center gap-1.5 border transition-colors disabled:opacity-40 ${
+                            isActive
+                              ? 'bg-black text-white border-black shadow-sm'
+                              : 'bg-black/5 hover:bg-black hover:text-white text-black border-black/10'
+                          }`}
+                        >
+                          <Icon className="w-3.5 h-3.5" />
+                          <span>{label}</span>
+                        </button>
+                      );
+                    })}
                   </div>
 
                   {assignedGuest.drinks_consumed > 0 && undoSeconds === 0 && (
@@ -841,15 +759,20 @@ export default function DirectTapPage() {
                       <span>Revert 1 Drink (-1)</span>
                     </button>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/barman?tag=${encodeURIComponent(assignedGuest.tag_id)}`)}
+                    className="w-full py-3 rounded-xl bg-black text-white hover:bg-black/90 font-sans-clean text-xs font-bold flex items-center justify-center gap-1.5 transition-colors mt-2"
+                  >
+                    <span>Open Full Barman Station</span>
+                  </button>
                 </div>
               </div>
             </div>
           ) : (
-            /* ============================================================== */
-            /* VIEW B: GUEST VIEW — STRICTLY READ-ONLY (Tamper-Proof)        */
-            /* ============================================================== */
+            /* VIEW B: GUEST VIEW — STRICTLY READ-ONLY */
             <div className="glass-card p-6 sm:p-8 border border-black/15 shadow-xl space-y-6">
-              {/* Header Badges */}
               <div className="flex items-center justify-between">
                 <span className="font-mono text-xs text-black/50 font-bold">{tagLabel}</span>
                 {assignedGuest.category === 'vip' ? (
@@ -867,7 +790,6 @@ export default function DirectTapPage() {
                 )}
               </div>
 
-              {/* Guest Identity & Drink Counter */}
               <div className="text-center">
                 <span
                   onClick={handleSecretTap}
@@ -908,18 +830,16 @@ export default function DirectTapPage() {
                 )}
               </div>
 
-              {/* Limit Reached Banner for Guest */}
               {isLimitReached && (
                 <div className="p-4 rounded-2xl bg-red-600 text-white text-center shadow-lg">
                   <AlertOctagon className="w-8 h-8 text-white mx-auto mb-1 animate-pulse" />
                   <span className="font-display text-lg font-bold lowercase block">limit reached</span>
                   <span className="font-sans-clean text-xs text-white/90">
-                    Alcohol service cut off. Water & soft drinks only.
+                    Alcohol service cut off.
                   </span>
                 </div>
               )}
 
-              {/* Read-Only Guest Information Note */}
               <div className="p-4 rounded-2xl bg-black/[0.03] border border-black/10 text-center space-y-1.5">
                 <div className="flex items-center justify-center gap-1.5 text-black font-sans-clean font-semibold text-xs">
                   <Shield className="w-3.5 h-3.5 text-black/60" />
@@ -930,7 +850,6 @@ export default function DirectTapPage() {
                 </p>
               </div>
 
-              {/* Subtle PIN-Protected Staff Unlock Link */}
               <div className="pt-2 border-t border-black/10 text-center">
                 <button
                   type="button"

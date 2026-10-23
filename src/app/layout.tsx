@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from 'next';
 import { Cormorant_Garamond, Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
-import { MobileTabBar } from '@/components/MobileTabBar';
 import { MobileHeader } from '@/components/MobileHeader';
+import { AppContainer } from '@/components/AppContainer';
 
 const cormorant = Cormorant_Garamond({
   subsets: ['latin'],
@@ -45,10 +45,9 @@ export default function RootLayout({
     <html lang="en" className={`${cormorant.variable} ${jakarta.variable}`}>
       <body className="antialiased min-h-dvh flex flex-col selection:bg-black selection:text-white bg-white">
         <MobileHeader />
-        <div className="flex-1 pb-tabbar max-w-lg mx-auto w-full px-4 sm:px-6">
+        <AppContainer>
           {children}
-        </div>
-        <MobileTabBar />
+        </AppContainer>
       </body>
     </html>
   );

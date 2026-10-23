@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { Search, X, User, GlassWater, AlertCircle } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import { usePartyStore } from '@/lib/store';
-import { Guest, DrinkType } from '@/lib/types';
+import { Guest } from '@/lib/types';
 import { calculateEffectiveLimit } from '@/lib/party-engine';
 
 interface QuickSearchModalProps {
@@ -23,8 +23,11 @@ export function QuickSearchModal({
   const filteredGuests = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) {
-      // Show entered guests first
-      return guests.filter(g => g.is_entered).slice(0, 15);
+      const entered = guests.filter(g => g.is_entered);
+      if (entered.length > 0) {
+        return entered.slice(0, 20);
+      }
+      return guests.slice(0, 15);
     }
     return guests
       .filter(
@@ -48,13 +51,14 @@ export function QuickSearchModal({
         <div className="flex items-center justify-between pb-4 border-b border-black/10">
           <div>
             <h3 className="font-display text-2xl font-bold text-black lowercase">
-              quick guest search
+              search guest
             </h3>
             <p className="font-sans-clean text-xs text-black/60 lowercase">
-              manual barman lookup fallback
+              select customer to load on barman station
             </p>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="p-1.5 rounded-full text-black/40 hover:text-black hover:bg-black/5 transition-colors"
           >
@@ -67,7 +71,7 @@ export function QuickSearchModal({
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-black/40" />
           <input
             type="text"
-            placeholder="Type name (e.g. Kasia) or tag (e.g. 042)..."
+            placeholder="Type name (e.g. Janek) or tag (e.g. 001)..."
             value={query}
             autoFocus
             onChange={e => setQuery(e.target.value)}

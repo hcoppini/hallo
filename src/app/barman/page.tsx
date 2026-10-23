@@ -1,14 +1,13 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { NfcReader } from '@/components/NfcReader';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { BarmanDisplay } from '@/components/BarmanDisplay';
-import { SpeedKeypad } from '@/components/SpeedKeypad';
 import { QuickSearchModal } from '@/components/QuickSearchModal';
 import { AdminPinModal } from '@/components/AdminPinModal';
 import { usePartyStore } from '@/lib/store';
-import { DrinkType, ServeDrinkResult, Guest } from '@/lib/types';
-import { nfcController } from '@/lib/nfc';
+import { DrinkType, Guest, BAR_DRINKS } from '@/lib/types';
+import { isWebNfcSupported, nfcController } from '@/lib/nfc';
+import { findGuestByTag } from '@/lib/tag-utils';
 import {
   useStaffAuth,
   setStaffActiveDrinkType,
@@ -16,37 +15,86 @@ import {
   setStaffStationMode,
 } from '@/lib/auth';
 import { subscribeToTagRelay, sendTagRelayMessage } from '@/lib/tag-relay';
-import { Zap, Radio, Lock, LogOut, ShieldCheck, Wifi } from 'lucide-react';
+import { Lock } from 'lucide-react';
 
 export default function BarmanPage() {
-  const { serveDrink, refresh } = usePartyStore();
-  const { isAuthenticated, logout } = useStaffAuth();
+  const {
+    guests,
+    logs,
+    selectedGuestId,
+    setSelectedGuestId,
+    isSearchOpen,
+    setIsSearchOpen,
+    serveDrink,
+    fetchGuestByTag,
+    refresh,
+  } = usePartyStore();
+  const { isAuthenticated } = useStaffAuth();
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [relayFlash, setRelayFlash] = useState<string | null>(null);
 
   const [selectedDrinkType, setSelectedDrinkType] = useState<DrinkType>(() => {
-    return (getStaffActiveDrinkType() as DrinkType) || 'cocktail';
+    const saved = getStaffActiveDrinkType();
+    const isValidSpecific = BAR_DRINKS.some(d => d.type === saved);
+    return isValidSpecific ? (saved as DrinkType) : 'beer';
   });
+
   const selectedDrinkRef = useRef<DrinkType>(selectedDrinkType);
   useEffect(() => {
     selectedDrinkRef.current = selectedDrinkType;
   }, [selectedDrinkType]);
 
-  const [lastResult, setLastResult] = useState<ServeDrinkResult | null>(null);
-  const [activeTagId, setActiveTagId] = useState<string | null>(null);
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [inputMode, setInputMode] = useState<'keypad' | 'nfc'>('keypad');
-  const [relayFlash, setRelayFlash] = useState<string | null>(null);
+  // Resolve active customer: explicit selection -> latest log guest -> most recently checked-in guest
+  const activeGuest = useMemo<Guest | null>(() => {
+    if (selectedGuestId) {
+      const found = guests.find(g => g.id === selectedGuestId);
+      if (found) return found;
+    }
 
-  // Set this phone's default station mode to 'barman' and acquire wake lock
+    const latestLog = logs.find(l => !l.is_reverted);
+    if (latestLog) {
+      const logGuest = guests.find(g => g.id === latestLog.guest_id);
+      if (logGuest) return logGuest;
+    }
+
+    const enteredGuests = guests
+      .filter(g => g.is_entered)
+      .sort((a, b) => new Date(b.entered_at || 0).getTime() - new Date(a.entered_at || 0).getTime());
+
+    return enteredGuests[0] || null;
+  }, [selectedGuestId, guests, logs]);
+
+  const handleSelectTag = useCallback(
+    async (tagId: string, hardwareUid?: string) => {
+      const targetTag = tagId || hardwareUid || '';
+      if (!targetTag) return;
+
+      let matched = findGuestByTag(guests, targetTag);
+      if (!matched) {
+        matched = (await fetchGuestByTag(targetTag)) || undefined;
+      }
+      if (matched) {
+        setSelectedGuestId(matched.id);
+      }
+    },
+    [guests, fetchGuestByTag, setSelectedGuestId]
+  );
+
+  // Auto-acquire wake lock and background NFC listener on barman desk
   useEffect(() => {
     if (isAuthenticated) {
       setStaffStationMode('barman');
       nfcController.requestWakeLock();
+      if (isWebNfcSupported() && !nfcController.getScanningState()) {
+        nfcController.startScan((tagId, hardwareUid) => {
+          handleSelectTag(tagId, hardwareUid);
+        });
+      }
     }
     return () => {
       nfcController.releaseWakeLock();
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, handleSelectTag]);
 
   // Listen to real-time NFC Tag Relay (from /t/[id] tabs or cross-device taps)
   useEffect(() => {
@@ -60,19 +108,25 @@ export default function BarmanPage() {
           drinkType: selectedDrinkRef.current,
         });
       } else if (msg.type === 'DRINK_SERVED' && msg.result) {
-        setActiveTagId(msg.tagId || null);
-        setLastResult(msg.result);
+        if (msg.result.guest?.id) {
+          setSelectedGuestId(msg.result.guest.id);
+        } else if (msg.tagId) {
+          handleSelectTag(msg.tagId);
+        }
         setRelayFlash(`Relayed NFC tap: ${msg.result.guest?.name || msg.tagId}`);
         refresh();
         setTimeout(() => setRelayFlash(null), 3500);
-      } else if (msg.type === 'TAG_TAPPED' && msg.tagId && msg.isAssigned === false) {
-        setRelayFlash(`Unassigned wristband tapped: ${msg.tagId}`);
-        setTimeout(() => setRelayFlash(null), 4000);
+      } else if (msg.type === 'TAG_TAPPED' && msg.tagId) {
+        handleSelectTag(msg.tagId);
+        if (msg.isAssigned === false) {
+          setRelayFlash(`Unassigned wristband tapped: ${msg.tagId}`);
+          setTimeout(() => setRelayFlash(null), 4000);
+        }
       }
     });
 
     return () => unsubscribe();
-  }, [isAuthenticated, refresh]);
+  }, [isAuthenticated, refresh, handleSelectTag, setSelectedGuestId]);
 
   // Sync drink type changes with staff session storage
   const handleDrinkTypeChange = (type: DrinkType) => {
@@ -80,32 +134,23 @@ export default function BarmanPage() {
     setStaffActiveDrinkType(type);
   };
 
-  // Handle incoming redirect from /t/[id]?tag=...
+  // Handle incoming redirect from /t/[id]?tag=... by selecting the customer
   useEffect(() => {
     if (typeof window !== 'undefined' && isAuthenticated) {
       const params = new URLSearchParams(window.location.search);
       const tagParam = params.get('tag') || params.get('served');
       if (tagParam) {
-        handleManualServe(decodeURIComponent(tagParam).toUpperCase(), selectedDrinkType);
+        handleSelectTag(decodeURIComponent(tagParam).toUpperCase());
       }
     }
-  }, [selectedDrinkType, isAuthenticated]);
-
-  const handleTagScanned = async (tagId: string, hardwareUid?: string) => {
-    const targetTag = tagId || hardwareUid || '';
-    setActiveTagId(targetTag);
-    const result = await serveDrink(targetTag, selectedDrinkType);
-    setLastResult(result);
-  };
+  }, [isAuthenticated, handleSelectTag]);
 
   const handleManualServe = async (tagId: string, drinkType: DrinkType) => {
-    setActiveTagId(tagId);
-    const result = await serveDrink(tagId, drinkType);
-    setLastResult(result);
+    await serveDrink(tagId, drinkType);
   };
 
-  const handleSelectFromSearch = async (guest: Guest) => {
-    await handleManualServe(guest.tag_id, selectedDrinkType);
+  const handleSelectFromSearch = (guest: Guest) => {
+    setSelectedGuestId(guest.id);
   };
 
   // If not authenticated, require the 4-digit staff PIN
@@ -148,101 +193,22 @@ export default function BarmanPage() {
   }
 
   return (
-    <div className="w-full py-4 space-y-6">
-      {/* Staff Status Header & Live Relay Indicator */}
-      <div className="p-3 rounded-2xl bg-black text-white text-xs font-sans-clean flex items-center justify-between shadow-lg max-w-md mx-auto">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-          <div>
-            <span className="font-bold text-[10px] tracking-wide uppercase block leading-tight">
-              Barman Terminal Active
-            </span>
-            <span className="text-[10px] text-emerald-400/90 flex items-center gap-1 font-mono">
-              <Wifi className="w-2.5 h-2.5" />
-              Live NFC Tag Relay Listening
-            </span>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={logout}
-          className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[11px] font-semibold flex items-center gap-1.5 transition-colors"
-        >
-          <LogOut className="w-3 h-3" />
-          <span>Lock Station</span>
-        </button>
-      </div>
-
-      {/* Live Relay Flash Toast */}
+    <div className="w-full py-4 space-y-4">
       {relayFlash && (
-        <div className="max-w-md mx-auto p-3 rounded-2xl bg-emerald-600 text-white text-xs font-sans-clean font-bold text-center shadow-lg animate-in fade-in duration-150">
+        <div className="p-3 rounded-2xl bg-emerald-600 text-white text-xs font-sans-clean font-bold text-center shadow-lg animate-in fade-in duration-150">
           ⚡ {relayFlash}
         </div>
       )}
 
-      {/* High-Contrast Drink Counter / Limit Alert Screen */}
-      <div>
-        <BarmanDisplay
-          lastResult={lastResult}
-          selectedDrinkType={selectedDrinkType}
-          onDrinkTypeChange={handleDrinkTypeChange}
-          onManualServe={handleManualServe}
-          onOpenSearch={() => setIsSearchOpen(true)}
-        />
-      </div>
+      <BarmanDisplay
+        activeGuest={activeGuest}
+        selectedDrinkType={selectedDrinkType}
+        onDrinkTypeChange={handleDrinkTypeChange}
+        onManualServe={handleManualServe}
+        onOpenSearch={() => setIsSearchOpen(true)}
+      />
 
-      {/* Input Mode Selector: Tactile Keypad vs NFC Tap Simulator */}
-      <div className="flex items-center justify-center gap-2 p-1.5 bg-black/5 rounded-2xl max-w-sm mx-auto border border-black/10">
-        <button
-          type="button"
-          onClick={() => setInputMode('keypad')}
-          className={`flex-1 py-2.5 rounded-xl font-sans-clean text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
-            inputMode === 'keypad'
-              ? 'bg-black text-white shadow-md'
-              : 'text-black/60 hover:text-black hover:bg-black/5'
-          }`}
-        >
-          <Zap className="w-3.5 h-3.5" />
-          <span>⚡ Speed Keypad</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setInputMode('nfc')}
-          className={`flex-1 py-2.5 rounded-xl font-sans-clean text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
-            inputMode === 'nfc'
-              ? 'bg-black text-white shadow-md'
-              : 'text-black/60 hover:text-black hover:bg-black/5'
-          }`}
-        >
-          <Radio className="w-3.5 h-3.5" />
-          <span>📻 NFC Scanner</span>
-        </button>
-      </div>
-
-      {/* Mode 1: Fast Numeric Keypad (Insurance Policy: 0.5s per drink) */}
-      {inputMode === 'keypad' && (
-        <section className="animate-in fade-in duration-150">
-          <SpeedKeypad
-            onServe={handleManualServe}
-            selectedDrinkType={selectedDrinkType}
-          />
-        </section>
-      )}
-
-      {/* Mode 2: Continuous NFC Tap Area (auto-starts with Screen Wake Lock) */}
-      {inputMode === 'nfc' && (
-        <section className="animate-in fade-in duration-150">
-          <NfcReader
-            onTagScanned={handleTagScanned}
-            activeTagId={activeTagId}
-            modeLabel="tap guest wristband"
-            autoStart={true}
-          />
-        </section>
-      )}
-
-      {/* Manual Search Modal (Bottom Sheet on phone) */}
+      {/* Manual Search Modal */}
       <QuickSearchModal
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
