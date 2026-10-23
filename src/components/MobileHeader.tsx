@@ -17,6 +17,8 @@ export function MobileHeader() {
   const enteredCount = guests.filter(g => g.is_entered).length;
   const activeDrinksCount = logs.filter(l => !l.is_reverted && l.drink_type !== 'soft').length;
   const isAdminRoute = pathname?.startsWith('/admin');
+  const isTagRoute = pathname === '/t' || Boolean(pathname?.startsWith('/t/'));
+  const isGuestOnlyHeader = isTagRoute && !isAuthenticated;
 
   // Close menu on route change or Escape key
   useEffect(() => {
@@ -36,7 +38,7 @@ export function MobileHeader() {
     if (pathname === '/barman') return 'barman station';
     if (pathname === '/door') return 'door check-in';
     if (pathname === '/admin') return 'admin panel';
-    if (pathname.startsWith('/t/')) return 'party pass';
+    if (isTagRoute) return isAuthenticated ? 'party pass' : 'guest dashboard';
     return 'lua // pass';
   };
 
@@ -83,45 +85,62 @@ export function MobileHeader() {
           } mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3 relative transition-[max-width] duration-200`}
         >
           {/* Brand / Page Title */}
-          <Link
-            href="/"
-            className="flex items-center gap-2 active:opacity-60 transition-opacity shrink-0"
-          >
-            <span className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-black lowercase">
-              {getPageTitle()}
-            </span>
-          </Link>
-
-          {/* Right Controls: Search Guest + Menu Pill */}
-          <div className="flex items-center gap-2">
-            {pathname === '/barman' && isAuthenticated && (
-              <button
-                type="button"
-                onClick={() => setIsSearchOpen(true)}
-                className="btn-premium py-2 px-3.5 text-xs gap-1.5"
-              >
-                <Search className="w-3.5 h-3.5" />
-                <span>search guest</span>
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={() => {
-                soundSystem.vibrate(15);
-                setIsMenuOpen(prev => !prev);
-              }}
-              aria-expanded={isMenuOpen}
-              aria-label="Toggle navigation menu"
-              className={`inline-flex items-center justify-center gap-1.5 rounded-full px-3.5 py-2 font-sans-clean text-xs font-semibold tracking-widest lowercase border transition-all cursor-pointer active:scale-95 ${
-                isMenuOpen
-                  ? 'bg-black text-white border-black shadow-sm'
-                  : 'bg-black/[0.04] hover:bg-black/[0.08] text-black border-black/12'
-              }`}
+          {isGuestOnlyHeader ? (
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-black lowercase">
+                {getPageTitle()}
+              </span>
+            </div>
+          ) : (
+            <Link
+              href="/"
+              className="flex items-center gap-2 active:opacity-60 transition-opacity shrink-0"
             >
-              {isMenuOpen ? <X className="w-3.5 h-3.5" /> : <Menu className="w-3.5 h-3.5" />}
-              <span>menu</span>
-            </button>
+              <span className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-black lowercase">
+                {getPageTitle()}
+              </span>
+            </Link>
+          )}
+
+          {/* Right Controls: Search Guest + Menu Pill (hidden on non-staff tag scans) */}
+          <div className="flex items-center gap-2">
+            {isGuestOnlyHeader ? (
+              <div className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 bg-black/[0.04] border border-black/10 font-sans-clean text-[11px] font-semibold tracking-wider lowercase text-black/70">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>live party</span>
+              </div>
+            ) : (
+              <>
+                {pathname === '/barman' && isAuthenticated && (
+                  <button
+                    type="button"
+                    onClick={() => setIsSearchOpen(true)}
+                    className="btn-premium py-2 px-3.5 text-xs gap-1.5"
+                  >
+                    <Search className="w-3.5 h-3.5" />
+                    <span>search guest</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundSystem.vibrate(15);
+                    setIsMenuOpen(prev => !prev);
+                  }}
+                  aria-expanded={isMenuOpen}
+                  aria-label="Toggle navigation menu"
+                  className={`inline-flex items-center justify-center gap-1.5 rounded-full px-3.5 py-2 font-sans-clean text-xs font-semibold tracking-widest lowercase border transition-all cursor-pointer active:scale-95 ${
+                    isMenuOpen
+                      ? 'bg-black text-white border-black shadow-sm'
+                      : 'bg-black/[0.04] hover:bg-black/[0.08] text-black border-black/12'
+                  }`}
+                >
+                  {isMenuOpen ? <X className="w-3.5 h-3.5" /> : <Menu className="w-3.5 h-3.5" />}
+                  <span>menu</span>
+                </button>
+              </>
+            )}
           </div>
 
           {/* Anchored Dropdown Navigation Card (luaws.pl Glassmorphism) */}

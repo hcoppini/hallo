@@ -17,23 +17,19 @@ import {
   attemptAutoCloseTab,
 } from '@/lib/tag-relay';
 import { AdminPinModal } from '@/components/AdminPinModal';
+import { GuestDashboard } from '@/components/GuestDashboard';
 import {
   Sparkles,
   UserCheck,
-  Shield,
   ShieldCheck,
-  AlertOctagon,
   Beer,
   GlassWater,
   Wine,
   CheckCircle2,
   Loader2,
-  DoorOpen,
   RotateCcw,
   LogOut,
-  Clock,
   ArrowLeft,
-  Lock,
   Wifi,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -55,6 +51,7 @@ export default function DirectTapPage() {
 
   const {
     guests,
+    logs,
     settings,
     serveDrink,
     revertLastDrink,
@@ -554,41 +551,16 @@ export default function DirectTapPage() {
             </div>
           </div>
         ) : (
-          /* Regular Guest View on Unassigned Tag */
-          <div className="glass-card p-8 text-center border border-black/15 shadow-xl space-y-4">
-            <div
-              onClick={handleSecretTap}
-              className="w-14 h-14 rounded-2xl bg-black/5 flex items-center justify-center mx-auto text-black border border-black/10 cursor-pointer select-none"
-            >
-              <DoorOpen className="w-7 h-7" />
-            </div>
-            <span
-              onClick={handleSecretTap}
-              className="font-mono text-[10px] text-black/40 uppercase tracking-widest block cursor-pointer select-none"
-            >
-              HALLOWEEN PARTY PASS
-            </span>
-            <h2 className="font-display text-3xl font-bold lowercase text-black">
-              wristband not active
-            </h2>
-            <div className="inline-block px-3.5 py-1 rounded-full bg-black/5 font-mono text-xs font-bold text-black">
-              {tagLabel}
-            </div>
-            <p className="font-sans-clean text-xs text-black/60 leading-relaxed max-w-xs mx-auto">
-              This wristband has not been activated yet. Please present it at the front door reception to check in.
-            </p>
-
-            <div className="pt-4 border-t border-black/10">
-              <button
-                type="button"
-                onClick={() => setIsPinModalOpen(true)}
-                className="inline-flex items-center gap-1.5 text-[11px] font-sans-clean font-semibold text-black/45 hover:text-black transition-colors py-1 px-3 rounded-lg hover:bg-black/5"
-              >
-                <Lock className="w-3 h-3" />
-                <span>Staff / Reception? Unlock with PIN</span>
-              </button>
-            </div>
-          </div>
+          /* Non-Authenticated Phone on Unassigned Tag: Guest Dashboard */
+          <GuestDashboard
+            assignedGuest={null}
+            tagLabel={tagLabel}
+            guests={guests}
+            logs={logs}
+            settings={settings}
+            onSecretTap={handleSecretTap}
+            onOpenStaffPin={() => setIsPinModalOpen(true)}
+          />
         )
       ) : (
         /* CASE 2: Assigned Active Guest Pass */
@@ -771,96 +743,16 @@ export default function DirectTapPage() {
               </div>
             </div>
           ) : (
-            /* VIEW B: GUEST VIEW — STRICTLY READ-ONLY */
-            <div className="glass-card p-6 sm:p-8 border border-black/15 shadow-xl space-y-6">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-xs text-black/50 font-bold">{tagLabel}</span>
-                {assignedGuest.category === 'vip' ? (
-                  <span className="bg-amber-100 text-amber-900 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase">
-                    VIP Host
-                  </span>
-                ) : assignedGuest.category === 'driver_minor' ? (
-                  <span className="bg-blue-100 text-blue-900 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase">
-                    Driver / 0 Alc
-                  </span>
-                ) : (
-                  <span className="bg-black/5 text-black/70 text-[10px] font-semibold px-2.5 py-0.5 rounded-full lowercase">
-                    standard (18+)
-                  </span>
-                )}
-              </div>
-
-              <div className="text-center">
-                <span
-                  onClick={handleSecretTap}
-                  className="font-mono text-[10px] text-black/40 uppercase tracking-widest block mb-1 cursor-pointer select-none"
-                >
-                  OFFICIAL PARTY PASS
-                </span>
-                <h2 className="font-display text-4xl font-bold lowercase text-black mb-1">
-                  {assignedGuest.name}
-                </h2>
-
-                <div className="font-display text-6xl font-bold text-black my-2">
-                  {assignedGuest.drinks_consumed}
-                  <span className="text-3xl text-black/30 font-normal">
-                    /{assignedGuest.category === 'vip' ? '∞' : effectiveLimit}
-                  </span>
-                </div>
-
-                <span className="font-sans-clean text-xs font-semibold text-black/60 lowercase block">
-                  {assignedGuest.category === 'vip'
-                    ? 'unlimited drinks'
-                    : isLimitReached
-                    ? 'maximum limit reached'
-                    : `${Math.max(0, effectiveLimit - assignedGuest.drinks_consumed)} drinks remaining`}
-                </span>
-
-                {assignedGuest.entered_at && (
-                  <div className="inline-flex items-center gap-1.5 mt-3 text-[11px] font-sans-clean text-black/40">
-                    <Clock className="w-3 h-3" />
-                    <span>
-                      checked in at{' '}
-                      {new Date(assignedGuest.entered_at).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {isLimitReached && (
-                <div className="p-4 rounded-2xl bg-red-600 text-white text-center shadow-lg">
-                  <AlertOctagon className="w-8 h-8 text-white mx-auto mb-1 animate-pulse" />
-                  <span className="font-display text-lg font-bold lowercase block">limit reached</span>
-                  <span className="font-sans-clean text-xs text-white/90">
-                    Alcohol service cut off.
-                  </span>
-                </div>
-              )}
-
-              <div className="p-4 rounded-2xl bg-black/[0.03] border border-black/10 text-center space-y-1.5">
-                <div className="flex items-center justify-center gap-1.5 text-black font-sans-clean font-semibold text-xs">
-                  <Shield className="w-3.5 h-3.5 text-black/60" />
-                  <span>drinks are logged at the bar</span>
-                </div>
-                <p className="font-sans-clean text-[11px] text-black/50 leading-relaxed max-w-xs mx-auto">
-                  Show your wristband to the bartender to order your next drink. Enjoy responsibly!
-                </p>
-              </div>
-
-              <div className="pt-2 border-t border-black/10 text-center">
-                <button
-                  type="button"
-                  onClick={() => setIsPinModalOpen(true)}
-                  className="inline-flex items-center gap-1.5 text-[11px] font-sans-clean font-semibold text-black/40 hover:text-black transition-colors py-1 px-3 rounded-lg hover:bg-black/5"
-                >
-                  <Lock className="w-3 h-3" />
-                  <span>Bartender / Staff? Unlock Terminal</span>
-                </button>
-              </div>
-            </div>
+            /* VIEW B: GUEST DASHBOARD — FIRST POPUP FOR NON-AUTHENTICATED PHONES */
+            <GuestDashboard
+              assignedGuest={assignedGuest}
+              tagLabel={tagLabel}
+              guests={guests}
+              logs={logs}
+              settings={settings}
+              onSecretTap={handleSecretTap}
+              onOpenStaffPin={() => setIsPinModalOpen(true)}
+            />
           )}
         </div>
       )}
