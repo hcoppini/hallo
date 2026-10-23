@@ -107,8 +107,8 @@ export function BarmanDisplay({
       {/* 1. CUSTOMER SECTION                                              */}
       {/* ================================================================ */}
       <section>
-        <span className="block font-sans-clean text-xs font-semibold uppercase tracking-widest text-black/45 mb-2">
-          Customer:
+        <span className="block font-sans-clean text-xs font-semibold lowercase tracking-widest text-black/45 mb-2">
+          customer:
         </span>
 
         <div className="flex items-baseline justify-between gap-4">
@@ -125,7 +125,7 @@ export function BarmanDisplay({
               <button
                 type="button"
                 onClick={onOpenSearch}
-                className="font-display text-4xl sm:text-5xl font-bold lowercase text-black/35 hover:text-black leading-none tracking-tight text-left transition-colors"
+                className="font-display text-4xl sm:text-5xl font-bold lowercase text-black/35 hover:text-black leading-none tracking-tight text-left transition-colors cursor-pointer"
               >
                 select guest...
               </button>
@@ -140,15 +140,15 @@ export function BarmanDisplay({
               </span>
             </div>
             <span
-              className={`font-sans-clean text-[11px] font-semibold tracking-widest uppercase block mt-1.5 ${
+              className={`font-sans-clean text-[11px] font-semibold tracking-widest lowercase block mt-1.5 ${
                 isLimitReached ? 'text-black font-bold' : 'text-black/50'
               }`}
             >
               {isVip
-                ? 'UNLIMITED DRINKS'
+                ? 'unlimited drinks'
                 : isLimitReached
-                ? 'LIMIT REACHED'
-                : `${Math.max(0, effectiveLimit - drinksConsumed)} DRINKS LEFT`}
+                ? 'limit reached'
+                : `${Math.max(0, effectiveLimit - drinksConsumed)} drinks left`}
             </span>
           </div>
         </div>
@@ -167,13 +167,13 @@ export function BarmanDisplay({
       {/* ================================================================ */}
       <section>
         <div className="border-b border-black/15 pb-2 mb-4">
-          <h3 className="font-sans-clean text-xs font-semibold uppercase tracking-widest text-black/50">
-            Serve Drink:
+          <h3 className="font-sans-clean text-xs font-semibold lowercase tracking-widest text-black/50">
+            serve drink:
           </h3>
         </div>
 
-        <div className="p-4 sm:p-5 bg-black/[0.03] rounded-3xl border border-black/10 space-y-5">
-          {/* 7 Hardcoded Specific Drinks */}
+        <div className="p-4 sm:p-5 glass-card rounded-3xl border border-black/10 space-y-5">
+          {/* 7 Hardcoded Specific Drinks (luaws.pl pill buttons) */}
           <div className="flex flex-wrap gap-2">
             {BAR_DRINKS.map(({ type, label, category }) => {
               const Icon = categoryIcons[category];
@@ -183,10 +183,10 @@ export function BarmanDisplay({
                   key={type}
                   type="button"
                   onClick={() => onDrinkTypeChange(type)}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-sans-clean text-xs font-semibold tracking-wider lowercase transition-all active:scale-95 ${
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-full font-sans-clean text-xs font-semibold tracking-wider lowercase transition-all cursor-pointer active:scale-95 ${
                     isSelected
-                      ? 'bg-black text-white shadow-md'
-                      : 'bg-white hover:bg-black/[0.04] text-black/75 hover:text-black border border-black/10 shadow-2xs'
+                      ? 'bg-black text-white border border-black shadow-sm'
+                      : 'bg-white hover:bg-black/[0.05] text-black/80 hover:text-black border border-black/12'
                   }`}
                 >
                   <Icon className="w-3.5 h-3.5" />
@@ -212,7 +212,7 @@ export function BarmanDisplay({
                 <button
                   type="button"
                   onClick={() => setIsPinModalOpen(true)}
-                  className="px-4 py-3 rounded-full bg-white text-black/70 hover:text-black border border-black/15 font-sans-clean text-[11px] font-semibold lowercase flex items-center gap-1.5 transition-colors"
+                  className="px-4 py-3 rounded-full bg-white text-black/70 hover:text-black border border-black/15 font-sans-clean text-[11px] font-semibold tracking-wider lowercase flex items-center gap-1.5 transition-colors cursor-pointer active:scale-95"
                 >
                   <Lock className="w-3.5 h-3.5" />
                   <span>override (+1)</span>
@@ -249,8 +249,8 @@ export function BarmanDisplay({
       {/* ================================================================ */}
       <section>
         <div className="border-b border-black/15 pb-2 mb-3">
-          <h3 className="font-sans-clean text-xs font-semibold uppercase tracking-widest text-black/50">
-            {activeGuest ? `${customerName}'s History:` : 'History:'}
+          <h3 className="font-sans-clean text-xs font-semibold lowercase tracking-widest text-black/50">
+            {activeGuest ? `${customerName}’s history:` : 'history:'}
           </h3>
         </div>
 
@@ -273,7 +273,7 @@ export function BarmanDisplay({
                   <span className="font-mono text-xs sm:text-sm font-semibold text-black/45 tabular-nums w-12 shrink-0">
                     {formatTime24h(log.served_at)}
                   </span>
-                  <span className="font-medium text-black">
+                  <span className="font-medium text-black lowercase">
                     {formatDrinkHistoryLabel(log.drink_type)}
                   </span>
                 </div>
@@ -281,7 +281,7 @@ export function BarmanDisplay({
                 <button
                   type="button"
                   onClick={() => revertLastDrink(activeGuest.id, log.id)}
-                  className="text-[11px] font-sans-clean font-medium text-black/40 hover:text-black flex items-center gap-1 px-2.5 py-1 rounded-full hover:bg-black/5 transition-colors"
+                  className="text-[11px] font-sans-clean font-medium text-black/40 hover:text-black flex items-center gap-1 px-2.5 py-1 rounded-full hover:bg-black/5 transition-colors cursor-pointer lowercase"
                   title="Undo this drink"
                 >
                   <RotateCcw className="w-3 h-3" />
@@ -295,8 +295,8 @@ export function BarmanDisplay({
                 <span className="font-mono text-xs sm:text-sm font-semibold text-black/40 tabular-nums w-12 shrink-0">
                   {formatTime24h(activeGuest.entered_at)}
                 </span>
-                <span className="font-medium">
-                  Registered in the reception
+                <span className="font-medium lowercase">
+                  registered in the reception
                 </span>
               </div>
             )}

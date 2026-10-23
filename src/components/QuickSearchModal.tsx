@@ -60,7 +60,7 @@ export function QuickSearchModal({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-full text-black/40 hover:text-black hover:bg-black/5 transition-colors"
+            className="p-1.5 rounded-full text-black/40 hover:text-black hover:bg-black/5 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -71,11 +71,11 @@ export function QuickSearchModal({
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-black/40" />
           <input
             type="text"
-            placeholder="Type name (e.g. Janek) or tag (e.g. 001)..."
+            placeholder="type name (e.g. janek) or tag (e.g. 001)..."
             value={query}
             autoFocus
             onChange={e => setQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 bg-black/5 border border-black/10 rounded-2xl text-sm font-sans-clean outline-none focus:border-black transition-colors placeholder:text-black/30 text-black"
+            className="w-full pl-10 pr-4 py-3 bg-black/[0.04] border border-black/12 rounded-full text-sm font-sans-clean outline-none focus:border-black transition-colors placeholder:text-black/35 text-black"
           />
         </div>
 
@@ -99,47 +99,47 @@ export function QuickSearchModal({
                   }}
                   className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between group ${
                     isAtLimit
-                      ? 'bg-red-50/70 border-red-200 hover:bg-red-100/70'
-                      : 'bg-white/80 border-black/10 hover:border-black/30 hover:bg-white'
+                      ? 'bg-black/[0.04] border-black/20 hover:bg-black/[0.07]'
+                      : 'bg-white border-black/10 hover:border-black/30 hover:bg-black/[0.02]'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-black/5 flex items-center justify-center font-display font-bold text-black border border-black/10">
-                      {guest.name ? guest.name.charAt(0).toUpperCase() : '#'}
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-full bg-black/[0.05] flex items-center justify-center font-display font-bold text-black border border-black/10 shrink-0 lowercase">
+                      {guest.name ? guest.name.charAt(0).toLowerCase() : '#'}
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-sans-clean text-sm font-bold text-black">
-                          {guest.name || 'Unassigned Wristband'}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-sans-clean text-sm font-bold text-black lowercase truncate">
+                          {guest.name || 'unassigned wristband'}
                         </span>
-                        <span className="font-mono text-[10px] bg-black/5 text-black/60 px-1.5 py-0.5 rounded">
+                        <span className="font-mono text-[10px] bg-black/[0.06] text-black/65 px-2 py-0.5 rounded-full">
                           {guest.tag_id}
                         </span>
                         {guest.category === 'vip' && (
-                          <span className="text-[9px] font-bold tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 uppercase">
-                            VIP
+                          <span className="text-[9px] font-sans-clean font-bold tracking-widest px-2 py-0.5 rounded-full bg-black text-white lowercase">
+                            vip
                           </span>
                         )}
                         {guest.category === 'driver_minor' && (
-                          <span className="text-[9px] font-bold tracking-wider px-1.5 py-0.5 rounded bg-blue-100 text-blue-900 uppercase">
-                            DRIVER / MINOR
+                          <span className="text-[9px] font-sans-clean font-bold tracking-widest px-2 py-0.5 rounded-full bg-black/10 text-black/70 lowercase">
+                            driver / minor
                           </span>
                         )}
                       </div>
-                      <span className="text-[11px] text-black/50 font-sans-clean lowercase">
+                      <span className="text-[11px] text-black/45 font-sans-clean lowercase block">
                         {guest.is_entered ? 'checked in at door' : 'not entered yet'}
                       </span>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 shrink-0">
                     <div className="text-right">
                       <div className="font-display text-lg font-bold text-black">
                         {guest.drinks_consumed} / {guest.category === 'vip' ? '∞' : limit}
                       </div>
                       <span
                         className={`text-[10px] font-sans-clean font-semibold lowercase ${
-                          isAtLimit ? 'text-red-600' : 'text-black/50'
+                          isAtLimit ? 'text-black font-bold' : 'text-black/45'
                         }`}
                       >
                         {isAtLimit ? 'limit reached' : `${Math.max(0, limit - guest.drinks_consumed)} left`}
@@ -147,7 +147,7 @@ export function QuickSearchModal({
                     </div>
                     <button
                       type="button"
-                      className="btn-premium py-2 px-3 text-[11px] group-hover:bg-black group-hover:text-white transition-all"
+                      className="btn-premium py-2 px-3.5 text-[11px] group-hover:bg-black group-hover:text-white transition-all"
                     >
                       select
                     </button>
