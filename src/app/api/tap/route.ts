@@ -70,7 +70,7 @@ async function handleTapRequest(req: NextRequest) {
       `tag_id.eq.${parsed.decoded.toUpperCase()}`,
       `id.eq.${parsed.canonicalTag.replace('TAG', 'GUEST')}`,
     ];
-    if (parsed.cleanAlphanumeric) {
+    if (parsed.cleanAlphanumeric && parsed.cleanAlphanumeric !== 'UID' && parsed.cleanAlphanumeric.length >= 4) {
       queryOr.push(`notes.ilike.%${parsed.cleanAlphanumeric}%`);
     }
 

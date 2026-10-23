@@ -242,7 +242,7 @@ export function usePartyStore() {
           `id.eq.${parsed.canonicalTag.replace('TAG', 'GUEST')}`,
         ];
 
-        if (parsed.cleanAlphanumeric) {
+        if (parsed.cleanAlphanumeric && parsed.cleanAlphanumeric !== 'UID' && parsed.cleanAlphanumeric.length >= 4) {
           queryOrConditions.push(`notes.ilike.%${parsed.cleanAlphanumeric}%`);
         }
 
@@ -419,7 +419,7 @@ export function usePartyStore() {
         `tag_id.ilike.${parsed.canonicalTag}%`,
         `id.eq.${parsed.canonicalTag.replace('TAG', 'GUEST')}`,
       ];
-      if (parsed.cleanAlphanumeric) {
+      if (parsed.cleanAlphanumeric && parsed.cleanAlphanumeric !== 'UID' && parsed.cleanAlphanumeric.length >= 4) {
         queryOr.push(`notes.ilike.%${parsed.cleanAlphanumeric}%`);
       }
 
