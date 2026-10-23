@@ -5,7 +5,10 @@ import { useState, useEffect } from 'react';
 const STAFF_AUTH_KEY = 'halloween_party_staff_auth_v1';
 const STAFF_COOKIE_NAME = 'halloween_staff_session';
 const STAFF_DRINK_KEY = 'halloween_active_drink_type';
+const STAFF_STATION_KEY = 'halloween_staff_station_mode';
 const AUTH_EVENT_NAME = 'halloween_party_auth_change';
+
+export type StaffStationMode = 'barman' | 'door';
 
 let memoryAuthSession = false;
 
@@ -110,25 +113,55 @@ export function setStaffActiveDrinkType(drinkType: string): void {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(STAFF_DRINK_KEY, drinkType);
+    window.dispatchEvent(new Event(AUTH_EVENT_NAME));
+  } catch {}
+}
+
+let memoryStationMode: StaffStationMode = 'barman';
+
+export function getStaffStationMode(): StaffStationMode {
+  if (typeof window === 'undefined') return memoryStationMode;
+  try {
+    const val = localStorage.getItem(STAFF_STATION_KEY);
+    if (val === 'door' || val === 'barman') {
+      memoryStationMode = val;
+      return val;
+    }
+    return memoryStationMode;
+  } catch {
+    return memoryStationMode;
+  }
+}
+
+export function setStaffStationMode(mode: StaffStationMode): void {
+  memoryStationMode = mode;
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(STAFF_STATION_KEY, mode);
+    window.dispatchEvent(new Event(AUTH_EVENT_NAME));
   } catch {}
 }
 
 /**
- * Hook to reactively track staff authentication status across any component or tab
+ * Hook to reactively track staff authentication status and station preferences across any component or tab
  */
 export function useStaffAuth() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => isStaffAuthenticated());
+  const [stationMode, setStationModeState] = useState<StaffStationMode>(() => getStaffStationMode());
+  const [activeDrinkType, setActiveDrinkTypeState] = useState<string>(() => getStaffActiveDrinkType());
 
   useEffect(() => {
     const handleAuthChange = () => {
       setIsAuthenticated(isStaffAuthenticated());
+      setStationModeState(getStaffStationMode());
+      setActiveDrinkTypeState(getStaffActiveDrinkType());
     };
 
     window.addEventListener(AUTH_EVENT_NAME, handleAuthChange);
     window.addEventListener('storage', handleAuthChange);
 
     // Initial check on mount
-    setIsAuthenticated(isStaffAuthenticated());
+    handleAuthChange();
 
     return () => {
       window.removeEventListener(AUTH_EVENT_NAME, handleAuthChange);
@@ -138,6 +171,10 @@ export function useStaffAuth() {
 
   return {
     isAuthenticated,
+    stationMode,
+    activeDrinkType,
+    setStationMode: (mode: StaffStationMode) => setStaffStationMode(mode),
+    setActiveDrinkType: (type: string) => setStaffActiveDrinkType(type),
     authenticate: (pin: string, validPin: string) => authenticateStaff(pin, validPin),
     logout: logoutStaff,
   };

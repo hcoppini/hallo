@@ -21,6 +21,7 @@ export function NfcWriterModal({
   const [status, setStatus] = useState<'idle' | 'writing' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const [isSupported, setIsSupported] = useState(false);
+  const [copiedNotice, setCopiedNotice] = useState(false);
 
   useEffect(() => {
     setIsSupported(isWebNfcSupported());
@@ -36,7 +37,7 @@ export function NfcWriterModal({
 
   const handleWrite = async () => {
     if (!isSupported) {
-      setErrorMsg('Web NFC writing requires Chrome on an Android phone.');
+      setErrorMsg('Direct browser NFC writing requires Chrome on Android. On iPhone, use "Copy & Advance" below with the free NFC Tools or NXP TagWriter app.');
       setStatus('error');
       return;
     }
@@ -47,7 +48,6 @@ export function NfcWriterModal({
       await nfcController.writeUrl(targetUrl);
       soundSystem.playApprovedSound();
       setStatus('success');
-      // Auto advance to next tag after 1.2 seconds
       setTimeout(() => {
         setCurrentNum(prev => prev + 1);
         setStatus('idle');
@@ -59,9 +59,14 @@ export function NfcWriterModal({
     }
   };
 
-  const copyUrl = () => {
+  const copyAndAdvance = () => {
     navigator.clipboard.writeText(targetUrl);
     soundSystem.playApprovedSound();
+    setCopiedNotice(true);
+    setTimeout(() => {
+      setCopiedNotice(false);
+      setCurrentNum(prev => prev + 1);
+    }, 600);
   };
 
   return (
@@ -101,14 +106,21 @@ export function NfcWriterModal({
             <span className="truncate">{targetUrl}</span>
             <button
               type="button"
-              onClick={copyUrl}
-              title="Copy URL"
+              onClick={copyAndAdvance}
+              title="Copy URL & Advance"
               className="p-1 hover:text-black text-black/50"
             >
               <Copy className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
+
+        {copiedNotice && (
+          <div className="p-3 rounded-2xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-center text-xs font-sans-clean mb-4 flex items-center justify-center gap-2">
+            <Check className="w-4 h-4 text-emerald-600" />
+            <span>Copied {currentTagId}! Advancing to next...</span>
+          </div>
+        )}
 
         {/* Status Message */}
         {status === 'writing' && (
@@ -126,22 +138,33 @@ export function NfcWriterModal({
 
         {status === 'error' && (
           <div className="p-4 rounded-2xl bg-red-50 text-red-800 border border-red-200 text-center text-xs font-sans-clean mb-6 flex items-center justify-center gap-2">
-            <AlertCircle className="w-4 h-4 text-red-600" />
+            <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
             <span>{errorMsg}</span>
           </div>
         )}
 
         {/* Action Buttons */}
         <div className="flex items-center gap-3 mb-4">
-          <button
-            type="button"
-            onClick={handleWrite}
-            disabled={status === 'writing'}
-            className="btn-premium-primary flex-1 py-3.5 gap-2"
-          >
-            <Radio className="w-4 h-4" />
-            <span>write {currentTagId}</span>
-          </button>
+          {isSupported ? (
+            <button
+              type="button"
+              onClick={handleWrite}
+              disabled={status === 'writing'}
+              className="btn-premium-primary flex-1 py-3.5 gap-2"
+            >
+              <Radio className="w-4 h-4" />
+              <span>write {currentTagId}</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={copyAndAdvance}
+              className="btn-premium-primary flex-1 py-3.5 gap-2"
+            >
+              <Copy className="w-4 h-4" />
+              <span>copy {currentTagId} & next (+1)</span>
+            </button>
+          )}
 
           <button
             type="button"

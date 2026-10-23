@@ -34,21 +34,25 @@ export function parseTagId(rawTag: string): TagParseResult {
   }
 
   const upper = decoded.toUpperCase();
+  const cleanAlphanumeric = upper.replace(/[^A-Z0-9]/g, '');
 
-  // 1. Try to extract tag number from standard formats: TAG-004, TAG4, GUEST-004, #4, or just 4
-  const tagNumMatch = upper.match(/(?:TAG|GUEST)?[-_#\s]*0*([1-9]\d{0,2})(?:[:\-_%\s]|$)/);
+  // 1. Try to extract tag number ONLY from explicit TAG/GUEST prefixes (e.g. TAG-004, TAG-004:04:A2, GUEST-004)
+  //    OR when the entire input is purely a 1-3 digit number (e.g. "4", "004", "#4").
+  //    Never match colon-separated hex hardware UIDs like "04:A2:3B:5F" or "04:53:90:1A".
+  const explicitPrefixMatch = upper.match(/^(?:TAG|GUEST)[-_#\s]*0*([1-9]\d{0,2})(?:[:\-_%\s]|$)/);
+  const pureNumberMatch = upper.match(/^#?0*([1-9]\d{0,2})$/);
+
+  const matchedNumStr = explicitPrefixMatch?.[1] || pureNumberMatch?.[1] || null;
   let tagNumber: number | null = null;
-  let canonicalTag = upper;
+  let canonicalTag = cleanAlphanumeric || upper;
 
-  if (tagNumMatch && tagNumMatch[1]) {
-    const num = parseInt(tagNumMatch[1], 10);
+  if (matchedNumStr) {
+    const num = parseInt(matchedNumStr, 10);
     if (num >= 1 && num <= 999) {
       tagNumber = num;
       canonicalTag = `TAG-${num.toString().padStart(3, '0')}`;
     }
   }
-
-  const cleanAlphanumeric = upper.replace(/[^A-Z0-9]/g, '');
 
   return {
     raw: rawTag,
@@ -146,10 +150,12 @@ export function findGuestByTag(guests: Guest[], searchTag: string): Guest | unde
  */
 export function getGuestDisplayName(guest: Guest): string {
   const parsed = parseTagId(guest.tag_id);
-  const tagLabel = parsed.tagNumber !== null ? `Tag #${parsed.tagNumber}` : guest.tag_id;
+  const idParsed = parseTagId(guest.id);
+  const effectiveNum = parsed.tagNumber ?? idParsed.tagNumber;
+  const tagLabel = effectiveNum !== null ? `Tag #${effectiveNum}` : guest.tag_id;
 
   if (guest.name && guest.name.trim().length > 0) {
-    return parsed.tagNumber !== null ? `${guest.name.trim()} (${tagLabel})` : guest.name.trim();
+    return effectiveNum !== null ? `${guest.name.trim()} (${tagLabel})` : guest.name.trim();
   }
 
   return `${tagLabel} (Unassigned)`;

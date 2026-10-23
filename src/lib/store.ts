@@ -416,11 +416,25 @@ export function usePartyStore() {
     }
 
     const now = new Date().toISOString();
+    const parsedInput = parseTagId(input.tag_id);
+
+    // If this is a non-numbered hardware UID tag and not yet assigned, claim the next free slot (GUEST-001..100)
+    const effectiveHwUid =
+      input.hardware_uid || (parsedInput.tagNumber === null ? parsedInput.cleanAlphanumeric : undefined);
+
+    if (!existingGuest && parsedInput.tagNumber === null) {
+      const freeSlot = globalGuests.find(
+        g => !g.is_entered && !g.name && (!g.notes || !g.notes.includes('[UID:'))
+      );
+      if (freeSlot) {
+        existingGuest = freeSlot;
+      }
+    }
 
     // Encode hardware UID in notes if provided for persistent chip matching
     let finalNotes = input.notes || existingGuest?.notes || null;
-    if (input.hardware_uid) {
-      const cleanUid = input.hardware_uid.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    if (effectiveHwUid) {
+      const cleanUid = effectiveHwUid.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
       const existingUserNotes = (input.notes ?? existingGuest?.notes ?? '')
         .replace(/\[UID:[^\]]+\]/gi, '')
         .trim();
@@ -432,7 +446,7 @@ export function usePartyStore() {
     if (existingGuest) {
       updatedGuest = {
         ...existingGuest,
-        hardware_uid: input.hardware_uid || existingGuest.hardware_uid,
+        hardware_uid: effectiveHwUid || existingGuest.hardware_uid,
         name: trimmedName,
         category: input.category || existingGuest.category || 'standard',
         custom_drink_limit: input.custom_drink_limit !== undefined ? input.custom_drink_limit : existingGuest.custom_drink_limit,
@@ -442,15 +456,14 @@ export function usePartyStore() {
         updated_at: now,
       };
     } else {
-      const parsed = parseTagId(input.tag_id);
-      const newGuestId = parsed.tagNumber
-        ? `GUEST-${parsed.tagNumber.toString().padStart(3, '0')}`
-        : `GUEST-${(globalGuests.length + 1).toString().padStart(3, '0')}`;
+      const newGuestId = parsedInput.tagNumber
+        ? `GUEST-${parsedInput.tagNumber.toString().padStart(3, '0')}`
+        : `GUEST-${parsedInput.cleanAlphanumeric || Date.now()}`;
 
       updatedGuest = {
         id: newGuestId,
-        tag_id: parsed.canonicalTag,
-        hardware_uid: input.hardware_uid || null,
+        tag_id: parsedInput.canonicalTag,
+        hardware_uid: effectiveHwUid || null,
         name: trimmedName,
         category: input.category || 'standard',
         custom_drink_limit: input.custom_drink_limit ?? null,
@@ -581,7 +594,17 @@ export function usePartyStore() {
 
     if (isSupabaseConfigured && supabase) {
       try {
-        await supabase.from('party_settings').upsert(globalSettings);
+        await supabase
+          .from('party_settings')
+          .update({
+            party_name: globalSettings.party_name,
+            default_drink_limit: globalSettings.default_drink_limit,
+            is_party_active: globalSettings.is_party_active,
+            admin_pin: globalSettings.admin_pin,
+            cutoff_time: globalSettings.cutoff_time,
+            updated_at: globalSettings.updated_at,
+          })
+          .eq('id', globalSettings.id || 'default_party');
       } catch (err) {
         console.error('Failed to update settings in Supabase:', err);
       }

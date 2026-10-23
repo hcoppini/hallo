@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { NfcReader } from '@/components/NfcReader';
 import { BarmanDisplay } from '@/components/BarmanDisplay';
 import { SpeedKeypad } from '@/components/SpeedKeypad';
@@ -9,31 +9,70 @@ import { AdminPinModal } from '@/components/AdminPinModal';
 import { usePartyStore } from '@/lib/store';
 import { DrinkType, ServeDrinkResult, Guest } from '@/lib/types';
 import { nfcController } from '@/lib/nfc';
-import { useStaffAuth, setStaffActiveDrinkType, getStaffActiveDrinkType } from '@/lib/auth';
-import { Zap, Radio, Search, Lock, LogOut, ShieldCheck } from 'lucide-react';
+import {
+  useStaffAuth,
+  setStaffActiveDrinkType,
+  getStaffActiveDrinkType,
+  setStaffStationMode,
+} from '@/lib/auth';
+import { subscribeToTagRelay, sendTagRelayMessage } from '@/lib/tag-relay';
+import { Zap, Radio, Lock, LogOut, ShieldCheck, Wifi } from 'lucide-react';
 
 export default function BarmanPage() {
-  const { serveDrink, settings } = usePartyStore();
+  const { serveDrink, refresh } = usePartyStore();
   const { isAuthenticated, logout } = useStaffAuth();
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
 
   const [selectedDrinkType, setSelectedDrinkType] = useState<DrinkType>(() => {
     return (getStaffActiveDrinkType() as DrinkType) || 'cocktail';
   });
+  const selectedDrinkRef = useRef<DrinkType>(selectedDrinkType);
+  useEffect(() => {
+    selectedDrinkRef.current = selectedDrinkType;
+  }, [selectedDrinkType]);
+
   const [lastResult, setLastResult] = useState<ServeDrinkResult | null>(null);
   const [activeTagId, setActiveTagId] = useState<string | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [inputMode, setInputMode] = useState<'keypad' | 'nfc'>('keypad');
+  const [relayFlash, setRelayFlash] = useState<string | null>(null);
 
-  // Auto-acquire wake lock on barman desk so screen stays awake
+  // Set this phone's default station mode to 'barman' and acquire wake lock
   useEffect(() => {
     if (isAuthenticated) {
+      setStaffStationMode('barman');
       nfcController.requestWakeLock();
     }
     return () => {
       nfcController.releaseWakeLock();
     };
   }, [isAuthenticated]);
+
+  // Listen to real-time NFC Tag Relay (from /t/[id] tabs or cross-device taps)
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const unsubscribe = subscribeToTagRelay(msg => {
+      if (msg.type === 'PING_STATION') {
+        sendTagRelayMessage({
+          type: 'STATION_ACK',
+          station: 'barman',
+          drinkType: selectedDrinkRef.current,
+        });
+      } else if (msg.type === 'DRINK_SERVED' && msg.result) {
+        setActiveTagId(msg.tagId || null);
+        setLastResult(msg.result);
+        setRelayFlash(`Relayed NFC tap: ${msg.result.guest?.name || msg.tagId}`);
+        refresh();
+        setTimeout(() => setRelayFlash(null), 3500);
+      } else if (msg.type === 'TAG_TAPPED' && msg.tagId && msg.isAssigned === false) {
+        setRelayFlash(`Unassigned wristband tapped: ${msg.tagId}`);
+        setTimeout(() => setRelayFlash(null), 4000);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [isAuthenticated, refresh]);
 
   // Sync drink type changes with staff session storage
   const handleDrinkTypeChange = (type: DrinkType) => {
@@ -110,11 +149,19 @@ export default function BarmanPage() {
 
   return (
     <div className="w-full py-4 space-y-6">
-      {/* Staff Status Header & Lock Button */}
+      {/* Staff Status Header & Live Relay Indicator */}
       <div className="p-3 rounded-2xl bg-black text-white text-xs font-sans-clean flex items-center justify-between shadow-lg max-w-md mx-auto">
         <div className="flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          <span className="font-bold text-[10px] tracking-wide uppercase">Barman Terminal Active</span>
+          <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+          <div>
+            <span className="font-bold text-[10px] tracking-wide uppercase block leading-tight">
+              Barman Terminal Active
+            </span>
+            <span className="text-[10px] text-emerald-400/90 flex items-center gap-1 font-mono">
+              <Wifi className="w-2.5 h-2.5" />
+              Live NFC Tag Relay Listening
+            </span>
+          </div>
         </div>
         <button
           type="button"
@@ -125,6 +172,13 @@ export default function BarmanPage() {
           <span>Lock Station</span>
         </button>
       </div>
+
+      {/* Live Relay Flash Toast */}
+      {relayFlash && (
+        <div className="max-w-md mx-auto p-3 rounded-2xl bg-emerald-600 text-white text-xs font-sans-clean font-bold text-center shadow-lg animate-in fade-in duration-150">
+          ⚡ {relayFlash}
+        </div>
+      )}
 
       {/* High-Contrast Drink Counter / Limit Alert Screen */}
       <div>

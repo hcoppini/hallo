@@ -7,19 +7,22 @@ import { GuestCategory } from '@/lib/types';
 import {
   UserCheck,
   CheckCircle2,
-  Sparkles,
   AlertCircle,
   Radio,
   Loader2,
   X,
+  Lock,
+  LogOut,
+  ShieldCheck,
+  Wifi,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { findGuestByTag, parseTagId } from '@/lib/tag-utils';
 import { isWebNfcSupported, nfcController } from '@/lib/nfc';
 import { soundSystem } from '@/lib/audio';
-import { useStaffAuth } from '@/lib/auth';
+import { useStaffAuth, setStaffStationMode } from '@/lib/auth';
+import { subscribeToTagRelay, sendTagRelayMessage } from '@/lib/tag-relay';
 import { AdminPinModal } from '@/components/AdminPinModal';
-import { Lock, LogOut, ShieldCheck } from 'lucide-react';
 
 export default function DoorCheckInPage() {
   const { guests, checkIn, settings } = usePartyStore();
@@ -33,6 +36,7 @@ export default function DoorCheckInPage() {
   const [notes, setNotes] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [lastCheckedIn, setLastCheckedIn] = useState<string | null>(null);
+  const [relayedTagNotice, setRelayedTagNotice] = useState<string | null>(null);
 
   // NFC Writing State
   const [isNfcWriting, setIsNfcWriting] = useState(false);
@@ -56,6 +60,42 @@ export default function DoorCheckInPage() {
     }
   }, []);
 
+  // Mark this staff phone as being in 'door' station mode so NFC taps check in rather than auto-serving drinks
+  useEffect(() => {
+    if (isAuthenticated) {
+      setStaffStationMode('door');
+    }
+  }, [isAuthenticated]);
+
+  // Listen for NFC taps relayed from /t/[id] tabs
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const unsubscribe = subscribeToTagRelay(msg => {
+      if (msg.type === 'PING_STATION') {
+        sendTagRelayMessage({
+          type: 'STATION_ACK',
+          station: 'door',
+        });
+      } else if (msg.type === 'TAG_TAPPED' && msg.tagId) {
+        setTagId(msg.tagId);
+        soundSystem.playApprovedSound();
+        setRelayedTagNotice(`Wristband tapped: ${msg.tagId}`);
+        setTimeout(() => setRelayedTagNotice(null), 4000);
+
+        const existing = findGuestByTag(guests, msg.tagId);
+        if (existing?.name) {
+          setName(existing.name);
+          setCategory(existing.category);
+        } else {
+          setName('');
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [isAuthenticated, guests]);
+
   // Default to next unassigned tag if tagId is empty and nextUnassigned is available
   useEffect(() => {
     if (!tagId && nextUnassigned) {
@@ -69,9 +109,8 @@ export default function DoorCheckInPage() {
     .sort((a, b) => new Date(b.entered_at || 0).getTime() - new Date(a.entered_at || 0).getTime())
     .slice(0, 6);
 
-  const handleTagScanned = (scannedTag: string, hardwareUid?: string) => {
+  const handleTagScanned = (scannedTag: string) => {
     setTagId(scannedTag);
-    // Check if this tag is already known
     const existing = findGuestByTag(guests, scannedTag);
     if (existing?.name) {
       setName(existing.name);
@@ -101,7 +140,6 @@ export default function DoorCheckInPage() {
     if (shouldWriteNfc && isNfcSupported) {
       try {
         setIsNfcWriting(true);
-        // Prompt user to touch sticker
         await nfcController.writeUrl(targetUrl);
         setIsNfcWriting(false);
       } catch (err) {
@@ -196,8 +234,16 @@ export default function DoorCheckInPage() {
       {/* Staff Status Header & Lock Button */}
       <div className="p-3 rounded-2xl bg-black text-white text-xs font-sans-clean flex items-center justify-between shadow-lg">
         <div className="flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          <span className="font-bold text-[10px] tracking-wide uppercase">Door Reception Active</span>
+          <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+          <div>
+            <span className="font-bold text-[10px] tracking-wide uppercase block leading-tight">
+              Door Reception Active
+            </span>
+            <span className="text-[10px] text-emerald-400/90 flex items-center gap-1 font-mono">
+              <Wifi className="w-2.5 h-2.5" />
+              Live NFC Tag Relay Listening
+            </span>
+          </div>
         </div>
         <button
           type="button"
@@ -208,6 +254,13 @@ export default function DoorCheckInPage() {
           <span>Lock Station</span>
         </button>
       </div>
+
+      {/* Live Relay Notice */}
+      {relayedTagNotice && (
+        <div className="p-3 rounded-2xl bg-emerald-600 text-white text-xs font-sans-clean font-bold text-center shadow-lg animate-in fade-in duration-150">
+          ⚡ {relayedTagNotice}
+        </div>
+      )}
 
       {/* Page Title & Stats */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
@@ -241,7 +294,7 @@ export default function DoorCheckInPage() {
               assign & admit guest
             </h2>
             <p className="font-sans-clean text-xs text-black/60 lowercase mb-6">
-              program blank sticker in 1 tap or admit directly into registry
+              tap wristband or admit directly into registry
             </p>
 
             {errorMsg && (
@@ -394,7 +447,7 @@ export default function DoorCheckInPage() {
                   className={isNfcSupported ? 'btn-premium w-full py-3 text-xs gap-2' : 'btn-premium-primary w-full py-4 text-xs gap-2'}
                 >
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>admit guest without writing nfc</span>
+                  <span>admit guest {isNfcSupported ? 'without writing nfc' : ''}</span>
                 </button>
               </div>
             </form>

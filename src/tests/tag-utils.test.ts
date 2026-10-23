@@ -21,9 +21,15 @@ describe('Tag Utils Parsing & Matching', () => {
     expect(parseTagId('TAG-004:04:A2:3B').tagNumber).toBe(4);
   });
 
-  it('handles raw hardware UID when not numbered', () => {
+  it('handles raw hardware UID when not numbered without colliding on TAG-004', () => {
     const res = parseTagId('04:A2:3B:5F');
     expect(res.decoded).toBe('04:A2:3B:5F');
+    expect(res.tagNumber).toBeNull();
+    expect(res.canonicalTag).toBe('04A23B5F');
+
+    const res2 = parseTagId('04:53:90:1A:2B:3C:80');
+    expect(res2.tagNumber).toBeNull();
+    expect(res2.canonicalTag).toBe('0453901A2B3C80');
   });
 
   it('matches guest with different tag representations', () => {
