@@ -102,12 +102,12 @@ export function BarmanDisplay({
   };
 
   return (
-    <div className="w-full space-y-8 pt-2">
+    <div className="w-full space-y-9 pt-2">
       {/* ================================================================ */}
       {/* 1. CUSTOMER SECTION                                              */}
       {/* ================================================================ */}
       <section>
-        <span className="block font-sans-clean text-sm font-medium text-[#7A0010] mb-1">
+        <span className="block font-sans-clean text-xs font-semibold uppercase tracking-widest text-black/45 mb-2">
           Customer:
         </span>
 
@@ -117,7 +117,7 @@ export function BarmanDisplay({
               <h2
                 onClick={onOpenSearch}
                 title="Click to search or switch customer"
-                className="font-display text-5xl sm:text-6xl font-bold lowercase text-black leading-none tracking-tight truncate cursor-pointer hover:opacity-75 transition-opacity"
+                className="font-display text-5xl sm:text-6xl font-bold lowercase text-black leading-none tracking-tight truncate cursor-pointer hover:opacity-70 transition-opacity"
               >
                 {customerName}
               </h2>
@@ -135,13 +135,13 @@ export function BarmanDisplay({
           <div className="text-right shrink-0">
             <div className="font-display text-5xl sm:text-6xl font-bold tracking-tight text-black leading-none">
               {drinksConsumed}
-              <span className="text-3xl sm:text-4xl text-black/30 font-normal">
+              <span className="text-3xl sm:text-4xl text-black/25 font-normal">
                 /{isVip ? '∞' : effectiveLimit}
               </span>
             </div>
             <span
-              className={`font-sans-clean text-[11px] font-semibold tracking-wider uppercase block mt-1.5 ${
-                isLimitReached ? 'text-[#7A0010] font-bold' : 'text-black/55'
+              className={`font-sans-clean text-[11px] font-semibold tracking-widest uppercase block mt-1.5 ${
+                isLimitReached ? 'text-black font-bold' : 'text-black/50'
               }`}
             >
               {isVip
@@ -153,10 +153,10 @@ export function BarmanDisplay({
           </div>
         </div>
 
-        {/* Progress Bar */}
-        <div className="w-full max-w-md h-5 bg-white border-2 border-[#7A0010] mt-4 overflow-hidden">
+        {/* Monochrome High-Contrast Progress Bar */}
+        <div className="w-full max-w-md h-4 rounded-full bg-black/[0.05] border border-black/25 p-0.5 mt-5 overflow-hidden">
           <div
-            className="h-full bg-[#7A0010] transition-all duration-300"
+            className="h-full bg-black rounded-full transition-all duration-300"
             style={{ width: `${progressPercent}%` }}
           />
         </div>
@@ -166,13 +166,13 @@ export function BarmanDisplay({
       {/* 2. SERVE DRINK SECTION                                           */}
       {/* ================================================================ */}
       <section>
-        <div className="border-b-2 border-[#7A0010] pb-1 mb-4">
-          <h3 className="font-sans-clean text-sm font-medium text-[#7A0010]">
+        <div className="border-b border-black/15 pb-2 mb-4">
+          <h3 className="font-sans-clean text-xs font-semibold uppercase tracking-widest text-black/50">
             Serve Drink:
           </h3>
         </div>
 
-        <div className="p-4 sm:p-5 bg-black/[0.04] rounded-2xl border border-black/5 space-y-5">
+        <div className="p-4 sm:p-5 bg-black/[0.03] rounded-3xl border border-black/10 space-y-5">
           {/* 7 Hardcoded Specific Drinks */}
           <div className="flex flex-wrap gap-2">
             {BAR_DRINKS.map(({ type, label, category }) => {
@@ -186,7 +186,7 @@ export function BarmanDisplay({
                   className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-sans-clean text-xs font-semibold tracking-wider lowercase transition-all active:scale-95 ${
                     isSelected
                       ? 'bg-black text-white shadow-md'
-                      : 'bg-white hover:bg-white/90 text-black/80 hover:text-black border border-black/10'
+                      : 'bg-white hover:bg-black/[0.04] text-black/75 hover:text-black border border-black/10 shadow-2xs'
                   }`}
                 >
                   <Icon className="w-3.5 h-3.5" />
@@ -220,7 +220,7 @@ export function BarmanDisplay({
                 <button
                   type="button"
                   disabled
-                  className="py-3.5 px-7 rounded-full bg-[#7A0010]/15 text-[#7A0010] border border-[#7A0010]/30 font-sans-clean text-xs font-bold tracking-wider lowercase flex items-center gap-2 cursor-not-allowed"
+                  className="py-3.5 px-7 rounded-full bg-black/10 text-black/45 border border-black/15 font-sans-clean text-xs font-bold tracking-wider lowercase flex items-center gap-2 cursor-not-allowed"
                 >
                   <Ban className="w-4 h-4" />
                   <span>limit reached</span>
@@ -248,8 +248,8 @@ export function BarmanDisplay({
       {/* 3. CUSTOMER HISTORY SECTION                                      */}
       {/* ================================================================ */}
       <section>
-        <div className="border-b-2 border-[#7A0010] pb-1 mb-3">
-          <h3 className="font-sans-clean text-sm font-medium text-[#7A0010]">
+        <div className="border-b border-black/15 pb-2 mb-3">
+          <h3 className="font-sans-clean text-xs font-semibold uppercase tracking-widest text-black/50">
             {activeGuest ? `${customerName}'s History:` : 'History:'}
           </h3>
         </div>
@@ -263,17 +263,17 @@ export function BarmanDisplay({
             no activity recorded yet for {customerName}.
           </p>
         ) : (
-          <div className="space-y-1.5">
+          <div className="divide-y divide-black/[0.06]">
             {guestDrinkLogs.map(log => (
               <div
                 key={log.id}
-                className="flex items-center justify-between py-1 text-sm font-sans-clean text-[#5A000C]"
+                className="flex items-center justify-between py-2.5 text-sm font-sans-clean text-black"
               >
-                <div className="flex items-baseline gap-4">
-                  <span className="font-mono text-xs sm:text-sm font-medium tabular-nums">
+                <div className="flex items-baseline gap-5">
+                  <span className="font-mono text-xs sm:text-sm font-semibold text-black/45 tabular-nums w-12 shrink-0">
                     {formatTime24h(log.served_at)}
                   </span>
-                  <span className="font-medium">
+                  <span className="font-medium text-black">
                     {formatDrinkHistoryLabel(log.drink_type)}
                   </span>
                 </div>
@@ -281,7 +281,7 @@ export function BarmanDisplay({
                 <button
                   type="button"
                   onClick={() => revertLastDrink(activeGuest.id, log.id)}
-                  className="text-[11px] font-sans-clean text-black/35 hover:text-[#7A0010] flex items-center gap-1 px-2 py-0.5 rounded hover:bg-black/5 transition-colors"
+                  className="text-[11px] font-sans-clean font-medium text-black/40 hover:text-black flex items-center gap-1 px-2.5 py-1 rounded-full hover:bg-black/5 transition-colors"
                   title="Undo this drink"
                 >
                   <RotateCcw className="w-3 h-3" />
@@ -291,8 +291,8 @@ export function BarmanDisplay({
             ))}
 
             {activeGuest.entered_at && (
-              <div className="flex items-baseline gap-4 py-1 text-sm font-sans-clean text-[#5A000C]">
-                <span className="font-mono text-xs sm:text-sm font-medium tabular-nums">
+              <div className="flex items-baseline gap-5 py-2.5 text-sm font-sans-clean text-black/65">
+                <span className="font-mono text-xs sm:text-sm font-semibold text-black/40 tabular-nums w-12 shrink-0">
                   {formatTime24h(activeGuest.entered_at)}
                 </span>
                 <span className="font-medium">

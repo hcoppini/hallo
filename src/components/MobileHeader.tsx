@@ -77,9 +77,9 @@ export function MobileHeader() {
               <button
                 type="button"
                 onClick={() => setIsSearchOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 rounded-full bg-black/[0.06] hover:bg-black/10 border border-black/15 text-xs font-sans-clean font-semibold tracking-wider lowercase text-black transition-all active:scale-95"
+                className="flex items-center gap-2 px-4 py-2 rounded-full bg-black/[0.05] hover:bg-black/[0.09] border border-black/15 text-xs font-sans-clean font-semibold tracking-wider lowercase text-black transition-all active:scale-95"
               >
-                <Search className="w-3.5 h-3.5" />
+                <Search className="w-3.5 h-3.5 text-black/70" />
                 <span>search guest</span>
               </button>
             )}
@@ -88,12 +88,12 @@ export function MobileHeader() {
               type="button"
               onClick={() => setIsMenuOpen(prev => !prev)}
               aria-label="Toggle navigation menu"
-              className="flex flex-col items-center justify-center px-2.5 py-1 rounded-xl hover:bg-black/5 active:scale-95 transition-all"
+              className="flex flex-col items-center justify-center px-3 py-1.5 rounded-xl hover:bg-black/5 active:scale-95 transition-all text-black/80 hover:text-black"
             >
-              <span className="font-sans-clean text-xs font-semibold text-[#7A0010] leading-none">
-                Menu
+              <span className="font-sans-clean text-[11px] font-semibold tracking-wider lowercase leading-none">
+                menu
               </span>
-              <span className="font-mono text-xs font-bold text-black leading-none tracking-widest mt-0.5">
+              <span className="font-mono text-xs font-bold text-black/60 leading-none tracking-widest mt-0.5">
                 ...
               </span>
             </button>
@@ -170,7 +170,7 @@ export function MobileHeader() {
                   setIsMenuOpen(false);
                 }}
                 title="Lock Station"
-                className="flex flex-col items-center justify-center py-2 px-2 text-black/40 hover:text-red-700 transition-colors"
+                className="flex flex-col items-center justify-center py-2 px-2 text-black/40 hover:text-black transition-colors"
               >
                 <LogOut className="w-4 h-4" />
                 <span className="text-[9px] font-sans-clean font-semibold uppercase tracking-wider mt-1">
