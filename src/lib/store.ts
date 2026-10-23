@@ -20,7 +20,7 @@ const initialSettings: PartySettings = {
   party_name: 'Halloween Birthday Party 2026',
   default_drink_limit: 5,
   is_party_active: true,
-  admin_pin: '1031',
+  admin_pin: '2113',
   cutoff_time: null,
 };
 
@@ -50,7 +50,7 @@ function getInitialLocalData() {
   let settings = initialSettings;
   try {
     const raw = localStorage.getItem(STORAGE_KEY_SETTINGS);
-    if (raw) settings = { ...initialSettings, ...JSON.parse(raw) };
+    if (raw) { const p = JSON.parse(raw); if (p.admin_pin === '1031') p.admin_pin = '2113'; settings = { ...initialSettings, ...p }; }
   } catch {
     // fallback
   }
@@ -120,7 +120,7 @@ async function syncFromSupabaseGlobal() {
       supabase.from('drink_logs').select('*').order('served_at', { ascending: false }).limit(100),
     ]);
 
-    if (settingsRes.data) globalSettings = { ...initialSettings, ...settingsRes.data };
+    if (settingsRes.data) { const s = { ...initialSettings, ...settingsRes.data }; if (s.admin_pin === '1031') s.admin_pin = '2113'; globalSettings = s; }
     if (guestsRes.data && guestsRes.data.length > 0) globalGuests = guestsRes.data;
     if (logsRes.data) globalLogs = logsRes.data;
 

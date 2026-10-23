@@ -16,7 +16,7 @@ describe('Party Lifecycle Integration Flow', () => {
     party_name: 'Halloween 2026',
     default_drink_limit: 4,
     is_party_active: true,
-    admin_pin: '1031',
+    admin_pin: '2113',
   };
 
   it('handles complete lifecycle for 100 wristbands with mixed tiers', () => {
@@ -73,7 +73,7 @@ describe('Party Lifecycle Integration Flow', () => {
     expect(softResult.drinks_consumed).toBe(4);
 
     // 9. Supervisor override (+1 drink limit authorization)
-    const parentPinCorrect = validateAdminPin('1031', settings.admin_pin);
+    const parentPinCorrect = validateAdminPin('2113', settings.admin_pin);
     expect(parentPinCorrect).toBe(true);
 
     const overriddenGuest: Guest = {
@@ -180,7 +180,7 @@ describe('Party Lifecycle Integration Flow', () => {
     expect(isStaffAuthenticated()).toBe(false);
 
     // Correct PIN succeeds
-    const goodAuth = authenticateStaff('1031', settings.admin_pin);
+    const goodAuth = authenticateStaff('2113', settings.admin_pin);
     expect(goodAuth).toBe(true);
     expect(isStaffAuthenticated()).toBe(true);
 

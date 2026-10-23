@@ -14,7 +14,7 @@ const defaultSettings: PartySettings = {
   party_name: 'Halloween Birthday Party 2026',
   default_drink_limit: 5,
   is_party_active: true,
-  admin_pin: '1031',
+  admin_pin: '2113',
 };
 
 const createMockGuest = (overrides: Partial<Guest> = {}): Guest => ({
@@ -194,11 +194,11 @@ describe('Party Engine - Door Check-In & Wristband Batching', () => {
 
 describe('Party Engine - Security Admin PIN', () => {
   it('should validate matching PIN', () => {
-    expect(validateAdminPin('1031', '1031')).toBe(true);
+    expect(validateAdminPin('2113', '2113')).toBe(true);
   });
 
   it('should reject wrong PIN', () => {
-    expect(validateAdminPin('0000', '1031')).toBe(false);
-    expect(validateAdminPin('', '1031')).toBe(false);
+    expect(validateAdminPin('0000', '2113')).toBe(false);
+    expect(validateAdminPin('', '2113')).toBe(false);
   });
 });

@@ -25,11 +25,11 @@ describe('Staff Auth & Speed Keypad Mechanics', () => {
     logoutStaff();
     expect(isStaffAuthenticated()).toBe(false);
 
-    const validPin = '1031';
+    const validPin = '2113';
     expect(authenticateStaff('9999', validPin)).toBe(false);
     expect(isStaffAuthenticated()).toBe(false);
 
-    expect(authenticateStaff('1031', validPin)).toBe(true);
+    expect(authenticateStaff('2113', validPin)).toBe(true);
     expect(isStaffAuthenticated()).toBe(true);
   });
 
@@ -48,7 +48,7 @@ describe('Staff Auth & Speed Keypad Mechanics', () => {
       party_name: 'Halloween 2026',
       default_drink_limit: 5,
       is_party_active: true,
-      admin_pin: '1031',
+      admin_pin: '2113',
     };
 
     // Check in guest #42

@@ -72,7 +72,7 @@ npm test
 - Soft drinks (water, soda) can always be logged without counting against alcohol limits.
 
 ### 3. Parents / Admin Panel (`/admin`)
-- Accessible with the 4-digit security PIN (default: `1031`).
+- Accessible with the 4-digit security PIN (default: `2113`).
 - Parents can adjust the global drink limit anytime during the party (e.g. adjust from 5 to 4 or 6).
 - Search and inspect all 100 guests, view who had how many drinks, and see who is cut off.
 - One-click emergency **"Pause Bar Service"** toggle.

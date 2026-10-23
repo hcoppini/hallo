@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS party_settings (
   party_name TEXT NOT NULL DEFAULT 'Halloween Birthday Party 2026',
   default_drink_limit INTEGER NOT NULL DEFAULT 5,
   is_party_active BOOLEAN NOT NULL DEFAULT true,
-  admin_pin TEXT NOT NULL DEFAULT '1031',
+  admin_pin TEXT NOT NULL DEFAULT '2113',
   cutoff_time TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS party_settings (
 
 -- Insert initial settings row if not present
 INSERT INTO party_settings (id, party_name, default_drink_limit, is_party_active, admin_pin)
-VALUES ('default_party', 'Halloween Birthday Party 2026', 5, true, '1031')
+VALUES ('default_party', 'Halloween Birthday Party 2026', 5, true, '2113')
 ON CONFLICT (id) DO NOTHING;
 
 -- 2. Create Guests Table

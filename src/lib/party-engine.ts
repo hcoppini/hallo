@@ -190,7 +190,7 @@ export function checkInGuest(
 /**
  * Security: Validates the 4-digit admin/parent PIN.
  */
-export function validateAdminPin(enteredPin: string, correctPin: string = '1031'): boolean {
+export function validateAdminPin(enteredPin: string, correctPin: string = '2113'): boolean {
   if (!enteredPin) return false;
   return enteredPin.trim() === correctPin.trim();
 }

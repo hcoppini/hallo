@@ -14,7 +14,7 @@
 ### Steps:
 1. Open the party website on the Android phone.
 2. Tap the **Admin** tab at the bottom right.
-3. Enter the PIN: **`1031`**.
+3. Enter the PIN: **`2113`**.
 4. Tap the button that says **"NFC Batch Writer"**.
 5. Take your first sticker. Hold it flat against the back of your phone near the camera:
    - *BEEP!* The screen flashes green: **"Written successfully!"**
@@ -78,7 +78,7 @@
 **Person in charge:** Parents / Birthday Girl's Family
 
 1. Tap **Admin** at the bottom right.
-2. Enter the PIN: **`1031`**.
+2. Enter the PIN: **`2113`**.
 
 ### Things you can do anytime:
 - **Change the drink limit**: Want people to have max 4 drinks instead of 5? Change the number and tap **"Apply Rules"**. It updates on the barman's phone instantly.
