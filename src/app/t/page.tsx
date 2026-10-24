@@ -13,7 +13,7 @@ function UniversalTagRouter() {
     if (id) {
       router.replace(`/t/${encodeURIComponent(id.trim().toUpperCase())}`);
     } else {
-      router.replace('/door');
+      router.replace('/t/%7BUID%7D');
     }
   }, [router, searchParams]);
 
@@ -22,10 +22,10 @@ function UniversalTagRouter() {
       <div className="glass-card p-10 border border-black/15 shadow-xl space-y-4">
         <Loader2 className="w-8 h-8 text-black animate-spin mx-auto" />
         <span className="font-mono text-xs uppercase tracking-widest text-black/50 block">
-          RESOLVING WRISTBAND
+          UNIVERSAL ONBOARDING
         </span>
         <p className="font-sans-clean text-xs text-black/60">
-          Loading wristband identity...
+          Opening wristband onboarding screen...
         </p>
       </div>
     </div>
@@ -34,11 +34,13 @@ function UniversalTagRouter() {
 
 export default function UniversalTagPage() {
   return (
-    <Suspense fallback={
-      <div className="w-full py-16 flex flex-col items-center justify-center max-w-sm mx-auto text-center">
-        <Loader2 className="w-8 h-8 text-black animate-spin mx-auto" />
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="w-full py-16 flex flex-col items-center justify-center max-w-sm mx-auto text-center">
+          <Loader2 className="w-8 h-8 text-black animate-spin mx-auto" />
+        </div>
+      }
+    >
       <UniversalTagRouter />
     </Suspense>
   );

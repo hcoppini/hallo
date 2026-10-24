@@ -1,52 +1,66 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { NfcReader } from '@/components/NfcReader';
+import { useRouter } from 'next/navigation';
 import { usePartyStore } from '@/lib/store';
-import { GuestCategory } from '@/lib/types';
+import { Guest } from '@/lib/types';
 import {
   UserCheck,
   CheckCircle2,
-  AlertCircle,
-  Radio,
-  Loader2,
-  X,
   Lock,
   LogOut,
   ShieldCheck,
   Wifi,
+  Copy,
+  Check,
+  ExternalLink,
+  Search,
+  Sparkles,
+  Car,
+  Tag,
+  Link2,
+  Edit3,
+  Radio,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { findGuestByTag, parseTagId } from '@/lib/tag-utils';
+import {
+  parseTagId,
+  getNextFreeTagId,
+  isUniversalOnboardingTag,
+  stripUidFromNotes,
+} from '@/lib/tag-utils';
 import { isWebNfcSupported, nfcController } from '@/lib/nfc';
 import { soundSystem } from '@/lib/audio';
 import { useStaffAuth, setStaffStationMode } from '@/lib/auth';
 import { subscribeToTagRelay, sendTagRelayMessage } from '@/lib/tag-relay';
 import { AdminPinModal } from '@/components/AdminPinModal';
+import { GuestOnboardingCard } from '@/components/GuestOnboardingCard';
+import { calculateEffectiveLimit } from '@/lib/party-engine';
 
 export default function DoorCheckInPage() {
+  const router = useRouter();
   const { guests, checkIn, settings } = usePartyStore();
   const { isAuthenticated, logout } = useStaffAuth();
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
 
-  const [tagId, setTagId] = useState('');
-  const [name, setName] = useState('');
-  const [category, setCategory] = useState<GuestCategory>('standard');
-  const [customLimit, setCustomLimit] = useState('');
-  const [notes, setNotes] = useState('');
-  const [errorMsg, setErrorMsg] = useState('');
-  const [lastCheckedIn, setLastCheckedIn] = useState<string | null>(null);
+  const nextFreeTag = useMemo(() => getNextFreeTagId(guests), [guests]);
+  const [selectedTagId, setSelectedTagId] = useState<string>('');
+  const [lastAdmittedGuest, setLastAdmittedGuest] = useState<Guest | null>(null);
   const [relayedTagNotice, setRelayedTagNotice] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // NFC Writing State
-  const [isNfcWriting, setIsNfcWriting] = useState(false);
-  const [isNfcSupported, setIsNfcSupported] = useState(false);
+  // Clipboard copy feedback states
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [baseUrl, setBaseUrl] = useState('');
+  const [isNfcSupported, setIsNfcSupported] = useState(false);
+  const [isNfcScanning, setIsNfcScanning] = useState(false);
 
-  // Find next unassigned tag for fast 1-click selection
-  const nextUnassigned = useMemo(() => {
-    return guests.find(g => !g.is_entered && !g.name);
-  }, [guests]);
+  const effectiveTargetTag = useMemo(() => {
+    if (!selectedTagId || isUniversalOnboardingTag(selectedTagId)) {
+      return nextFreeTag;
+    }
+    return selectedTagId;
+  }, [selectedTagId, nextFreeTag]);
 
   useEffect(() => {
     setIsNfcSupported(isWebNfcSupported());
@@ -54,8 +68,9 @@ export default function DoorCheckInPage() {
       setBaseUrl(window.location.origin);
       const params = new URLSearchParams(window.location.search);
       const urlTag = params.get('tag');
-      if (urlTag) {
-        setTagId(decodeURIComponent(urlTag).toUpperCase());
+      if (urlTag && !isUniversalOnboardingTag(urlTag)) {
+        const parsed = parseTagId(urlTag);
+        setSelectedTagId(parsed.canonicalTag || decodeURIComponent(urlTag).toUpperCase());
       }
     }
   }, []);
@@ -78,145 +93,114 @@ export default function DoorCheckInPage() {
           station: 'door',
         });
       } else if (msg.type === 'TAG_TAPPED' && msg.tagId) {
-        setTagId(msg.tagId);
+        if (!isUniversalOnboardingTag(msg.tagId)) {
+          setSelectedTagId(msg.tagId);
+        }
         soundSystem.playApprovedSound();
         setRelayedTagNotice(`Wristband tapped: ${msg.tagId}`);
         setTimeout(() => setRelayedTagNotice(null), 4000);
-
-        const existing = findGuestByTag(guests, msg.tagId);
-        if (existing?.name) {
-          setName(existing.name);
-          setCategory(existing.category);
-        } else {
-          setName('');
-        }
       }
     });
 
     return () => unsubscribe();
-  }, [isAuthenticated, guests]);
+  }, [isAuthenticated]);
 
-  // Default to next unassigned tag if tagId is empty and nextUnassigned is available
-  useEffect(() => {
-    if (!tagId && nextUnassigned) {
-      setTagId(nextUnassigned.tag_id);
-    }
-  }, [nextUnassigned, tagId]);
-
-  const checkedInCount = guests.filter(g => g.is_entered).length;
-  const recentCheckedIn = guests
-    .filter(g => g.is_entered)
-    .sort((a, b) => new Date(b.entered_at || 0).getTime() - new Date(a.entered_at || 0).getTime())
-    .slice(0, 6);
-
-  const handleTagScanned = (scannedTag: string) => {
-    setTagId(scannedTag);
-    const existing = findGuestByTag(guests, scannedTag);
-    if (existing?.name) {
-      setName(existing.name);
-      setCategory(existing.category);
-    }
+  const startPhysicalReader = async () => {
+    const ok = await nfcController.startScan((scannedTag, hardwareUid) => {
+      const target = scannedTag || hardwareUid || '';
+      if (target && !isUniversalOnboardingTag(target)) {
+        const parsed = parseTagId(target);
+        setSelectedTagId(parsed.canonicalTag || target.toUpperCase());
+        soundSystem.playApprovedSound();
+        setRelayedTagNotice(`Scanned wristband: ${parsed.canonicalTag || target}`);
+        setTimeout(() => setRelayedTagNotice(null), 3500);
+      }
+    });
+    if (ok) setIsNfcScanning(true);
   };
 
-  /**
-   * Performs check-in and optionally writes the URL to the blank NFC sticker in 1 tap
-   */
-  const executeCheckIn = async (shouldWriteNfc: boolean) => {
-    setErrorMsg('');
+  const admittedGuests = useMemo(
+    () =>
+      guests
+        .filter(g => g.is_entered && g.name)
+        .sort(
+          (a, b) =>
+            new Date(b.entered_at || 0).getTime() - new Date(a.entered_at || 0).getTime()
+        ),
+    [guests]
+  );
 
-    if (!tagId.trim()) {
-      setErrorMsg('Please enter or select a wristband tag ID.');
-      return;
-    }
+  const filteredAdmittedGuests = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return admittedGuests.slice(0, 12);
+    return admittedGuests.filter(
+      g =>
+        (g.name || '').toLowerCase().includes(q) ||
+        g.tag_id.toLowerCase().includes(q) ||
+        (g.notes || '').toLowerCase().includes(q)
+    );
+  }, [admittedGuests, searchQuery]);
 
-    if (!name.trim()) {
-      setErrorMsg('Please enter the guest name.');
-      return;
-    }
+  const driverCount = useMemo(
+    () => admittedGuests.filter(g => g.category === 'driver_minor').length,
+    [admittedGuests]
+  );
+  const vipCount = useMemo(
+    () => admittedGuests.filter(g => g.category === 'vip').length,
+    [admittedGuests]
+  );
+  const freeSlotsCount = useMemo(
+    () => guests.filter(g => !g.is_entered && !g.name).length,
+    [guests]
+  );
 
-    const cleanTag = tagId.trim().toUpperCase();
-    const targetUrl = `${baseUrl || (typeof window !== 'undefined' ? window.location.origin : '')}/t/${cleanTag}`;
-
-    if (shouldWriteNfc && isNfcSupported) {
-      try {
-        setIsNfcWriting(true);
-        await nfcController.writeUrl(targetUrl);
-        setIsNfcWriting(false);
-      } catch (err) {
-        setIsNfcWriting(false);
-        setErrorMsg(err instanceof Error ? `NFC Write error: ${err.message}` : 'Failed to write NFC sticker.');
-        soundSystem.playErrorSound();
-        return;
-      }
-    }
-
-    try {
-      const checkedGuest = await checkIn({
-        tag_id: cleanTag,
-        name: name.trim(),
-        category,
-        custom_drink_limit: customLimit !== '' ? parseInt(customLimit, 10) : null,
-        notes: notes.trim() || undefined,
-      });
-
-      confetti({
-        particleCount: 50,
-        spread: 60,
-        origin: { y: 0.7 },
-      });
-
-      setLastCheckedIn(checkedGuest.name || checkedGuest.tag_id);
-      setName('');
-      setNotes('');
-      setCustomLimit('');
-
-      // Auto-populate next available tag
-      if (nextUnassigned && nextUnassigned.tag_id !== cleanTag) {
-        setTagId(nextUnassigned.tag_id);
-      } else {
-        const parsed = parseTagId(cleanTag);
-        if (parsed.tagNumber !== null) {
-          setTagId(`TAG-${(parsed.tagNumber + 1).toString().padStart(3, '0')}`);
-        } else {
-          setTagId('');
-        }
-      }
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Check-in failed');
-    }
+  const handleCopyText = (text: string, key: string) => {
+    navigator.clipboard.writeText(text);
+    soundSystem.playApprovedSound();
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2200);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    executeCheckIn(false);
+  const handleOnboardingComplete = (admittedGuest: Guest) => {
+    confetti({
+      particleCount: 55,
+      spread: 65,
+      origin: { y: 0.7 },
+    });
+
+    setLastAdmittedGuest(admittedGuest);
+    // Clear manual override so it automatically advances to the next free slot
+    setSelectedTagId('');
   };
 
   if (!isAuthenticated) {
     return (
-      <div className="w-full py-12 px-4 max-w-sm mx-auto text-center space-y-6">
-        <div className="w-16 h-16 rounded-3xl bg-black/5 flex items-center justify-center mx-auto text-black border border-black/10">
-          <Lock className="w-8 h-8" />
-        </div>
-        <div>
-          <span className="font-mono text-[10px] text-black/40 uppercase tracking-widest block mb-1">
-            STAFF SECURITY LOCK
-          </span>
-          <h2 className="font-display text-3xl font-bold lowercase text-black">
-            door reception
-          </h2>
-          <p className="font-sans-clean text-xs text-black/60 mt-1 max-w-xs mx-auto">
-            Authorized greeters only. Enter 4-digit staff PIN to unlock door check-in.
+      <div className="w-full py-16 flex flex-col items-center justify-center max-w-sm mx-auto text-center">
+        <div className="glass-card p-10 border border-black/15 shadow-2xl space-y-5 w-full">
+          <div className="w-14 h-14 rounded-2xl bg-black/5 flex items-center justify-center mx-auto text-black border border-black/10">
+            <Lock className="w-7 h-7" />
+          </div>
+          <div>
+            <span className="font-mono text-[10px] text-black/40 uppercase tracking-widest block mb-1">
+              STAFF SECURITY LOCK
+            </span>
+            <h2 className="font-display text-3xl font-bold lowercase text-black">
+              door reception
+            </h2>
+          </div>
+          <p className="font-sans-clean text-xs text-black/60 leading-relaxed">
+            Authorized hosts and door greeters only. Enter the 4-digit staff PIN to unlock guest onboarding.
           </p>
-        </div>
 
-        <button
-          type="button"
-          onClick={() => setIsPinModalOpen(true)}
-          className="btn-premium-primary w-full py-4 text-xs gap-2"
-        >
-          <Lock className="w-4 h-4" />
-          <span>Unlock Door Reception</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setIsPinModalOpen(true)}
+            className="btn-premium-primary w-full py-3.5 text-xs gap-2 cursor-pointer"
+          >
+            <ShieldCheck className="w-4 h-4" />
+            <span>unlock door reception</span>
+          </button>
+        </div>
 
         <AdminPinModal
           isOpen={isPinModalOpen}
@@ -229,30 +213,58 @@ export default function DoorCheckInPage() {
     );
   }
 
+  const origin = baseUrl || (typeof window !== 'undefined' ? window.location.origin : '');
+  const universalOnboardingUrl = `${origin}/t/{UID}`;
+  const currentTargetUrl = `${origin}/t/${effectiveTargetTag}`;
+
   return (
-    <div className="w-full py-4 space-y-6">
-      {/* Staff Status Header & Lock Button */}
-      <div className="p-3 rounded-2xl bg-black text-white text-xs font-sans-clean flex items-center justify-between shadow-lg">
-        <div className="flex items-center gap-2">
+    <div className="w-full py-4 space-y-5">
+      {/* 1. Compact Host Status Header */}
+      <div className="p-3 rounded-2xl bg-black text-white text-xs font-sans-clean flex flex-wrap items-center justify-between gap-2 shadow-lg">
+        <div className="flex items-center gap-2.5">
           <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
           <div>
-            <span className="font-bold text-[10px] tracking-wide uppercase block leading-tight">
-              Door Reception Active
+            <span className="font-bold text-[10px] tracking-wider uppercase block leading-tight">
+              Door Onboarding Station
             </span>
-            <span className="text-[10px] text-emerald-400/90 flex items-center gap-1 font-mono">
+            <span className="text-[10px] text-emerald-400/90 flex items-center gap-1 font-mono leading-tight">
               <Wifi className="w-2.5 h-2.5" />
-              Live NFC Tag Relay Listening
+              Live Wristband Relay Active
             </span>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={logout}
-          className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[11px] font-semibold flex items-center gap-1.5 transition-colors"
-        >
-          <LogOut className="w-3 h-3" />
-          <span>Lock Station</span>
-        </button>
+
+        <div className="flex items-center gap-2">
+          {isNfcSupported && !isNfcScanning && (
+            <button
+              type="button"
+              onClick={startPhysicalReader}
+              className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400/30 text-[11px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Radio className="w-3 h-3" />
+              <span>Enable Phone NFC Reader</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => router.push('/t/%7BUID%7D')}
+            className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-[11px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+            title="Open standalone Universal Onboarding screen (/t/{UID})"
+          >
+            <ExternalLink className="w-3 h-3" />
+            <span className="hidden sm:inline">Universal Link (/t/&#123;UID&#125;)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={logout}
+            className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-[11px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <LogOut className="w-3 h-3" />
+            <span>Lock</span>
+          </button>
+        </div>
       </div>
 
       {/* Live Relay Notice */}
@@ -262,266 +274,392 @@ export default function DoorCheckInPage() {
         </div>
       )}
 
-      {/* Page Title & Stats */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
-        <div>
-          <span className="font-mono text-[11px] uppercase tracking-widest text-black/50 block">
-            front door // reception desk
-          </span>
-          <h1 className="font-display text-4xl sm:text-5xl font-bold lowercase text-black">
-            door check-in
-          </h1>
-        </div>
-
-        <div className="glass-card px-5 py-3 border border-black/10 flex items-center gap-3">
-          <UserCheck className="w-5 h-5 text-black" />
-          <div>
-            <span className="font-display text-xl font-bold text-black leading-none block">
-              {checkedInCount} / {guests.length}
+      {/* 2. Live Door Telemetry KPI Strip */}
+      <section className="grid grid-cols-3 gap-2.5">
+        <div className="glass-card p-4 border border-black/10">
+          <div className="flex items-center justify-between mb-1">
+            <span className="font-sans-clean text-[10px] font-bold uppercase tracking-wider text-black/45">
+              admitted inside
             </span>
-            <span className="font-sans-clean text-[10px] text-black/50 lowercase">
-              guests admitted
-            </span>
+            <UserCheck className="w-3.5 h-3.5 text-black/35" />
           </div>
+          <div className="font-display text-3xl sm:text-4xl font-bold text-black leading-none">
+            {admittedGuests.length}
+            <span className="text-base text-black/35 font-normal">/{guests.length}</span>
+          </div>
+          <span className="text-[11px] font-sans-clean text-black/50 lowercase block mt-1 truncate">
+            {freeSlotsCount} wristbands free
+          </span>
         </div>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Left Column: Check-in Form */}
-        <div className="lg:col-span-7">
-          <div className="glass-card p-6 sm:p-8 border border-black/15 shadow-md">
-            <h2 className="font-display text-2xl font-bold lowercase text-black mb-1">
-              assign & admit guest
-            </h2>
-            <p className="font-sans-clean text-xs text-black/60 lowercase mb-6">
-              tap wristband or admit directly into registry
-            </p>
+        <button
+          type="button"
+          onClick={() => setSelectedTagId(nextFreeTag)}
+          className="glass-card p-4 border border-black/10 hover:border-black/30 text-left transition-all cursor-pointer"
+          title="Click to reset target slot to next free wristband"
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="font-sans-clean text-[10px] font-bold uppercase tracking-wider text-black/45">
+              next free slot
+            </span>
+            <Tag className="w-3.5 h-3.5 text-emerald-600" />
+          </div>
+          <div className="font-mono text-xl sm:text-2xl font-bold text-black leading-none mt-1">
+            {nextFreeTag}
+          </div>
+          <span className="text-[11px] font-sans-clean text-black/50 lowercase block mt-1.5 truncate">
+            auto-selected for check-in
+          </span>
+        </button>
 
-            {errorMsg && (
-              <div className="p-3 mb-4 rounded-xl bg-red-50 text-red-700 text-xs font-sans-clean flex items-center gap-2 border border-red-200">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{errorMsg}</span>
-              </div>
-            )}
+        <div className="glass-card p-4 border border-black/10">
+          <div className="flex items-center justify-between mb-1">
+            <span className="font-sans-clean text-[10px] font-bold uppercase tracking-wider text-black/45">
+              guest tiers
+            </span>
+            <Sparkles className="w-3.5 h-3.5 text-black/35" />
+          </div>
+          <div className="font-display text-3xl sm:text-4xl font-bold text-black leading-none">
+            {vipCount}
+            <span className="text-sm font-sans-clean font-normal text-black/40 ml-1">vip</span>
+          </div>
+          <span className="text-[11px] font-sans-clean text-black/50 lowercase block mt-1 truncate">
+            {driverCount} drivers (0-alc)
+          </span>
+        </div>
+      </section>
 
-            {lastCheckedIn && (
-              <div className="p-3 mb-6 rounded-xl bg-emerald-50 text-emerald-800 text-xs font-sans-clean flex items-center gap-2 border border-emerald-200">
-                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
-                <span>admitted: <strong>{lastCheckedIn}</strong>. wristband is active!</span>
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit} className="space-y-5">
-              {/* Wristband Tag ID */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-sans-clean font-semibold text-black/70 lowercase">
-                    wristband tag id
-                  </label>
-                  {nextUnassigned && (
-                    <button
-                      type="button"
-                      onClick={() => setTagId(nextUnassigned.tag_id)}
-                      className="text-[11px] font-sans-clean text-black/50 hover:text-black underline"
-                    >
-                      next free: {nextUnassigned.tag_id}
-                    </button>
-                  )}
+      {/* 3. Main 2-Column Onboarding & Registry Workspace */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Left Column (7 cols): Unified 3-Step Onboarding Card */}
+        <div className="lg:col-span-7 space-y-4">
+          {/* Celebratory Last Admitted Banner with 1-Tap Pass Link & Actions */}
+          {lastAdmittedGuest && (
+            <div className="p-5 rounded-3xl bg-emerald-600 text-white shadow-xl space-y-3 animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-white shrink-0" />
+                  <span className="font-mono text-[10px] font-bold uppercase tracking-widest bg-white/20 px-2.5 py-0.5 rounded-full">
+                    ONBOARDED • {lastAdmittedGuest.tag_id}
+                  </span>
                 </div>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. TAG-001 or tap sticker..."
-                  value={tagId}
-                  onChange={e => setTagId(e.target.value)}
-                  className="w-full px-4 py-3 bg-black/5 border border-black/15 rounded-xl font-mono text-sm uppercase text-black outline-none focus:border-black transition-colors"
-                />
+                <span className="font-mono text-[11px] text-white/80">
+                  next up: {nextFreeTag}
+                </span>
               </div>
 
-              {/* Guest Name */}
-              <div>
-                <label className="block text-xs font-sans-clean font-semibold text-black/70 lowercase mb-1.5">
-                  guest name / nickname
-                </label>
-                <input
-                  type="text"
-                  required
-                  autoFocus
-                  placeholder="e.g. Kasia Kowalska"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  className="w-full px-4 py-3 bg-black/5 border border-black/15 rounded-xl font-sans-clean text-sm text-black outline-none focus:border-black transition-colors"
-                />
-              </div>
-
-              {/* Guest Category / Tier */}
-              <div>
-                <label className="block text-xs font-sans-clean font-semibold text-black/70 lowercase mb-1.5">
-                  guest category & alcohol rules
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'standard', label: 'standard 18+', sub: `${settings.default_drink_limit} drinks` },
-                    { id: 'driver_minor', label: 'driver / minor', sub: '0 alcohol' },
-                    { id: 'vip', label: 'vip / host', sub: 'unlimited' },
-                  ].map(tier => {
-                    const isSelected = category === tier.id;
-                    return (
-                      <button
-                        key={tier.id}
-                        type="button"
-                        onClick={() => setCategory(tier.id as GuestCategory)}
-                        className={`p-3 rounded-xl text-left border transition-all ${
-                          isSelected
-                            ? 'bg-black text-white border-black shadow-sm'
-                            : 'bg-white/70 hover:bg-white text-black border-black/10'
-                        }`}
-                      >
-                        <span className="font-sans-clean text-xs font-bold block lowercase">
-                          {tier.label}
-                        </span>
-                        <span className={`text-[10px] lowercase ${
-                          isSelected ? 'text-white/60' : 'text-black/50'
-                        }`}>
-                          {tier.sub}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Optional Custom Limit & Notes */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
-                  <label className="block text-xs font-sans-clean font-semibold text-black/70 lowercase mb-1.5">
-                    custom drink limit (optional)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="30"
-                    placeholder={`default: ${settings.default_drink_limit}`}
-                    value={customLimit}
-                    onChange={e => setCustomLimit(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-black/5 border border-black/15 rounded-xl font-sans-clean text-xs text-black outline-none focus:border-black"
-                  />
+                  <h3 className="font-display text-2xl font-bold lowercase leading-tight">
+                    {lastAdmittedGuest.name}
+                  </h3>
+                  <p className="font-sans-clean text-xs text-white/90">
+                    Pass active at{' '}
+                    <strong className="font-mono">/t/{lastAdmittedGuest.tag_id}</strong> •{' '}
+                    {lastAdmittedGuest.category === 'vip'
+                      ? 'Unlimited VIP'
+                      : lastAdmittedGuest.category === 'driver_minor'
+                      ? '0 Alcohol (Driver)'
+                      : `${calculateEffectiveLimit(lastAdmittedGuest, settings)} drinks limit`}
+                  </p>
                 </div>
-                <div>
-                  <label className="block text-xs font-sans-clean font-semibold text-black/70 lowercase mb-1.5">
-                    notes (optional)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Birthday girl's friend"
-                    value={notes}
-                    onChange={e => setNotes(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-black/5 border border-black/15 rounded-xl font-sans-clean text-xs text-black outline-none focus:border-black"
-                  />
-                </div>
-              </div>
 
-              {/* Two-Action Buttons: 1-Tap NFC Program vs Manual Save */}
-              <div className="space-y-2 pt-2">
-                {isNfcSupported && (
+                <div className="flex items-center gap-2 shrink-0">
                   <button
                     type="button"
-                    onClick={() => executeCheckIn(true)}
-                    disabled={isNfcWriting}
-                    className="btn-premium-primary w-full py-4 text-xs gap-2 shadow-lg"
+                    onClick={() =>
+                      handleCopyText(
+                        `${origin}/t/${lastAdmittedGuest.tag_id}`,
+                        `last-${lastAdmittedGuest.tag_id}`
+                      )
+                    }
+                    className="py-2 px-3 rounded-xl bg-white/20 hover:bg-white/30 text-white font-sans-clean font-bold text-xs flex items-center gap-1.5 border border-white/25 transition-all cursor-pointer"
                   >
-                    {isNfcWriting ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                    {copiedKey === `last-${lastAdmittedGuest.tag_id}` ? (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Copied!</span>
+                      </>
                     ) : (
-                      <Radio className="w-4 h-4" />
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy {lastAdmittedGuest.tag_id} Link</span>
+                      </>
                     )}
-                    <span>
-                      {isNfcWriting ? 'hold sticker against phone...' : `tap & program sticker (${tagId || 'next'})`}
-                    </span>
                   </button>
-                )}
 
-                <button
-                  type="submit"
-                  disabled={isNfcWriting}
-                  className={isNfcSupported ? 'btn-premium w-full py-3 text-xs gap-2' : 'btn-premium-primary w-full py-4 text-xs gap-2'}
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>admit guest {isNfcSupported ? 'without writing nfc' : ''}</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      router.push(
+                        `/t/${encodeURIComponent(lastAdmittedGuest.tag_id)}?onboarded=1`
+                      )
+                    }
+                    className="py-2 px-3 rounded-xl bg-white text-black hover:bg-white/90 font-sans-clean font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Open Pass</span>
+                  </button>
+                </div>
               </div>
-            </form>
-          </div>
+            </div>
+          )}
+
+          {/* Unified Guest Onboarding Card */}
+          <GuestOnboardingCard
+            targetTagId={effectiveTargetTag}
+            isUniversalLink={false}
+            guests={guests}
+            settings={settings}
+            onTargetTagChange={newTag => setSelectedTagId(newTag)}
+            onCheckIn={checkIn}
+            onComplete={handleOnboardingComplete}
+          />
         </div>
 
-        {/* Right Column: NFC Scanner & Recent Admissions */}
-        <div className="lg:col-span-5 space-y-6">
-          <NfcReader
-            onTagScanned={handleTagScanned}
-            activeTagId={tagId}
-            modeLabel="scan wristband to register"
-          />
+        {/* Right Column (5 cols): Quick Link Helper + Recently Admitted Feed */}
+        <div className="lg:col-span-5 space-y-5">
+          {/* Card 1: Simplified 1-Tap Wristband Link Helper */}
+          <div className="glass-card p-6 border border-black/12 shadow-md space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-black text-white flex items-center justify-center shrink-0">
+                  <Link2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-display text-xl font-bold lowercase text-black leading-none">
+                    wristband link helper
+                  </h3>
+                  <p className="font-sans-clean text-[11px] text-black/50 lowercase mt-0.5">
+                    1-tap links for nfc tools or browser onboarding
+                  </p>
+                </div>
+              </div>
+            </div>
 
-          {/* Recent Admissions Feed */}
-          <div className="glass-card p-6 border border-black/10">
-            <h3 className="font-display text-xl font-bold lowercase text-black mb-3">
-              recently admitted
-            </h3>
-            <div className="space-y-2">
-              {recentCheckedIn.length === 0 ? (
-                <div className="text-center py-6 text-xs font-sans-clean text-black/40 lowercase">
-                  no guests admitted yet
+            {/* Option A: Universal Onboarding Link (/t/{UID}) */}
+            <div className="p-3.5 rounded-2xl bg-black/[0.03] border border-black/8 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-black/55">
+                  UNIVERSAL ONBOARDING LINK
+                </span>
+                <span className="text-[10px] font-sans-clean text-emerald-700 font-semibold">
+                  auto-assigns next free ID
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 px-3 py-2 rounded-xl bg-white border border-black/10 font-mono text-xs text-black truncate">
+                  /t/&#123;UID&#125;
+                </code>
+                <button
+                  type="button"
+                  onClick={() => handleCopyText(universalOnboardingUrl, 'universal')}
+                  className="btn-premium py-2 px-3 text-xs gap-1.5 shrink-0 cursor-pointer"
+                >
+                  {copiedKey === 'universal' ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>copy /t/&#123;UID&#125;</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              <p className="font-sans-clean text-[11px] text-black/50 leading-relaxed">
+                Opening <span className="font-mono font-semibold">/t/&#123;UID&#125;</span> opens the onboarding screen and turns into{' '}
+                <span className="font-mono font-semibold">/t/{effectiveTargetTag}</span> once saved.
+              </p>
+            </div>
+
+            {/* Option B: Direct Sticker URL for Current Slot (/t/TAG-00X) */}
+            <div className="p-3.5 rounded-2xl bg-black/[0.03] border border-black/8 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-black/55">
+                  CURRENT SLOT LINK ({effectiveTargetTag})
+                </span>
+                <span className="text-[10px] font-sans-clean text-black/45">
+                  unique per band
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 px-3 py-2 rounded-xl bg-white border border-black/10 font-mono text-xs text-black truncate">
+                  /t/{effectiveTargetTag}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => handleCopyText(currentTargetUrl, 'slot')}
+                  className="btn-premium-primary py-2 px-3 text-xs gap-1.5 shrink-0 cursor-pointer"
+                >
+                  {copiedKey === 'slot' ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>copy {effectiveTargetTag}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 2: Admitted Guests Feed & Quick Search */}
+          <div className="glass-card p-6 border border-black/12 shadow-md space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-display text-2xl font-bold lowercase text-black leading-none">
+                  admitted guests
+                </h3>
+                <p className="font-sans-clean text-[11px] text-black/50 lowercase mt-0.5">
+                  tap any guest to edit, inspect pass, or copy link
+                </p>
+              </div>
+              <span className="font-mono text-xs font-bold px-2.5 py-1 rounded-full bg-black/6 text-black/75">
+                {admittedGuests.length}
+              </span>
+            </div>
+
+            {/* Search Filter */}
+            {admittedGuests.length > 0 && (
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-black/40 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search admitted guest or TAG-00X..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 bg-black/[0.035] border border-black/12 rounded-xl font-sans-clean text-xs text-black placeholder:text-black/35 outline-none focus:bg-white focus:border-black"
+                />
+              </div>
+            )}
+
+            <div className="space-y-2 max-h-96 overflow-y-auto pr-0.5">
+              {filteredAdmittedGuests.length === 0 ? (
+                <div className="text-center py-8 text-xs font-sans-clean text-black/45 lowercase">
+                  {admittedGuests.length === 0
+                    ? 'no guests admitted yet — onboard your first guest on the left!'
+                    : 'no admitted guests match your search'}
                 </div>
               ) : (
-                recentCheckedIn.map(guest => (
-                  <div
-                    key={guest.id}
-                    className="p-3 rounded-xl bg-white/80 border border-black/5 flex items-center justify-between text-xs font-sans-clean"
-                  >
-                    <div>
-                      <span className="font-bold text-black block">{guest.name}</span>
-                      <span className="text-[10px] text-black/50 font-mono">
-                        {guest.tag_id} • {guest.entered_at ? new Date(guest.entered_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                      </span>
+                filteredAdmittedGuests.map(guest => {
+                  const effLimit = calculateEffectiveLimit(guest, settings);
+                  const cleanNote = stripUidFromNotes(guest.notes);
+                  const isEditingThis = effectiveTargetTag === guest.tag_id;
+
+                  return (
+                    <div
+                      key={guest.id}
+                      className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-2 ${
+                        isEditingThis
+                          ? 'bg-black text-white border-black shadow-sm'
+                          : 'bg-white/85 hover:bg-white border-black/8 text-black'
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`font-mono text-[10px] font-bold px-2 py-0.5 rounded-md shrink-0 ${
+                              isEditingThis
+                                ? 'bg-white/20 text-white'
+                                : 'bg-black/6 text-black/75'
+                            }`}
+                          >
+                            {guest.tag_id}
+                          </span>
+                          <span className="font-sans-clean text-xs font-bold truncate">
+                            {guest.name}
+                          </span>
+                        </div>
+
+                        <div
+                          className={`flex flex-wrap items-center gap-2 mt-1 text-[10px] font-sans-clean ${
+                            isEditingThis ? 'text-white/70' : 'text-black/50'
+                          }`}
+                        >
+                          <span>
+                            {guest.category === 'vip'
+                              ? '✨ VIP (∞)'
+                              : guest.category === 'driver_minor'
+                              ? '🚗 Driver (0 alc)'
+                              : `🍺 ${guest.drinks_consumed}/${effLimit} drinks`}
+                          </span>
+                          {guest.entered_at && (
+                            <span>
+                              •{' '}
+                              {new Date(guest.entered_at).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                hour12: false,
+                              })}
+                            </span>
+                          )}
+                          {cleanNote && <span className="truncate">• {cleanNote}</span>}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleCopyText(`${origin}/t/${guest.tag_id}`, guest.id)
+                          }
+                          title={`Copy /t/${guest.tag_id} link`}
+                          className={`p-2 rounded-xl transition-colors cursor-pointer ${
+                            isEditingThis
+                              ? 'hover:bg-white/15 text-white/80'
+                              : 'hover:bg-black/5 text-black/55 hover:text-black'
+                          }`}
+                        >
+                          {copiedKey === guest.id ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-500" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTagId(guest.tag_id)}
+                          title="Load guest into onboarding form to edit"
+                          className={`p-2 rounded-xl transition-colors cursor-pointer ${
+                            isEditingThis
+                              ? 'bg-white/20 text-white'
+                              : 'hover:bg-black/5 text-black/55 hover:text-black'
+                          }`}
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            router.push(`/t/${encodeURIComponent(guest.tag_id)}?mode=view`)
+                          }
+                          title="Open guest pass (/t/TAG-00X)"
+                          className={`p-2 rounded-xl transition-colors cursor-pointer ${
+                            isEditingThis
+                              ? 'hover:bg-white/15 text-white/80'
+                              : 'hover:bg-black/5 text-black/55 hover:text-black'
+                          }`}
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/5 text-black/70 lowercase font-semibold">
-                      {guest.category}
-                    </span>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
         </div>
       </div>
-
-      {/* NFC Writing Listening Modal Overlay */}
-      {isNfcWriting && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="max-w-xs w-full p-8 rounded-3xl bg-white text-center shadow-2xl space-y-4">
-            <div className="w-16 h-16 rounded-full bg-black text-white flex items-center justify-center mx-auto animate-pulse">
-              <Radio className="w-8 h-8" />
-            </div>
-            <span className="font-mono text-[10px] text-black/50 uppercase tracking-widest block">
-              ONE-TAP PROGRAMMING
-            </span>
-            <h3 className="font-display text-2xl font-bold text-black lowercase">
-              hold blank sticker
-            </h3>
-            <p className="font-sans-clean text-xs text-black/60 leading-relaxed">
-              Hold the physical NFC sticker firmly against the back of your phone to write <strong>{tagId}</strong>.
-            </p>
-            <button
-              type="button"
-              onClick={() => setIsNfcWriting(false)}
-              className="py-2 px-4 rounded-xl text-xs font-sans-clean text-black/50 hover:text-black flex items-center justify-center gap-1 mx-auto"
-            >
-              <X className="w-3.5 h-3.5" />
-              <span>cancel</span>
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

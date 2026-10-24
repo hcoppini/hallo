@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, HelpCircle, CheckCircle2, AlertOctagon, Smartphone, ShieldCheck, GlassWater, Radio, UserCheck } from 'lucide-react';
+import { X, HelpCircle, CheckCircle2, AlertOctagon } from 'lucide-react';
 
 interface HelpGuideModalProps {
   isOpen: boolean;
@@ -40,7 +40,7 @@ export function HelpGuideModal({ isOpen, onClose }: HelpGuideModalProps) {
         <div className="segmented-control mb-6">
           {[
             { id: 'stickers', label: '1. stickers' },
-            { id: 'door', label: '2. door' },
+            { id: 'door', label: '2. onboarding' },
             { id: 'bar', label: '3. bar' },
             { id: 'security', label: '4. security' },
           ].map(tab => (
@@ -60,22 +60,22 @@ export function HelpGuideModal({ isOpen, onClose }: HelpGuideModalProps) {
           {activeTab === 'stickers' && (
             <div className="space-y-3">
               <div className="p-3.5 rounded-2xl bg-black/5 border border-black/10">
-                <span className="font-bold text-black block mb-1">No Pre-Writing Required!</span>
+                <span className="font-bold text-black block mb-1">Universal Link vs Unique Band Links</span>
                 <p className="text-black/70 leading-relaxed">
-                  Stickers can start completely blank straight out of the box. You do NOT have to program 100 stickers one-by-one beforehand.
+                  Opening <code className="font-mono font-bold">/t/&#123;UID&#125;</code> always opens a fresh Onboarding Screen for the next free slot (e.g. <code className="font-mono font-bold">TAG-004</code>) and turns into <code className="font-mono font-bold">/t/TAG-004</code> once saved!
                 </p>
               </div>
 
               <div className="p-3.5 rounded-2xl bg-black/5 border border-black/10">
-                <span className="font-bold text-black block mb-1">1-Tap Door Programming</span>
+                <span className="font-bold text-black block mb-1">iPhone (NFC Tools / NXP TagWriter)</span>
                 <p className="text-black/70 leading-relaxed">
-                  When a guest arrives at the door, type their name and tap <strong>"Tap & Program Sticker"</strong>. The door phone writes the wristband URL and saves the guest in the database in a single 0.5-second tap!
+                  Because iPhones only read the URL text written on a sticker, each physical band needs its own link (<code className="font-mono">/t/TAG-001</code>, <code className="font-mono">/t/TAG-002</code>) or hardware UID mirror. Use the 1-tap <strong>Copy TAG-00X Link</strong> button on the Onboarding confirmation screen to write the band in seconds!
                 </p>
               </div>
 
               <div className="p-3 rounded-xl bg-emerald-50 text-emerald-900 border border-emerald-200">
                 <p className="text-[11px]">
-                  💡 <strong>Optional Batch Writer:</strong> If you prefer to label all wristbands before the party, open <strong>Admin &gt; NFC Batch Writer</strong> to tap-and-advance all stickers in 2 minutes.
+                  💡 <strong>Android 1-Tap Shortcut:</strong> On Android Chrome, tap <strong>&quot;Save &amp; Write NFC Sticker&quot;</strong> during onboarding to save the guest and program the blank sticker in a single tap.
                 </p>
               </div>
             </div>
@@ -84,23 +84,23 @@ export function HelpGuideModal({ isOpen, onClose }: HelpGuideModalProps) {
           {activeTab === 'door' && (
             <div className="space-y-3">
               <div className="p-3.5 rounded-2xl bg-black/5 border border-black/10">
-                <span className="font-bold text-black block mb-1">1. Greet Guest & Enter Name</span>
+                <span className="font-bold text-black block mb-1">01 // Guest Name</span>
                 <p className="text-black/70 leading-relaxed">
-                  On the <strong>Door</strong> page, the next free tag number is suggested automatically. Type the guest&apos;s name (e.g. Kasia).
+                  Open <code className="font-mono font-bold">/door</code> or tap an unassigned wristband (<code className="font-mono font-bold">/t/&#123;UID&#125;</code> or <code className="font-mono font-bold">/t/TAG-004</code>). Enter the guest&apos;s name or nickname.
                 </p>
               </div>
 
               <div className="p-3.5 rounded-2xl bg-black/5 border border-black/10">
-                <span className="font-bold text-black block mb-1">2. Choose Category</span>
+                <span className="font-bold text-black block mb-1">02 // Guest Type &amp; Drink Limit</span>
                 <p className="text-black/70 leading-relaxed">
-                  Select <strong>Standard 18+</strong>, <strong>Driver / Minor (0 Alcohol)</strong>, or <strong>VIP</strong>.
+                  Pick <strong>Standard 18+</strong> (and adjust their personal drink limit with <code className="font-mono">- / +</code> if needed), <strong>Driver / Minor (0 Alcohol)</strong>, or <strong>VIP (Unlimited)</strong>.
                 </p>
               </div>
 
               <div className="p-3.5 rounded-2xl bg-black/5 border border-black/10">
-                <span className="font-bold text-black block mb-1">3. Tap Sticker to Phone</span>
+                <span className="font-bold text-black block mb-1">03 // Notes &amp; Save</span>
                 <p className="text-black/70 leading-relaxed">
-                  Touch the wristband sticker to the phone. The phone chimes green, the guest is admitted, and the tag increments automatically for the next person!
+                  Add optional notes or 1-tap tags, then tap <strong>Save &amp; Activate Pass</strong>. Your link automatically turns into <code className="font-mono font-bold">/t/TAG-00X</code>!
                 </p>
               </div>
             </div>
@@ -111,7 +111,7 @@ export function HelpGuideModal({ isOpen, onClose }: HelpGuideModalProps) {
               <div className="p-3.5 rounded-2xl bg-black/5 border border-black/10">
                 <span className="font-bold text-black block mb-1">Station Auto-Scanning &amp; Screen Awake</span>
                 <p className="text-black/70 leading-relaxed">
-                  Keep the <strong>Barman</strong> station open on the bartender&apos;s phone. Screen Wake Lock keeps the phone on without going to sleep. NFC scans silently in the background without opening new browser tabs!
+                  Keep the <strong>Barman</strong> station open on the bartender&apos;s phone. Tapping an active wristband automatically logs +1 drink (when in Bar Mode) with a 10-second Undo button.
                 </p>
               </div>
 
@@ -134,13 +134,6 @@ export function HelpGuideModal({ isOpen, onClose }: HelpGuideModalProps) {
                   Safety cutoff triggered! Buzzer plays. Do not serve alcohol. Offer complimentary soft drinks or water.
                 </p>
               </div>
-
-              <div className="p-3.5 rounded-2xl bg-black/5 border border-black/10">
-                <span className="font-bold text-black block mb-1">Accidental Tap? 1-Click Undo</span>
-                <p className="text-black/70 leading-relaxed">
-                  If the bartender accidentally taps twice, tap <strong>&quot;Undo Accidental Tap&quot;</strong> (-1) to safely cancel the drink.
-                </p>
-              </div>
             </div>
           )}
 
@@ -149,21 +142,14 @@ export function HelpGuideModal({ isOpen, onClose }: HelpGuideModalProps) {
               <div className="p-3.5 rounded-2xl bg-black/5 border border-black/10">
                 <span className="font-bold text-black block mb-1">Guest Phone Self-Tap Protection</span>
                 <p className="text-black/70 leading-relaxed">
-                  When guests tap their own wristband with their phone, they only see a read-only stats pass (drinks left, check-in time). They CANNOT serve drinks or reset their counter!
+                  When guests tap their own wristband with their phone, they see the live Guest Party Dashboard (their remaining drinks, last order at the bar, and who is on cooldown). They cannot serve drinks or edit their limit.
                 </p>
               </div>
 
               <div className="p-3.5 rounded-2xl bg-black/5 border border-black/10">
                 <span className="font-bold text-black block mb-1">Staff Terminal Mode</span>
                 <p className="text-black/70 leading-relaxed">
-                  Organizers and bartenders enter the supervisor PIN once on their device. Authorized staff phones gain instant access to logging controls and undo tools.
-                </p>
-              </div>
-
-              <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-red-800">
-                <span className="font-bold block mb-1">Emergency Pause Button</span>
-                <p className="text-[11px] leading-relaxed">
-                  Tap <strong>&quot;Pause Bar Service&quot;</strong> on the home dashboard to immediately freeze all drink logging across all devices.
+                  Hosts and bartenders enter the 4-digit PIN (<code className="font-mono font-bold">2113</code>) once on their device to unlock onboarding and drink logging controls.
                 </p>
               </div>
             </div>

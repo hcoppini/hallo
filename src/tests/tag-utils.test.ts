@@ -1,17 +1,31 @@
 import { describe, it, expect } from 'vitest';
-import { parseTagId, isTagMatch, findGuestByTag } from '../lib/tag-utils';
+import {
+  parseTagId,
+  isTagMatch,
+  findGuestByTag,
+  isUniversalOnboardingTag,
+  getNextFreeGuestSlot,
+  getNextFreeTagId,
+  stripUidFromNotes,
+} from '../lib/tag-utils';
 import { Guest } from '../lib/types';
 
 describe('Tag Utils Parsing & Matching', () => {
-  it('normalizes standard tag format', () => {
+  it('normalizes standard tag format and ID-00X alias', () => {
     const res = parseTagId('TAG-004');
     expect(res.canonicalTag).toBe('TAG-004');
     expect(res.tagNumber).toBe(4);
+    expect(res.isUniversal).toBe(false);
+
+    const idRes = parseTagId('ID-004');
+    expect(idRes.canonicalTag).toBe('TAG-004');
+    expect(idRes.tagNumber).toBe(4);
   });
 
   it('normalizes lowercase or short tag format', () => {
     expect(parseTagId('tag-4').canonicalTag).toBe('TAG-004');
     expect(parseTagId('tag4').canonicalTag).toBe('TAG-004');
+    expect(parseTagId('id-4').canonicalTag).toBe('TAG-004');
     expect(parseTagId('4').canonicalTag).toBe('TAG-004');
   });
 
@@ -26,10 +40,87 @@ describe('Tag Utils Parsing & Matching', () => {
     expect(res.decoded).toBe('04:A2:3B:5F');
     expect(res.tagNumber).toBeNull();
     expect(res.canonicalTag).toBe('04A23B5F');
+    expect(res.isUniversal).toBe(false);
 
     const res2 = parseTagId('04:53:90:1A:2B:3C:80');
     expect(res2.tagNumber).toBeNull();
     expect(res2.canonicalTag).toBe('0453901A2B3C80');
+  });
+
+  it('recognizes universal onboarding links (/t/{UID}) and never matches them to existing guests', () => {
+    expect(isUniversalOnboardingTag('{UID}')).toBe(true);
+    expect(isUniversalOnboardingTag('%7BUID%7D')).toBe(true);
+    expect(isUniversalOnboardingTag('https://hallo-zkqp.vercel.app/t/{UID}')).toBe(true);
+    expect(isUniversalOnboardingTag('https://hallo-zkqp.vercel.app/t/%7BUID%7D')).toBe(true);
+    expect(isUniversalOnboardingTag('uid')).toBe(true);
+    expect(isUniversalOnboardingTag('new')).toBe(true);
+    expect(isUniversalOnboardingTag('onboard')).toBe(true);
+    expect(isUniversalOnboardingTag('TAG-004')).toBe(false);
+    expect(isUniversalOnboardingTag('04:A2:3B:5F')).toBe(false);
+
+    const parsedUniversal = parseTagId('https://hallo-zkqp.vercel.app/t/{UID}');
+    expect(parsedUniversal.isUniversal).toBe(true);
+    expect(parsedUniversal.canonicalTag).toBe('UNIVERSAL');
+    expect(parsedUniversal.tagNumber).toBeNull();
+
+    // Even if a legacy guest ("Janek Smagiel") was accidentally saved with [UID:UID] or hardware_uid: "UID"
+    const janekLegacy: Guest = {
+      id: 'GUEST-001',
+      tag_id: 'TAG-001',
+      hardware_uid: 'UID',
+      name: 'Janek Smagiel',
+      category: 'standard',
+      custom_drink_limit: null,
+      drinks_consumed: 0,
+      is_entered: true,
+      entered_at: '2026-10-24T00:00:00Z',
+      is_blocked: false,
+      notes: '[UID:UID]',
+    };
+
+    expect(isTagMatch(janekLegacy, '{UID}')).toBe(false);
+    expect(isTagMatch(janekLegacy, '%7BUID%7D')).toBe(false);
+    expect(isTagMatch(janekLegacy, 'UID')).toBe(false);
+    expect(isTagMatch(janekLegacy, 'https://hallo-zkqp.vercel.app/t/{UID}')).toBe(false);
+    expect(findGuestByTag([janekLegacy], '{UID}')).toBeUndefined();
+    expect(findGuestByTag([janekLegacy], 'https://hallo-zkqp.vercel.app/t/{UID}')).toBeUndefined();
+
+    // Still matches Janek on his real canonical slot TAG-001
+    expect(isTagMatch(janekLegacy, 'TAG-001')).toBe(true);
+    expect(isTagMatch(janekLegacy, 'ID-001')).toBe(true);
+  });
+
+  it('finds next free guest slot accurately', () => {
+    const slots: Guest[] = [
+      {
+        id: 'GUEST-001',
+        tag_id: 'TAG-001',
+        name: 'Janek Smagiel',
+        category: 'standard',
+        custom_drink_limit: null,
+        drinks_consumed: 0,
+        is_entered: true,
+        entered_at: '2026-10-24T00:00:00Z',
+        is_blocked: false,
+        notes: null,
+      },
+      {
+        id: 'GUEST-002',
+        tag_id: 'TAG-002',
+        name: null,
+        category: 'standard',
+        custom_drink_limit: null,
+        drinks_consumed: 0,
+        is_entered: false,
+        entered_at: null,
+        is_blocked: false,
+        notes: null,
+      },
+    ];
+
+    expect(getNextFreeGuestSlot(slots)?.tag_id).toBe('TAG-002');
+    expect(getNextFreeTagId(slots)).toBe('TAG-002');
+    expect(stripUidFromNotes('[UID:04A23B5F] Birthday friend')).toBe('Birthday friend');
   });
 
   it('matches guest with different tag representations', () => {
@@ -49,6 +140,7 @@ describe('Tag Utils Parsing & Matching', () => {
     };
 
     expect(isTagMatch(mockGuest, 'TAG-004')).toBe(true);
+    expect(isTagMatch(mockGuest, 'ID-004')).toBe(true);
     expect(isTagMatch(mockGuest, 'tag-004')).toBe(true);
     expect(isTagMatch(mockGuest, 'TAG-4')).toBe(true);
     expect(isTagMatch(mockGuest, 'tag-4')).toBe(true);

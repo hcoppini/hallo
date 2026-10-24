@@ -9,7 +9,53 @@ import {
 } from './party-engine';
 import { supabase, isSupabaseConfigured } from './supabase';
 import { soundSystem } from './audio';
-import { parseTagId, findGuestByTag, isTagMatch } from './tag-utils';
+import {
+  parseTagId,
+  findGuestByTag,
+  isTagMatch,
+  isUniversalOnboardingTag,
+  getNextFreeGuestSlot,
+} from './tag-utils';
+
+/**
+ * Cleans up any legacy guest records that accidentally got bound to the literal `{UID}` / `UID` placeholder.
+ */
+function sanitizeLegacyUidGuests(guests: Guest[]): { sanitized: Guest[]; dirtyGuests: Guest[] } {
+  const dirtyGuests: Guest[] = [];
+  const sanitized = guests.map(g => {
+    let changed = false;
+    let notes = g.notes;
+    let hardware_uid = g.hardware_uid;
+    let tag_id = g.tag_id;
+
+    if (notes && /\[UID:(?:UID|\{UID\}|UNIVERSAL|NEW|ONBOARD)\]/i.test(notes)) {
+      notes = notes.replace(/\[UID:(?:UID|\{UID\}|UNIVERSAL|NEW|ONBOARD)\]/gi, '').trim() || null;
+      changed = true;
+    }
+
+    if (hardware_uid && isUniversalOnboardingTag(hardware_uid)) {
+      hardware_uid = null;
+      changed = true;
+    }
+
+    if (isUniversalOnboardingTag(tag_id)) {
+      const idParsed = parseTagId(g.id);
+      tag_id = idParsed.tagNumber
+        ? `TAG-${idParsed.tagNumber.toString().padStart(3, '0')}`
+        : g.id.replace('GUEST', 'TAG');
+      changed = true;
+    }
+
+    if (changed) {
+      const cleaned = { ...g, notes, hardware_uid, tag_id };
+      dirtyGuests.push(cleaned);
+      return cleaned;
+    }
+    return g;
+  });
+
+  return { sanitized, dirtyGuests };
+}
 
 const STORAGE_KEY_SETTINGS = 'halloween_party_settings_v1';
 const STORAGE_KEY_GUESTS = 'halloween_party_guests_v1';
@@ -62,7 +108,9 @@ function getInitialLocalData() {
   let guests: Guest[] = [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY_GUESTS);
-    if (raw) guests = JSON.parse(raw);
+    if (raw) {
+      guests = sanitizeLegacyUidGuests(JSON.parse(raw)).sanitized;
+    }
   } catch {
     // fallback
   }
@@ -131,7 +179,23 @@ async function syncFromSupabaseGlobal() {
       if (s.admin_pin === '1031') s.admin_pin = '2113';
       globalSettings = s;
     }
-    if (guestsRes.data && guestsRes.data.length > 0) globalGuests = guestsRes.data;
+    if (guestsRes.data && guestsRes.data.length > 0) {
+      const { sanitized, dirtyGuests } = sanitizeLegacyUidGuests(guestsRes.data);
+      globalGuests = sanitized;
+
+      // Persist cleanup of any legacy [UID:UID] rows back to Supabase so they never re-trigger
+      if (dirtyGuests.length > 0 && supabase) {
+        const sb = supabase;
+        Promise.allSettled(
+          dirtyGuests.map(dg =>
+            sb
+              .from('guests')
+              .update({ notes: dg.notes, tag_id: dg.tag_id })
+              .eq('id', dg.id)
+          )
+        ).catch(() => {});
+      }
+    }
     if (logsRes.data) globalLogs = logsRes.data;
 
     persistLocalState();
@@ -222,9 +286,14 @@ export function usePartyStore() {
   }, []);
 
   /**
-   * Directly fetches a guest by tag from Supabase, syncing with local memory
+   * Directly fetches a guest by tag from Supabase, syncing with local memory.
+   * Returns null immediately for universal onboarding placeholders ({UID}).
    */
   const fetchGuestByTag = useCallback(async (tagSearch: string): Promise<Guest | null> => {
+    if (!tagSearch || isUniversalOnboardingTag(tagSearch)) {
+      return null;
+    }
+
     // 1. Check in-memory first
     const memoryMatch = findGuestByTag(globalGuests, tagSearch);
     if (memoryMatch && memoryMatch.name && memoryMatch.is_entered) {
@@ -235,6 +304,8 @@ export function usePartyStore() {
     if (isSupabaseConfigured && supabase) {
       try {
         const parsed = parseTagId(tagSearch);
+        if (parsed.isUniversal) return null;
+
         const queryOrConditions = [
           `tag_id.eq.${parsed.canonicalTag}`,
           `tag_id.eq.${parsed.decoded}`,
@@ -242,7 +313,11 @@ export function usePartyStore() {
           `id.eq.${parsed.canonicalTag.replace('TAG', 'GUEST')}`,
         ];
 
-        if (parsed.cleanAlphanumeric && parsed.cleanAlphanumeric !== 'UID' && parsed.cleanAlphanumeric.length >= 4) {
+        if (
+          parsed.cleanAlphanumeric &&
+          !isUniversalOnboardingTag(parsed.cleanAlphanumeric) &&
+          parsed.cleanAlphanumeric.length >= 4
+        ) {
           queryOrConditions.push(`notes.ilike.%${parsed.cleanAlphanumeric}%`);
         }
 
@@ -254,7 +329,7 @@ export function usePartyStore() {
           .maybeSingle();
 
         if (data && !error) {
-          const guest = data as Guest;
+          const [guest] = sanitizeLegacyUidGuests([data as Guest]).sanitized;
           const idx = globalGuests.findIndex(g => g.id === guest.id || g.tag_id === guest.tag_id);
           if (idx >= 0) {
             globalGuests[idx] = guest;
@@ -400,6 +475,7 @@ export function usePartyStore() {
 
   /**
    * Door Check-in & First Tap Wristband Activation
+   * Supports both explicit tag IDs (TAG-004, ID-004, hardware UID) and Universal Onboarding links ({UID}).
    */
   const checkIn = useCallback(async (input: DoorCheckInInput): Promise<Guest> => {
     const trimmedName = input.name?.trim();
@@ -407,11 +483,15 @@ export function usePartyStore() {
       throw new Error('Guest name cannot be empty');
     }
 
-    // 1. Find existing guest in memory using fuzzy tag matching
-    let existingGuest = findGuestByTag(globalGuests, input.tag_id);
+    const isUniversalInput = !input.tag_id?.trim() || isUniversalOnboardingTag(input.tag_id);
 
-    // 2. If not found in memory, query Supabase directly
-    if (!existingGuest && isSupabaseConfigured && supabase) {
+    // 1. Find existing guest in memory using fuzzy tag matching (unless universal link)
+    let existingGuest = isUniversalInput
+      ? getNextFreeGuestSlot(globalGuests) || undefined
+      : findGuestByTag(globalGuests, input.tag_id);
+
+    // 2. If not found in memory and not a universal link, query Supabase directly
+    if (!existingGuest && !isUniversalInput && isSupabaseConfigured && supabase) {
       const parsed = parseTagId(input.tag_id);
       const queryOr = [
         `tag_id.eq.${parsed.canonicalTag}`,
@@ -419,7 +499,11 @@ export function usePartyStore() {
         `tag_id.ilike.${parsed.canonicalTag}%`,
         `id.eq.${parsed.canonicalTag.replace('TAG', 'GUEST')}`,
       ];
-      if (parsed.cleanAlphanumeric && parsed.cleanAlphanumeric !== 'UID' && parsed.cleanAlphanumeric.length >= 4) {
+      if (
+        parsed.cleanAlphanumeric &&
+        !isUniversalOnboardingTag(parsed.cleanAlphanumeric) &&
+        parsed.cleanAlphanumeric.length >= 4
+      ) {
         queryOr.push(`notes.ilike.%${parsed.cleanAlphanumeric}%`);
       }
 
@@ -432,7 +516,7 @@ export function usePartyStore() {
           .maybeSingle();
 
         if (data) {
-          existingGuest = data as Guest;
+          existingGuest = sanitizeLegacyUidGuests([data as Guest]).sanitized[0];
         }
       } catch (err) {
         console.warn('Supabase lookup during check-in failed:', err);
@@ -440,29 +524,34 @@ export function usePartyStore() {
     }
 
     const now = new Date().toISOString();
-    const parsedInput = parseTagId(input.tag_id);
+    const parsedInput = parseTagId(existingGuest ? existingGuest.tag_id : input.tag_id);
 
-    // If this is a non-numbered hardware UID tag and not yet assigned, claim the next free slot (GUEST-001..100)
+    // If this is a non-numbered real hardware UID tag (not universal) and not yet assigned, claim the next free slot (GUEST-001..100)
+    const rawHwCandidate =
+      input.hardware_uid ||
+      (!isUniversalInput && parsedInput.tagNumber === null ? parsedInput.cleanAlphanumeric : undefined);
+
     const effectiveHwUid =
-      input.hardware_uid || (parsedInput.tagNumber === null ? parsedInput.cleanAlphanumeric : undefined);
+      rawHwCandidate && !isUniversalOnboardingTag(rawHwCandidate) && rawHwCandidate.length >= 4
+        ? rawHwCandidate
+        : undefined;
 
     if (!existingGuest && parsedInput.tagNumber === null) {
-      const freeSlot = globalGuests.find(
-        g => !g.is_entered && !g.name && (!g.notes || !g.notes.includes('[UID:'))
-      );
+      const freeSlot = getNextFreeGuestSlot(globalGuests);
       if (freeSlot) {
         existingGuest = freeSlot;
       }
     }
 
     // Encode hardware UID in notes if provided for persistent chip matching
-    let finalNotes = input.notes || existingGuest?.notes || null;
+    const cleanInputNotes = (input.notes ?? existingGuest?.notes ?? '')
+      .replace(/\[UID:[^\]]+\]/gi, '')
+      .trim();
+
+    let finalNotes: string | null = cleanInputNotes || null;
     if (effectiveHwUid) {
       const cleanUid = effectiveHwUid.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-      const existingUserNotes = (input.notes ?? existingGuest?.notes ?? '')
-        .replace(/\[UID:[^\]]+\]/gi, '')
-        .trim();
-      finalNotes = existingUserNotes ? `[UID:${cleanUid}] ${existingUserNotes}` : `[UID:${cleanUid}]`;
+      finalNotes = cleanInputNotes ? `[UID:${cleanUid}] ${cleanInputNotes}` : `[UID:${cleanUid}]`;
     }
 
     let updatedGuest: Guest;
@@ -470,23 +559,25 @@ export function usePartyStore() {
     if (existingGuest) {
       updatedGuest = {
         ...existingGuest,
-        hardware_uid: effectiveHwUid || existingGuest.hardware_uid,
+        hardware_uid: effectiveHwUid || existingGuest.hardware_uid || null,
         name: trimmedName,
         category: input.category || existingGuest.category || 'standard',
-        custom_drink_limit: input.custom_drink_limit !== undefined ? input.custom_drink_limit : existingGuest.custom_drink_limit,
+        custom_drink_limit:
+          input.custom_drink_limit !== undefined ? input.custom_drink_limit : existingGuest.custom_drink_limit,
         is_entered: true,
         entered_at: existingGuest.entered_at || now,
         notes: finalNotes,
         updated_at: now,
       };
     } else {
-      const newGuestId = parsedInput.tagNumber
-        ? `GUEST-${parsedInput.tagNumber.toString().padStart(3, '0')}`
-        : `GUEST-${parsedInput.cleanAlphanumeric || Date.now()}`;
+      const fallbackSlotNum = globalGuests.length + 1;
+      const resolvedNum = parsedInput.tagNumber ?? fallbackSlotNum;
+      const newGuestId = `GUEST-${resolvedNum.toString().padStart(3, '0')}`;
+      const newTagId = `TAG-${resolvedNum.toString().padStart(3, '0')}`;
 
       updatedGuest = {
         id: newGuestId,
-        tag_id: parsedInput.canonicalTag,
+        tag_id: newTagId,
         hardware_uid: effectiveHwUid || null,
         name: trimmedName,
         category: input.category || 'standard',
@@ -546,7 +637,10 @@ export function usePartyStore() {
 
     // 4. Update memory state
     const index = globalGuests.findIndex(
-      g => g.id === updatedGuest.id || g.tag_id === updatedGuest.tag_id || isTagMatch(g, input.tag_id)
+      g =>
+        g.id === updatedGuest.id ||
+        g.tag_id === updatedGuest.tag_id ||
+        (!isUniversalInput && isTagMatch(g, input.tag_id))
     );
 
     if (index >= 0) {

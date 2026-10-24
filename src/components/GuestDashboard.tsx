@@ -174,29 +174,41 @@ export function GuestDashboard({
           )}
         </div>
       ) : (
-        /* Unassigned Wristband Card (still lets guest see live party stats below!) */
-        <div className="glass-card p-7 text-center border border-black/15 shadow-xl space-y-3.5">
+        /* Unassigned Wristband Card (with prominent Host Onboarding CTA + live party stats below) */
+        <div className="glass-card p-7 text-center border border-black/15 shadow-xl space-y-4">
           <div
             onClick={onSecretTap}
             className="w-12 h-12 rounded-2xl bg-black/5 flex items-center justify-center mx-auto text-black border border-black/10 cursor-pointer select-none"
           >
             <DoorOpen className="w-6 h-6" />
           </div>
-          <span
-            onClick={onSecretTap}
-            className="font-mono text-[10px] text-black/40 uppercase tracking-widest block cursor-pointer select-none"
-          >
-            HALLOWEEN PARTY PASS
-          </span>
-          <h1 className="font-display text-3xl font-bold lowercase text-black">
-            wristband not active
-          </h1>
+          <div>
+            <span
+              onClick={onSecretTap}
+              className="font-mono text-[10px] text-black/40 uppercase tracking-widest block cursor-pointer select-none mb-1"
+            >
+              UNASSIGNED WRISTBAND PASS
+            </span>
+            <h1 className="font-display text-3xl font-bold lowercase text-black">
+              ready for onboarding
+            </h1>
+          </div>
           <div className="inline-block px-3.5 py-1 rounded-full bg-black/5 font-mono text-xs font-bold text-black">
             {tagLabel}
           </div>
           <p className="font-sans-clean text-xs text-black/60 leading-relaxed max-w-xs mx-auto">
-            Present this wristband at the front door reception to link your name and activate your pass.
+            This wristband has not been assigned to a guest yet. Unlock host mode below to set name, guest type, drink limits, and notes.
           </p>
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={onOpenStaffPin}
+              className="btn-premium-primary w-full py-3.5 text-xs gap-2 shadow-md cursor-pointer"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>host / staff: unlock &amp; onboard guest</span>
+            </button>
+          </div>
         </div>
       )}
 
