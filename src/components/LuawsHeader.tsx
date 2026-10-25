@@ -50,43 +50,8 @@ export function LuawsHeader() {
           })}
         </nav>
 
-        {/* Live Status Indicators */}
-        <div className="flex items-center gap-3">
-          {/* Party Status Badge */}
-          <div
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-sans-clean font-semibold tracking-wider lowercase border ${
-              settings.is_party_active
-                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                : 'bg-amber-50 text-amber-800 border-amber-200'
-            }`}
-          >
-            <span
-              className={`w-2 h-2 rounded-full ${
-                settings.is_party_active ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
-              }`}
-            />
-            <span className="hidden sm:inline">
-              {settings.is_party_active ? 'active' : 'paused'}
-            </span>
-          </div>
-
-          {/* Sync / Connectivity Status */}
-          <div
-            title={isSupabaseConnected ? 'Cloud connected (Supabase)' : 'Local Offline Mode (Indexed/LocalStorage)'}
-            className="flex items-center gap-1 text-[11px] font-sans-clean text-black/50 border border-black/10 px-2.5 py-1.5 rounded-full"
-          >
-            {isSyncing ? (
-              <RefreshCw className="w-3 h-3 animate-spin text-black" />
-            ) : isSupabaseConnected ? (
-              <Wifi className="w-3 h-3 text-emerald-600" />
-            ) : (
-              <WifiOff className="w-3 h-3 text-neutral-400" />
-            )}
-            <span className="hidden lg:inline text-[10px]">
-              {isSupabaseConnected ? 'cloud' : 'local'}
-            </span>
-          </div>
-        </div>
+        {/* Right side placeholder or exit */}
+        <div className="flex items-center gap-3" />
       </div>
     </header>
   );

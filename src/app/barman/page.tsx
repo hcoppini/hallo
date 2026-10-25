@@ -36,6 +36,7 @@ export default function BarmanPage() {
     guests,
     logs,
     settings,
+    menu,
     selectedGuestId,
     setSelectedGuestId,
     isSearchOpen,
@@ -207,9 +208,16 @@ export default function BarmanPage() {
         setIsSearchOpen(true);
       } else if (e.key === 'Escape') {
         setSelectedGuestId(null);
-      } else if (e.key in DRINK_KEY_MAP) {
-        e.preventDefault();
-        handleDrinkTypeChange(DRINK_KEY_MAP[e.key]);
+      } else if (/^[1-9]$/.test(e.key)) {
+        const keyIdx = parseInt(e.key, 10) - 1;
+        const available = menu.filter(m => m.is_available);
+        if (available[keyIdx]) {
+          e.preventDefault();
+          handleDrinkTypeChange(available[keyIdx].type as DrinkType);
+        } else if (e.key in DRINK_KEY_MAP) {
+          e.preventDefault();
+          handleDrinkTypeChange(DRINK_KEY_MAP[e.key]);
+        }
       } else if (e.key === 'Enter' && activeGuest && !isSearchOpen && !isPinModalOpen) {
         const curLimit = calculateEffectiveLimit(activeGuest, settings);
         const isAtLimit =

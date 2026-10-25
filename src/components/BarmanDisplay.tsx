@@ -30,11 +30,12 @@ interface BarmanDisplayProps {
   onClearCustomer?: () => void;
 }
 
-const categoryIcons: Record<'beer' | 'cocktail' | 'shot' | 'wine', React.ElementType> = {
+const categoryIcons: Record<'beer' | 'cocktail' | 'shot' | 'wine' | 'soft', React.ElementType> = {
   beer: Beer,
   cocktail: Sparkles,
   shot: GlassWater,
   wine: Wine,
+  soft: CupSoda,
 };
 
 function formatTime24h(isoString: string): string {
@@ -57,8 +58,21 @@ export function BarmanDisplay({
   onOpenSearch,
   onClearCustomer,
 }: BarmanDisplayProps) {
-  const { settings, logs, revertLastDrink, updateGuest } = usePartyStore();
+  const { settings, logs, revertLastDrink, updateGuest, menu } = usePartyStore();
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+
+  const availableDrinks = useMemo(() => {
+    if (menu && menu.length > 0) {
+      return menu.filter(item => item.is_available);
+    }
+    return BAR_DRINKS.map(d => ({
+      id: d.type,
+      name: d.label,
+      type: d.type,
+      category: d.category,
+      is_available: true,
+    }));
+  }, [menu]);
 
   const effectiveLimit = activeGuest
     ? calculateEffectiveLimit(activeGuest, settings)
@@ -250,9 +264,9 @@ export function BarmanDisplay({
           </span>
         </div>
 
-        {/* Responsive POS Drink Grid (7 hardcoded drinks with shortcut indicators) */}
+        {/* Responsive POS Drink Grid (Dynamic drinks from party menu with shortcut indicators) */}
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-2.5 sm:gap-3">
-          {BAR_DRINKS.map(({ type, label, category }, idx) => {
+          {availableDrinks.map(({ type, name, category }, idx) => {
             const Icon = categoryIcons[category] || GlassWater;
             const isSelected = selectedDrinkType === type;
             const shortcutNum = idx + 1;
@@ -261,7 +275,7 @@ export function BarmanDisplay({
               <button
                 key={type}
                 type="button"
-                onClick={() => onDrinkTypeChange(type)}
+                onClick={() => onDrinkTypeChange(type as DrinkType)}
                 className={`p-3.5 sm:p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between text-left group active:scale-[0.98] ${
                   isSelected
                     ? 'bg-black text-white border-black shadow-md'
@@ -274,19 +288,21 @@ export function BarmanDisplay({
                       isSelected ? 'text-white' : 'text-black/60 group-hover:text-black'
                     }`}
                   />
-                  <span
-                    className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                      isSelected
-                        ? 'bg-white/20 text-white'
-                        : 'bg-black/6 text-black/50 group-hover:text-black'
-                    }`}
-                  >
-                    #{shortcutNum}
-                  </span>
+                  {shortcutNum <= 9 && (
+                    <span
+                      className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                        isSelected
+                          ? 'bg-white/20 text-white'
+                          : 'bg-black/6 text-black/50 group-hover:text-black'
+                      }`}
+                    >
+                      #{shortcutNum}
+                    </span>
+                  )}
                 </div>
                 <div>
                   <span className="font-sans-clean text-xs sm:text-sm font-bold block lowercase leading-tight">
-                    {label}
+                    {name}
                   </span>
                   <span
                     className={`font-sans-clean text-[10px] block mt-0.5 lowercase ${
@@ -299,48 +315,6 @@ export function BarmanDisplay({
               </button>
             );
           })}
-
-          {/* Quick Soft Drink 8th tile */}
-          <button
-            type="button"
-            onClick={() => onDrinkTypeChange('soft' as DrinkType)}
-            className={`p-3.5 sm:p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between text-left group active:scale-[0.98] ${
-              selectedDrinkType === 'soft'
-                ? 'bg-black text-white border-black shadow-md'
-                : 'bg-white hover:bg-black/[0.04] text-black border-black/12 hover:border-black/30'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <CupSoda
-                className={`w-5 h-5 ${
-                  selectedDrinkType === 'soft'
-                    ? 'text-white'
-                    : 'text-black/60 group-hover:text-black'
-                }`}
-              />
-              <span
-                className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                  selectedDrinkType === 'soft'
-                    ? 'bg-white/20 text-white'
-                    : 'bg-black/6 text-black/50'
-                }`}
-              >
-                #8
-              </span>
-            </div>
-            <div>
-              <span className="font-sans-clean text-xs sm:text-sm font-bold block lowercase leading-tight">
-                water / soft
-              </span>
-              <span
-                className={`font-sans-clean text-[10px] block mt-0.5 lowercase ${
-                  selectedDrinkType === 'soft' ? 'text-white/70' : 'text-black/40'
-                }`}
-              >
-                0 alc
-              </span>
-            </div>
-          </button>
         </div>
 
         {/* Large Tactile POS Primary Action Button */}

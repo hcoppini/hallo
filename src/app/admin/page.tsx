@@ -33,23 +33,44 @@ import {
   GlassWater,
   ShieldAlert,
   Car,
+  Beer,
+  Wine,
+  Sparkles,
+  CupSoda,
+  Trash2,
+  Edit3,
 } from 'lucide-react';
 import { soundSystem } from '@/lib/audio';
 import { AdminGuestFilter, computeAdminKpis } from '@/lib/admin-utils';
+import { MenuItem } from '@/lib/types';
 
 export type AdminTab = 'guests' | 'activity' | 'settings';
+
+const menuCategoryIcons: Record<'beer' | 'cocktail' | 'shot' | 'wine' | 'soft', React.ElementType> = {
+  beer: Beer,
+  cocktail: Sparkles,
+  shot: GlassWater,
+  wine: Wine,
+  soft: CupSoda,
+};
 
 export default function AdminPage() {
   const {
     settings,
     guests,
     logs,
+    menu,
     isSyncing,
     isSupabaseConnected,
     updateSettings,
     exportCsv,
     resetParty,
     refresh,
+    addMenuItem,
+    updateMenuItem,
+    deleteMenuItem,
+    toggleMenuItemAvailability,
+    resetMenuToDefault,
   } = usePartyStore();
   const { isAuthenticated, logout } = useStaffAuth();
 
@@ -66,6 +87,22 @@ export default function AdminPage() {
   const [exportSuccess, setExportSuccess] = useState(false);
   const [syncSuccess, setSyncSuccess] = useState(false);
   const [resetSuccess, setResetSuccess] = useState(false);
+
+  // Menu Creation & Management State
+  const [isCreatingDrink, setIsCreatingDrink] = useState(false);
+  const [editingDrinkId, setEditingDrinkId] = useState<string | null>(null);
+  const [drinkForm, setDrinkForm] = useState<{
+    name: string;
+    category: 'beer' | 'cocktail' | 'shot' | 'wine' | 'soft';
+    description: string;
+    is_available: boolean;
+  }>({
+    name: '',
+    category: 'cocktail',
+    description: '',
+    is_available: true,
+  });
+  const [menuFeedback, setMenuFeedback] = useState<string | null>(null);
 
   // Modals State
   const [isWriterOpen, setIsWriterOpen] = useState(false);
@@ -142,6 +179,86 @@ export default function AdminPage() {
     setActiveTab('guests');
   };
 
+  const handleStartAddDrink = () => {
+    soundSystem.vibrate(15);
+    setDrinkForm({
+      name: '',
+      category: 'cocktail',
+      description: '',
+      is_available: true,
+    });
+    setEditingDrinkId(null);
+    setIsCreatingDrink(true);
+  };
+
+  const handleStartEditDrink = (item: MenuItem) => {
+    soundSystem.vibrate(15);
+    setDrinkForm({
+      name: item.name,
+      category: item.category,
+      description: item.description || '',
+      is_available: item.is_available,
+    });
+    setEditingDrinkId(item.id);
+    setIsCreatingDrink(true);
+  };
+
+  const handleCancelDrinkForm = () => {
+    setIsCreatingDrink(false);
+    setEditingDrinkId(null);
+  };
+
+  const handleSaveDrink = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanName = drinkForm.name.trim();
+    if (!cleanName) return;
+
+    if (editingDrinkId) {
+      updateMenuItem(editingDrinkId, {
+        name: cleanName,
+        type: cleanName.toLowerCase(),
+        category: drinkForm.category,
+        description: drinkForm.description.trim() || undefined,
+        is_available: drinkForm.is_available,
+      });
+      setMenuFeedback(`updated "${cleanName}" on menu!`);
+    } else {
+      addMenuItem({
+        name: cleanName,
+        type: cleanName.toLowerCase(),
+        category: drinkForm.category,
+        description: drinkForm.description.trim() || undefined,
+        is_available: drinkForm.is_available,
+      });
+      setMenuFeedback(`added "${cleanName}" to party menu!`);
+    }
+
+    soundSystem.playApprovedSound();
+    setIsCreatingDrink(false);
+    setEditingDrinkId(null);
+    setTimeout(() => setMenuFeedback(null), 3000);
+  };
+
+  const handleDeleteDrink = (id: string, name: string) => {
+    soundSystem.vibrate(20);
+    deleteMenuItem(id);
+    setMenuFeedback(`removed "${name}" from menu.`);
+    setTimeout(() => setMenuFeedback(null), 3000);
+  };
+
+  const handleToggleDrink = (id: string) => {
+    soundSystem.vibrate(10);
+    toggleMenuItemAvailability(id);
+  };
+
+  const handleResetMenu = () => {
+    soundSystem.vibrate(25);
+    resetMenuToDefault();
+    soundSystem.playApprovedSound();
+    setMenuFeedback('restored all standard drinks to menu!');
+    setTimeout(() => setMenuFeedback(null), 3000);
+  };
+
   // If not authenticated, require PIN before viewing admin controls
   if (!isAuthenticated) {
     return (
@@ -155,63 +272,7 @@ export default function AdminPage() {
 
   return (
     <div className="w-full py-4 lg:py-6 space-y-5 lg:space-y-6">
-      {/* 1. Compact Supervisor Status & Master Control Header */}
-      <div className="p-3 sm:p-4 rounded-2xl bg-black text-white text-xs font-sans-clean flex flex-wrap items-center justify-between gap-2 shadow-lg">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-          <div className="truncate">
-            <span className="font-bold text-[10px] tracking-wider uppercase block leading-tight">
-              Supervisor Control
-            </span>
-            <span className="text-[10px] text-white/60 lowercase truncate block leading-tight">
-              {settings.party_name}
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {/* 1-Tap Party Active / Pause Master Toggle */}
-          <button
-            type="button"
-            onClick={handleTogglePartyActive}
-            className={`px-3 py-1.5 rounded-xl text-[11px] font-bold lowercase flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
-              settings.is_party_active
-                ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400/30'
-                : 'bg-red-500 hover:bg-red-600 text-white shadow-xs'
-            }`}
-            title={
-              settings.is_party_active
-                ? 'Click to pause all bar drink taps'
-                : 'Click to resume bar service'
-            }
-          >
-            {settings.is_party_active ? (
-              <>
-                <Pause className="w-3 h-3" />
-                <span>bar live (tap to pause)</span>
-              </>
-            ) : (
-              <>
-                <Play className="w-3 h-3" />
-                <span>bar paused (resume)</span>
-              </>
-            )}
-          </button>
-
-          {/* Lock Admin Button */}
-          <button
-            type="button"
-            onClick={logout}
-            className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-[11px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-            title="Lock Admin Panel"
-          >
-            <LogOut className="w-3 h-3" />
-            <span className="hidden sm:inline">Lock</span>
-          </button>
-        </div>
-      </div>
-
-      {/* 2. Interactive 4-Stat Live KPI Strip */}
+      {/* 1. Interactive 4-Stat Live KPI Strip */}
       <section className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4 lg:gap-5">
         {/* KPI 1: Checked-in Guests */}
         <button
@@ -554,6 +615,41 @@ export default function AdminPage() {
                       </div>
                     </div>
                   </div>
+                  {/* Master Bar Service Status Toggle */}
+                  <div className="md:col-span-2 xl:col-span-2 p-4 rounded-2xl bg-black/[0.025] border border-black/8 flex items-center justify-between gap-3">
+                    <div>
+                      <label className="block text-xs font-sans-clean font-bold text-black lowercase">
+                        bar service status
+                      </label>
+                      <span className="text-[11px] font-sans-clean text-black/50 lowercase block mt-0.5">
+                        {settings.is_party_active
+                          ? 'active — bartenders can pour and log drinks across terminals'
+                          : 'paused — drink service is temporarily halted'}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleTogglePartyActive}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-semibold lowercase flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
+                        settings.is_party_active
+                          ? 'bg-black text-white hover:bg-black/85'
+                          : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                      }`}
+                    >
+                      {settings.is_party_active ? (
+                        <>
+                          <Pause className="w-3.5 h-3.5" />
+                          <span>pause bar</span>
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-3.5 h-3.5" />
+                          <span>resume bar</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-end pt-2 border-t border-black/8">
@@ -678,6 +774,250 @@ export default function AdminPage() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* Card: Party Drink Menu & Custom Catalog */}
+          <div className="glass-card p-6 sm:p-7 border border-black/10 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-black/8">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-black text-white flex items-center justify-center shrink-0">
+                  <GlassWater className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-display text-2xl font-bold lowercase text-black leading-none">
+                      party drink menu
+                    </h2>
+                    <span className="px-2 py-0.5 rounded-full bg-black/5 border border-black/10 text-[10px] font-mono font-bold text-black/60">
+                      {menu.length} drinks
+                    </span>
+                  </div>
+                  <p className="font-sans-clean text-xs text-black/50 lowercase mt-1">
+                    create, customize and toggle drinks available at the bar station and guest menu
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleResetMenu}
+                  className="btn-premium py-2 px-3.5 text-xs gap-1.5"
+                  title="Reset menu to default standard drinks"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>reset to defaults</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={isCreatingDrink ? handleCancelDrinkForm : handleStartAddDrink}
+                  className="btn-premium-primary py-2 px-3.5 text-xs gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{isCreatingDrink ? 'cancel' : 'create drink'}</span>
+                </button>
+              </div>
+            </div>
+
+            {menuFeedback && (
+              <div className="p-3.5 rounded-2xl bg-emerald-50 text-emerald-800 text-xs font-sans-clean flex items-center gap-2 border border-emerald-200 animate-in fade-in">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{menuFeedback}</span>
+              </div>
+            )}
+
+            {/* Create / Edit Drink Form */}
+            {isCreatingDrink && (
+              <form
+                onSubmit={handleSaveDrink}
+                className="p-5 sm:p-6 rounded-2xl bg-black/[0.03] border border-black/12 space-y-4 animate-in fade-in duration-150"
+              >
+                <div className="flex items-center justify-between pb-3 border-b border-black/8">
+                  <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-black">
+                    {editingDrinkId ? 'edit drink item' : 'create new drink for menu'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleCancelDrinkForm}
+                    className="text-xs font-sans-clean text-black/45 hover:text-black lowercase cursor-pointer"
+                  >
+                    cancel
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-sans-clean font-semibold text-black/70 lowercase mb-1.5">
+                      drink name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Aperol Spritz, Gin & Tonic, Paloma"
+                      value={drinkForm.name}
+                      onChange={e => setDrinkForm(prev => ({ ...prev, name: e.target.value }))}
+                      className="w-full px-4 py-2.5 bg-white border border-black/15 rounded-xl font-sans-clean text-xs font-semibold text-black outline-none focus:border-black"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-sans-clean font-semibold text-black/70 lowercase mb-1.5">
+                      category *
+                    </label>
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {(['cocktail', 'beer', 'shot', 'wine', 'soft'] as const).map(cat => {
+                        const Icon = menuCategoryIcons[cat] || GlassWater;
+                        const isSelected = drinkForm.category === cat;
+                        return (
+                          <button
+                            key={cat}
+                            type="button"
+                            onClick={() => setDrinkForm(prev => ({ ...prev, category: cat }))}
+                            className={`py-2 px-1 rounded-xl text-[11px] font-sans-clean font-semibold capitalize flex flex-col items-center gap-1 border transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-black text-white border-black shadow-xs'
+                                : 'bg-white text-black/70 border-black/10 hover:border-black/30'
+                            }`}
+                          >
+                            <Icon className="w-3.5 h-3.5" />
+                            <span className="text-[10px] lowercase">{cat}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-sans-clean font-semibold text-black/70 lowercase mb-1.5">
+                      ingredients & description
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Prosecco, Aperol, club soda, orange slice"
+                      value={drinkForm.description}
+                      onChange={e => setDrinkForm(prev => ({ ...prev, description: e.target.value }))}
+                      className="w-full px-4 py-2.5 bg-white border border-black/15 rounded-xl font-sans-clean text-xs text-black outline-none focus:border-black"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2 flex items-center justify-between pt-1">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={drinkForm.is_available}
+                        onChange={e => setDrinkForm(prev => ({ ...prev, is_available: e.target.checked }))}
+                        className="w-4 h-4 accent-black rounded cursor-pointer"
+                      />
+                      <span className="text-xs font-sans-clean font-medium text-black lowercase">
+                        available at bar station (uncheck if out of stock)
+                      </span>
+                    </label>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleCancelDrinkForm}
+                        className="btn-premium py-2 px-4 text-xs"
+                      >
+                        cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="btn-premium-primary py-2 px-5 text-xs gap-1.5"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        <span>{editingDrinkId ? 'update drink' : 'add to menu'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </form>
+            )}
+
+            {/* Menu Drinks Grid (Pre-populated with all drinks on the drink selection list) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+              {menu.map((item, idx) => {
+                const Icon = menuCategoryIcons[item.category] || GlassWater;
+                return (
+                  <div
+                    key={item.id}
+                    className={`p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3 ${
+                      item.is_available
+                        ? 'bg-white border-black/12 shadow-xs hover:border-black/30'
+                        : 'bg-black/[0.02] border-black/8 opacity-60'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="w-8 h-8 rounded-xl bg-black/[0.04] border border-black/10 flex items-center justify-center text-black">
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-[10px] text-black/40">
+                            #{idx + 1}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-full font-mono text-[9px] font-bold uppercase tracking-wider ${
+                              item.is_available
+                                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                : 'bg-neutral-100 text-neutral-500 border border-neutral-200'
+                            }`}
+                          >
+                            {item.is_available ? 'active' : 'hidden'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <h4 className="font-sans-clean text-sm font-bold text-black lowercase leading-tight">
+                        {item.name}
+                      </h4>
+                      <span className="font-mono text-[10px] text-black/45 uppercase tracking-wider block mt-0.5">
+                        {item.category}
+                      </span>
+                      {item.description && (
+                        <p className="font-sans-clean text-[11px] text-black/60 lowercase mt-1.5 line-clamp-2 leading-relaxed">
+                          {item.description}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2.5 border-t border-black/6">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleDrink(item.id)}
+                        className={`text-[10px] font-sans-clean font-semibold lowercase px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                          item.is_available
+                            ? 'bg-black/5 hover:bg-black/10 text-black/75'
+                            : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700'
+                        }`}
+                      >
+                        {item.is_available ? 'disable' : 'enable'}
+                      </button>
+
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleStartEditDrink(item)}
+                          className="p-1.5 rounded-lg hover:bg-black/5 text-black/50 hover:text-black transition-colors cursor-pointer"
+                          title="Edit drink"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteDrink(item.id, item.name)}
+                          className="p-1.5 rounded-lg hover:bg-red-50 text-black/40 hover:text-red-600 transition-colors cursor-pointer"
+                          title="Delete from menu"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 

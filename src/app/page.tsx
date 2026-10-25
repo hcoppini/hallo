@@ -18,6 +18,7 @@ import {
   Wifi,
   Users,
   Flame,
+  Tv,
 } from 'lucide-react';
 import { usePartyStore } from '@/lib/store';
 import { getNextFreeTagId, parseTagId } from '@/lib/tag-utils';
@@ -267,11 +268,11 @@ export default function HomePage() {
                 operational stations
               </h3>
               <span className="font-mono text-[10px] uppercase tracking-widest text-black/45">
-                3 STATIONS READY
+                4 STATIONS READY
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Card 1: Barman Station */}
               <Link
                 href="/barman"
@@ -358,6 +359,36 @@ export default function HomePage() {
                 </div>
                 <div className="flex items-center gap-1.5 font-sans-clean text-xs font-bold text-black group-hover:translate-x-1 transition-transform pt-2 border-t border-black/6">
                   <span>open admin</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </div>
+              </Link>
+
+              {/* Card 4: Projector Display */}
+              <Link
+                href="/projector"
+                className="glass-card p-5 group flex flex-col justify-between border border-black/10 hover:border-black/30 hover:shadow-md transition-all bg-white"
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="w-10 h-10 rounded-xl bg-black text-white flex items-center justify-center group-hover:scale-105 transition-transform shadow-xs">
+                      <Tv className="w-5 h-5" />
+                    </div>
+                    <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-full bg-black/5 text-black/70">
+                      PC ONLY
+                    </span>
+                  </div>
+                  <span className="font-sans-clean text-[10px] font-bold uppercase tracking-widest text-black/45 block mb-0.5">
+                    VENUE VISUALS
+                  </span>
+                  <h4 className="font-display text-2xl font-bold lowercase text-black mb-1">
+                    projector stage
+                  </h4>
+                  <p className="font-sans-clean text-xs text-black/60 lowercase leading-relaxed mb-4">
+                    widescreen youtube party videos side-by-side with real-time live guest admissions.
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 font-sans-clean text-xs font-bold text-black group-hover:translate-x-1 transition-transform pt-2 border-t border-black/6">
+                  <span>launch stage</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </div>
               </Link>

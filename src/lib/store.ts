@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Guest, PartySettings, DrinkLog, ServeDrinkResult, DoorCheckInInput, DrinkType } from './types';
+import { Guest, PartySettings, DrinkLog, ServeDrinkResult, DoorCheckInInput, DrinkType, MenuItem, DEFAULT_MENU_ITEMS } from './types';
 import {
   processDrinkRequest,
   revertDrinkRequest,
@@ -60,6 +60,7 @@ function sanitizeLegacyUidGuests(guests: Guest[]): { sanitized: Guest[]; dirtyGu
 const STORAGE_KEY_SETTINGS = 'halloween_party_settings_v1';
 const STORAGE_KEY_GUESTS = 'halloween_party_guests_v1';
 const STORAGE_KEY_LOGS = 'halloween_party_logs_v1';
+const STORAGE_KEY_MENU = 'halloween_party_menu_v1';
 
 const initialSettings: PartySettings = {
   id: 'default_party',
@@ -90,6 +91,7 @@ function getInitialLocalData() {
       settings: initialSettings,
       guests: generateWristbandBatch(100),
       logs: [] as DrinkLog[],
+      menu: DEFAULT_MENU_ITEMS,
     };
   }
 
@@ -130,7 +132,20 @@ function getInitialLocalData() {
     // fallback
   }
 
-  return { settings, guests, logs };
+  let menu: MenuItem[] = DEFAULT_MENU_ITEMS;
+  try {
+    const rawMenu = localStorage.getItem(STORAGE_KEY_MENU);
+    if (rawMenu) {
+      const parsed = JSON.parse(rawMenu);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        menu = parsed;
+      }
+    }
+  } catch {
+    // fallback
+  }
+
+  return { settings, guests, logs, menu };
 }
 
 // Global subscribers for multi-component reactive synchronization
@@ -140,6 +155,7 @@ const listeners = new Set<Listener>();
 let globalSettings = initialSettings;
 let globalGuests: Guest[] = [];
 let globalLogs: DrinkLog[] = [];
+let globalMenu: MenuItem[] = DEFAULT_MENU_ITEMS;
 let globalSelectedGuestId: string | null = null;
 let globalIsSearchOpen = false;
 let isInitialized = false;
@@ -156,6 +172,7 @@ function persistLocalState() {
     localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(globalSettings));
     localStorage.setItem(STORAGE_KEY_GUESTS, JSON.stringify(globalGuests));
     localStorage.setItem(STORAGE_KEY_LOGS, JSON.stringify(globalLogs));
+    localStorage.setItem(STORAGE_KEY_MENU, JSON.stringify(globalMenu));
   } catch {
     // Storage quota or private mode protection
   }
@@ -258,6 +275,7 @@ export function usePartyStore() {
       globalSettings = data.settings;
       globalGuests = data.guests;
       globalLogs = data.logs;
+      globalMenu = data.menu;
       isInitialized = true;
     }
 
@@ -776,10 +794,63 @@ export function usePartyStore() {
     return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
   }, []);
 
+  /**
+   * Add a new item to the drink menu
+   */
+  const addMenuItem = useCallback((item: Omit<MenuItem, 'id'>): MenuItem => {
+    const cleanType = (item.type || item.name || '').trim().toLowerCase();
+    const newItem: MenuItem = {
+      ...item,
+      id: `menu-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      type: cleanType || `drink-${Date.now()}`,
+    };
+    globalMenu = [...globalMenu, newItem];
+    persistLocalState();
+    notifySubscribers();
+    return newItem;
+  }, []);
+
+  /**
+   * Update an existing menu item
+   */
+  const updateMenuItem = useCallback((id: string, updates: Partial<MenuItem>) => {
+    globalMenu = globalMenu.map(m => (m.id === id ? { ...m, ...updates } : m));
+    persistLocalState();
+    notifySubscribers();
+  }, []);
+
+  /**
+   * Delete an item from the drink menu
+   */
+  const deleteMenuItem = useCallback((id: string) => {
+    globalMenu = globalMenu.filter(m => m.id !== id);
+    persistLocalState();
+    notifySubscribers();
+  }, []);
+
+  /**
+   * Toggle drink availability at the bar
+   */
+  const toggleMenuItemAvailability = useCallback((id: string) => {
+    globalMenu = globalMenu.map(m => (m.id === id ? { ...m, is_available: !m.is_available } : m));
+    persistLocalState();
+    notifySubscribers();
+  }, []);
+
+  /**
+   * Reset menu to default drink list
+   */
+  const resetMenuToDefault = useCallback(() => {
+    globalMenu = DEFAULT_MENU_ITEMS;
+    persistLocalState();
+    notifySubscribers();
+  }, []);
+
   return {
     settings: globalSettings,
     guests: globalGuests,
     logs: globalLogs,
+    menu: globalMenu,
     selectedGuestId: globalSelectedGuestId,
     setSelectedGuestId,
     isSearchOpen: globalIsSearchOpen,
@@ -795,5 +866,10 @@ export function usePartyStore() {
     exportCsv,
     refresh: syncFromSupabaseGlobal,
     fetchGuestByTag,
+    addMenuItem,
+    updateMenuItem,
+    deleteMenuItem,
+    toggleMenuItemAvailability,
+    resetMenuToDefault,
   };
 }

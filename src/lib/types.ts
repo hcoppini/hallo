@@ -14,7 +14,8 @@ export type DrinkType =
   | 'cocktail'
   | 'shot'
   | 'wine'
-  | 'soft';
+  | 'soft'
+  | (string & {});
 
 export interface BarDrinkOption {
   type: SpecificDrinkType;
@@ -22,6 +23,83 @@ export interface BarDrinkOption {
   historyLabel: string;
   category: 'beer' | 'cocktail' | 'shot' | 'wine';
 }
+
+export interface MenuItem {
+  id: string;
+  name: string;
+  type: string;
+  category: 'beer' | 'cocktail' | 'shot' | 'wine' | 'soft';
+  description?: string;
+  is_available: boolean;
+  price?: string;
+}
+
+export const DEFAULT_MENU_ITEMS: MenuItem[] = [
+  {
+    id: 'menu-beer',
+    name: 'Beer',
+    type: 'beer',
+    category: 'beer',
+    description: 'Crisp & refreshing draft beer / lager',
+    is_available: true,
+  },
+  {
+    id: 'menu-whiskey-sour',
+    name: 'Whiskey Sour',
+    type: 'whiskey sour',
+    category: 'cocktail',
+    description: 'Bourbon whiskey, fresh lemon juice, sugar syrup & angostura bitters',
+    is_available: true,
+  },
+  {
+    id: 'menu-mojito',
+    name: 'Mojito',
+    type: 'mojito',
+    category: 'cocktail',
+    description: 'White rum, fresh lime, crushed mint leaves & club soda',
+    is_available: true,
+  },
+  {
+    id: 'menu-jagerbomba',
+    name: 'Jagerbomba',
+    type: 'jagerbomba',
+    category: 'shot',
+    description: 'Jagermeister shot dropped into energy drink',
+    is_available: true,
+  },
+  {
+    id: 'menu-cosmopolitan',
+    name: 'Cosmopolitan',
+    type: 'cosmopolitan',
+    category: 'cocktail',
+    description: 'Vodka, triple sec, cranberry juice & freshly squeezed lime',
+    is_available: true,
+  },
+  {
+    id: 'menu-red-wine',
+    name: 'Red Wine',
+    type: 'red wine',
+    category: 'wine',
+    description: 'Rich full-bodied reserve red wine',
+    is_available: true,
+  },
+  {
+    id: 'menu-sparkling-wine',
+    name: 'Sparkling Wine',
+    type: 'sparkling wine',
+    category: 'wine',
+    description: 'Chilled prosecco / sparkling wine',
+    is_available: true,
+  },
+  {
+    id: 'menu-soft',
+    name: 'Soft Drink',
+    type: 'soft',
+    category: 'soft',
+    description: 'Cola, sparkling water, fruit soda or tonic',
+    is_available: true,
+  },
+];
 
 export const BAR_DRINKS: BarDrinkOption[] = [
   { type: 'beer', label: 'beer', historyLabel: 'Beer', category: 'beer' },
@@ -33,8 +111,17 @@ export const BAR_DRINKS: BarDrinkOption[] = [
   { type: 'sparkling wine', label: 'sparkling wine', historyLabel: 'Wine - Sparkling Wine', category: 'wine' },
 ];
 
-export function formatDrinkHistoryLabel(drinkType: string): string {
+export function formatDrinkHistoryLabel(drinkType: string, menu?: MenuItem[]): string {
   const normalized = drinkType.trim().toLowerCase();
+  if (menu) {
+    const fromMenu = menu.find(
+      m => m.type.toLowerCase() === normalized || m.name.toLowerCase() === normalized
+    );
+    if (fromMenu) {
+      const catCap = fromMenu.category.charAt(0).toUpperCase() + fromMenu.category.slice(1);
+      return `${catCap} - ${fromMenu.name}`;
+    }
+  }
   const found = BAR_DRINKS.find(d => d.type === normalized);
   if (found) return found.historyLabel;
   if (normalized === 'cocktail') return 'Cocktail';

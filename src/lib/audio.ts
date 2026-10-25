@@ -157,6 +157,35 @@ class SoundSystem {
     this.vibrate(50);
   }
 
+  // Play warm welcoming chime when a guest arrives at the venue
+  playCelebrationSound(): void {
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    const freqs = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6 chime
+
+    freqs.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+
+      gain.gain.setValueAtTime(0, now + idx * 0.08);
+      gain.gain.linearRampToValueAtTime(0.15, now + idx * 0.08 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.35);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now + idx * 0.08);
+      osc.stop(now + idx * 0.08 + 0.35);
+    });
+
+    this.vibrate([60, 40, 60]);
+  }
+
   // Haptic feedback with fallback check
   vibrate(pattern: number | number[]): void {
     if (typeof window !== 'undefined' && 'vibrate' in navigator) {
