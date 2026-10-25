@@ -108,6 +108,26 @@ async function handleTapRequest(req: NextRequest) {
       });
     }
 
+    if (!settings.is_party_active) {
+      return NextResponse.json({
+        success: false,
+        error: 'PARTY_PAUSED',
+        tag_id: guest.tag_id,
+        name: guest.name,
+        message: 'The party bar service is currently paused by organizers.',
+      });
+    }
+
+    if (guest.is_blocked) {
+      return NextResponse.json({
+        success: false,
+        error: 'GUEST_BLOCKED',
+        tag_id: guest.tag_id,
+        name: guest.name,
+        message: 'This wristband has been disabled by organizers.',
+      });
+    }
+
     // 3. Check limit before serving
     if (drinkType !== 'soft' && guest.category !== 'vip' && guest.drinks_consumed >= effectiveLimit) {
       return NextResponse.json({

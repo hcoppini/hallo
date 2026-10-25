@@ -1,19 +1,11 @@
 'use client';
 
 import React from 'react';
-import { usePathname } from 'next/navigation';
 
 export function AppContainer({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const isAdminRoute = pathname?.startsWith('/admin');
-
   return (
-    <div
-      className={`flex-1 pb-12 mx-auto w-full px-4 sm:px-6 transition-[max-width] duration-200 ${
-        isAdminRoute ? 'max-w-xl md:max-w-4xl' : 'max-w-xl'
-      }`}
-    >
+    <main className="flex-1 pb-12 mx-auto w-full max-w-xl md:max-w-4xl lg:max-w-6xl xl:max-w-7xl 2xl:max-w-[1440px] px-4 sm:px-6 lg:px-8 transition-[max-width,padding] duration-200">
       {children}
-    </div>
+    </main>
   );
 }

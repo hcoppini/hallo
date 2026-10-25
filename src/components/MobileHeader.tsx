@@ -3,20 +3,31 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Search, GlassWater, DoorOpen, Settings, LayoutGrid, LogOut, Menu, X } from 'lucide-react';
+import {
+  Search,
+  GlassWater,
+  DoorOpen,
+  Settings,
+  LayoutGrid,
+  LogOut,
+  Menu,
+  X,
+  Wifi,
+  WifiOff,
+  RefreshCw,
+} from 'lucide-react';
 import { usePartyStore } from '@/lib/store';
 import { useStaffAuth } from '@/lib/auth';
 import { soundSystem } from '@/lib/audio';
 
 export function MobileHeader() {
   const pathname = usePathname();
-  const { guests, logs, setIsSearchOpen } = usePartyStore();
+  const { guests, logs, settings, isSyncing, isSupabaseConnected, setIsSearchOpen } = usePartyStore();
   const { isAuthenticated, logout } = useStaffAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const enteredCount = guests.filter(g => g.is_entered).length;
   const activeDrinksCount = logs.filter(l => !l.is_reverted && l.drink_type !== 'soft').length;
-  const isAdminRoute = pathname?.startsWith('/admin');
   const isTagRoute = pathname === '/t' || Boolean(pathname?.startsWith('/t/'));
   const isGuestOnlyHeader = isTagRoute && !isAuthenticated;
 
@@ -44,8 +55,16 @@ export function MobileHeader() {
 
   const navItems = [
     {
+      href: '/',
+      label: 'party hub',
+      shortLabel: 'hub',
+      sub: 'overview & status',
+      icon: LayoutGrid,
+    },
+    {
       href: '/barman',
       label: 'barman station',
+      shortLabel: 'barman',
       sub: 'pour & log drinks',
       icon: GlassWater,
       badge: activeDrinksCount > 0 ? `${activeDrinksCount}` : undefined,
@@ -53,6 +72,7 @@ export function MobileHeader() {
     {
       href: '/door',
       label: 'door check-in',
+      shortLabel: 'door',
       sub: 'admit & link tags',
       icon: DoorOpen,
       badge: enteredCount > 0 ? `${enteredCount}` : undefined,
@@ -60,14 +80,9 @@ export function MobileHeader() {
     {
       href: '/admin',
       label: 'admin panel',
+      shortLabel: 'admin',
       sub: 'limits & guest list',
       icon: Settings,
-    },
-    {
-      href: '/',
-      label: 'party hub',
-      sub: 'overview & status',
-      icon: LayoutGrid,
     },
   ];
 
@@ -79,31 +94,80 @@ export function MobileHeader() {
   return (
     <>
       <header className="sticky top-0 z-40 w-full bg-white/90 backdrop-blur-xl border-b border-black/10 pt-safe">
-        <div
-          className={`${
-            isAdminRoute ? 'max-w-xl md:max-w-4xl' : 'max-w-xl'
-          } mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3 relative transition-[max-width] duration-200`}
-        >
-          {/* Brand / Page Title */}
+        <div className="max-w-xl md:max-w-4xl lg:max-w-6xl xl:max-w-7xl 2xl:max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 h-16 md:h-20 flex items-center justify-between gap-3 relative transition-[max-width,padding,height] duration-200">
+          {/* Left: Brand / Page Title */}
           {isGuestOnlyHeader ? (
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-3 shrink-0">
               <span className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-black lowercase">
                 {getPageTitle()}
+              </span>
+              <span className="hidden md:inline-block text-[11px] font-sans-clean font-semibold tracking-widest text-black/45 lowercase border border-black/12 px-2.5 py-0.5 rounded-full">
+                lua // pass
               </span>
             </div>
           ) : (
-            <Link
-              href="/"
-              className="flex items-center gap-2 active:opacity-60 transition-opacity shrink-0"
-            >
-              <span className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-black lowercase">
-                {getPageTitle()}
-              </span>
-            </Link>
+            <div className="flex items-center gap-3 shrink-0">
+              <Link
+                href="/"
+                className="flex items-center gap-2.5 active:opacity-60 hover:opacity-75 transition-opacity shrink-0"
+              >
+                {/* On Phone (< md), show current page title; on Tablet/Laptop (md+), show brand logo + active section pill */}
+                <span className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-black lowercase md:hidden">
+                  {getPageTitle()}
+                </span>
+                <span className="hidden md:inline font-display text-3xl lg:text-4xl font-bold tracking-tight text-black lowercase">
+                  lua // pass
+                </span>
+              </Link>
+              {pathname !== '/' && (
+                <span className="hidden lg:inline-flex items-center px-2.5 py-0.5 rounded-full bg-black/[0.04] border border-black/10 font-mono text-[10px] font-bold uppercase tracking-widest text-black/55">
+                  {getPageTitle()}
+                </span>
+              )}
+            </div>
           )}
 
-          {/* Right Controls: Search Guest + Menu Pill (hidden on non-staff tag scans) */}
-          <div className="flex items-center gap-2">
+          {/* Center (Tablet & Laptop md+): Native Horizontal Station Navigation Bar */}
+          {!isGuestOnlyHeader && (
+            <nav
+              aria-label="Primary station navigation"
+              className="hidden md:flex items-center gap-1 p-1.5 rounded-full bg-black/[0.04] border border-black/10"
+            >
+              {navItems.map(({ href, label, shortLabel, icon: Icon, badge }) => {
+                const isActive = pathname === href;
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    onClick={handleNavClick}
+                    className={`flex items-center gap-2 px-3.5 lg:px-4 py-2 rounded-full font-sans-clean text-xs font-semibold tracking-wider lowercase transition-all ${
+                      isActive
+                        ? 'bg-black text-white shadow-sm'
+                        : 'text-black/65 hover:text-black hover:bg-black/[0.06]'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5 shrink-0" />
+                    <span className="hidden xl:inline">{label}</span>
+                    <span className="xl:hidden">{shortLabel}</span>
+                    {badge && (
+                      <span
+                        className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold leading-tight ${
+                          isActive
+                            ? 'bg-white text-black'
+                            : 'bg-black/10 text-black/75'
+                        }`}
+                      >
+                        {badge}
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
+            </nav>
+          )}
+
+          {/* Right Controls */}
+          <div className="flex items-center gap-2 shrink-0">
             {isGuestOnlyHeader ? (
               <div className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 bg-black/[0.04] border border-black/10 font-sans-clean text-[11px] font-semibold tracking-wider lowercase text-black/70">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -111,17 +175,82 @@ export function MobileHeader() {
               </div>
             ) : (
               <>
+                {/* Desktop Live Telemetry Badges (lg+) */}
+                <div className="hidden lg:flex items-center gap-2 mr-1">
+                  <div
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-sans-clean font-semibold tracking-wider lowercase border ${
+                      settings.is_party_active
+                        ? 'bg-emerald-50/90 text-emerald-900 border-emerald-200'
+                        : 'bg-red-50/90 text-red-900 border-red-200'
+                    }`}
+                    title={
+                      settings.is_party_active
+                        ? 'Bar service is live across all terminals'
+                        : 'Bar service is paused'
+                    }
+                  >
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        settings.is_party_active ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'
+                      }`}
+                    />
+                    <span>{settings.is_party_active ? 'bar active' : 'bar paused'}</span>
+                  </div>
+
+                  <div
+                    title={
+                      isSupabaseConnected
+                        ? 'Cloud connected (Supabase Realtime)'
+                        : 'Local offline mode (this device)'
+                    }
+                    className="inline-flex items-center gap-1.5 text-[11px] font-sans-clean font-medium text-black/55 border border-black/10 bg-black/[0.02] px-2.5 py-1.5 rounded-full"
+                  >
+                    {isSyncing ? (
+                      <RefreshCw className="w-3 h-3 animate-spin text-black" />
+                    ) : isSupabaseConnected ? (
+                      <Wifi className="w-3 h-3 text-emerald-600" />
+                    ) : (
+                      <WifiOff className="w-3 h-3 text-black/40" />
+                    )}
+                    <span className="text-[10px] font-mono uppercase">
+                      {isSupabaseConnected ? 'cloud' : 'local'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Search Guest Button on Barman */}
                 {pathname === '/barman' && isAuthenticated && (
                   <button
                     type="button"
                     onClick={() => setIsSearchOpen(true)}
                     className="btn-premium py-2 px-3.5 text-xs gap-1.5"
+                    title="Search guest by name or wristband # (Shortcut: / or Ctrl+K)"
                   >
                     <Search className="w-3.5 h-3.5" />
                     <span>search guest</span>
+                    <kbd className="hidden lg:inline-block ml-1 px-1.5 py-0.2 rounded bg-black/8 text-[10px] font-mono text-black/60">
+                      /
+                    </kbd>
                   </button>
                 )}
 
+                {/* Desktop Staff Lock Button (md+) */}
+                {isAuthenticated && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundSystem.vibrate(15);
+                      logout();
+                    }}
+                    title="Lock Staff Station"
+                    className="hidden md:inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 font-sans-clean text-xs font-semibold tracking-wider lowercase bg-black/[0.04] hover:bg-black hover:text-white text-black/75 border border-black/12 transition-all cursor-pointer active:scale-95"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span className="hidden lg:inline">lock</span>
+                  </button>
+                )}
+
+                {/* Mobile Menu Pill Button (< md) */}
                 <button
                   type="button"
                   onClick={() => {
@@ -130,7 +259,7 @@ export function MobileHeader() {
                   }}
                   aria-expanded={isMenuOpen}
                   aria-label="Toggle navigation menu"
-                  className={`inline-flex items-center justify-center gap-1.5 rounded-full px-3.5 py-2 font-sans-clean text-xs font-semibold tracking-widest lowercase border transition-all cursor-pointer active:scale-95 ${
+                  className={`md:hidden inline-flex items-center justify-center gap-1.5 rounded-full px-3.5 py-2 font-sans-clean text-xs font-semibold tracking-widest lowercase border transition-all cursor-pointer active:scale-95 ${
                     isMenuOpen
                       ? 'bg-black text-white border-black shadow-sm'
                       : 'bg-black/[0.04] hover:bg-black/[0.08] text-black border-black/12'
@@ -143,9 +272,9 @@ export function MobileHeader() {
             )}
           </div>
 
-          {/* Anchored Dropdown Navigation Card (luaws.pl Glassmorphism) */}
+          {/* Anchored Dropdown Navigation Card for Mobile (< md) */}
           {isMenuOpen && (
-            <div className="absolute right-4 sm:right-6 top-[calc(100%+0.5rem)] w-64 glass-card p-2 border border-black/12 shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150">
+            <div className="md:hidden absolute right-4 sm:right-6 top-[calc(100%+0.5rem)] w-64 glass-card p-2 border border-black/12 shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150">
               <div className="px-3 py-1.5 mb-1 border-b border-black/8 flex items-center justify-between">
                 <span className="font-mono text-[10px] uppercase tracking-widest text-black/40">
                   navigation
@@ -232,10 +361,10 @@ export function MobileHeader() {
         </div>
       </header>
 
-      {/* Transparent click-outside overlay when menu is open */}
+      {/* Transparent click-outside overlay when mobile menu is open */}
       {isMenuOpen && (
         <div
-          className="fixed inset-0 z-30 bg-black/[0.04]"
+          className="md:hidden fixed inset-0 z-30 bg-black/[0.04]"
           onClick={() => setIsMenuOpen(false)}
         />
       )}

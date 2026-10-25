@@ -464,7 +464,7 @@ export default function DirectTapPage() {
     }, 2000);
   };
 
-  // Handle completion of GuestOnboardingCard: turn /t/{UID} into /t/TAG-00X!
+  // Handle completion of GuestOnboardingCard: turn /t/{UID} into /t/X!
   const handleOnboardingComplete = (checkedInGuest: Guest) => {
     hasAutoServedRef.current = true;
     setJustOnboarded(true);
@@ -476,13 +476,14 @@ export default function DirectTapPage() {
       origin: { y: 0.6 },
     });
 
-    // Turn https://.../t/{UID} into https://.../t/TAG-00X
-    router.replace(`/t/${encodeURIComponent(checkedInGuest.tag_id)}?onboarded=1`);
+    const slotNum = parseTagId(checkedInGuest.tag_id).tagNumber ?? checkedInGuest.tag_id;
+    router.replace(`/t/${encodeURIComponent(String(slotNum))}?onboarded=1${isUniversal ? '&from_uid=1' : ''}`);
   };
 
   const handleCopyActivePassUrl = () => {
     if (!assignedGuest || typeof window === 'undefined') return;
-    const url = `${window.location.origin}/t/${assignedGuest.tag_id}`;
+    const slotNum = parseTagId(assignedGuest.tag_id).tagNumber ?? assignedGuest.tag_id;
+    const url = `${window.location.origin}/t/${slotNum}`;
     navigator.clipboard.writeText(url);
     soundSystem.playApprovedSound();
     setCopiedPassUrl(true);
@@ -506,10 +507,10 @@ export default function DirectTapPage() {
   const cleanNotes = assignedGuest ? stripUidFromNotes(assignedGuest.notes) : '';
 
   return (
-    <div className="w-full py-4 flex flex-col justify-center max-w-md mx-auto">
+    <div className="w-full py-4 flex flex-col justify-center max-w-md lg:max-w-5xl xl:max-w-6xl mx-auto">
       {/* CASE 0: Loading State */}
       {isLoading ? (
-        <div className="glass-card p-10 text-center border border-black/15 shadow-xl animate-pulse">
+        <div className="glass-card max-w-md mx-auto w-full p-10 text-center border border-black/15 shadow-xl animate-pulse">
           <div className="w-12 h-12 rounded-2xl bg-black/5 flex items-center justify-center mx-auto mb-4 border border-black/10">
             <Loader2 className="w-6 h-6 text-black animate-spin" />
           </div>
@@ -526,7 +527,21 @@ export default function DirectTapPage() {
       ) : !assignedGuest ? (
         /* CASE 1: Unassigned Wristband OR Universal Link (/t/{UID}) */
         isAuthenticated ? (
-          <div className="space-y-3">
+          <div className="max-w-lg mx-auto w-full space-y-3">
+            {isUniversal && (
+              <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 text-xs font-sans-clean space-y-2 shadow-sm">
+                <div className="font-bold text-amber-900 flex items-center justify-between">
+                  <span>⚠️ Sticker has literal &quot;/t/&#123;UID&#125;&quot; written on it!</span>
+                </div>
+                <p className="text-[11px] text-amber-900/90 leading-relaxed">
+                  Because iPhones block websites from reading NFC chip serial numbers, a sticker encoded with literal <code className="font-mono font-bold">/t/&#123;UID&#125;</code> cannot remember which guest it belongs to on future taps.
+                </p>
+                <p className="text-[11px] text-amber-900/90 leading-relaxed">
+                  <strong>Fix for this sticker:</strong> In NFC Tools on iPhone, write <code className="font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-amber-300">/t/{parseTagId(onboardingTargetTag).tagNumber ?? 4}</code> (e.g. <code className="font-mono font-bold">/t/4</code> for papai) onto the sticker so it permanently opens that guest!
+                </p>
+              </div>
+            )}
+
             {relayedStation === 'door' && (
               <div className="p-3 rounded-2xl bg-emerald-600 text-white text-xs font-sans-clean font-bold text-center shadow-lg flex items-center justify-center gap-1.5">
                 <Wifi className="w-3.5 h-3.5" />
@@ -558,9 +573,9 @@ export default function DirectTapPage() {
         )
       ) : (
         /* CASE 2: Assigned Active Guest Pass */
-        <div className="space-y-4">
+        <div className="w-full">
           {isAuthenticated ? (
-            <div className="space-y-4">
+            <div className="max-w-lg mx-auto w-full space-y-4">
               {/* Staff Navigation & Station Mode Header */}
               <div className="p-3 rounded-2xl bg-black text-white text-xs font-sans-clean space-y-2.5 shadow-lg">
                 <div className="flex items-center justify-between gap-2">
@@ -585,7 +600,7 @@ export default function DirectTapPage() {
                       onClick={() => {
                         setJustOnboarded(false);
                         setSelectedSlotOverride(null);
-                        router.push('/t/%7BUID%7D');
+                        router.push('/door');
                       }}
                       className="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400/30 text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
                     >
@@ -637,12 +652,12 @@ export default function DirectTapPage() {
                 </div>
               </div>
 
-              {/* Celebratory Banner right after Onboarding (/t/{UID} -> /t/TAG-00X) */}
+              {/* Celebratory Banner right after Onboarding */}
               {justOnboarded && (
                 <div className="p-5 rounded-3xl bg-emerald-600 text-white shadow-xl space-y-3 animate-in fade-in zoom-in-95 duration-200">
                   <div className="flex items-center justify-between">
                     <span className="font-mono text-[10px] font-bold uppercase tracking-widest bg-white/20 px-2.5 py-0.5 rounded-full">
-                      PASS ACTIVATED • {assignedGuest.tag_id}
+                      PASS ACTIVATED • #{displayTagNum ?? assignedGuest.tag_id}
                     </span>
                     <CheckCircle2 className="w-5 h-5 text-white" />
                   </div>
@@ -651,8 +666,8 @@ export default function DirectTapPage() {
                       {assignedGuest.name} is checked in!
                     </h3>
                     <p className="font-sans-clean text-xs text-white/90 mt-0.5">
-                      URL updated to{' '}
-                      <strong className="font-mono">/t/{assignedGuest.tag_id}</strong>.
+                      Sticker link for NFC Tools:{' '}
+                      <strong className="font-mono">/t/{displayTagNum ?? assignedGuest.tag_id}</strong>
                     </p>
                   </div>
 
@@ -670,7 +685,7 @@ export default function DirectTapPage() {
                       ) : (
                         <>
                           <Copy className="w-3.5 h-3.5" />
-                          <span>Copy {assignedGuest.tag_id} URL</span>
+                          <span>Copy /t/{displayTagNum ?? assignedGuest.tag_id}</span>
                         </>
                       )}
                     </button>
@@ -680,12 +695,13 @@ export default function DirectTapPage() {
                       onClick={() => {
                         setJustOnboarded(false);
                         setSelectedSlotOverride(null);
-                        router.push('/t/%7BUID%7D');
+                        const nextNum = parseTagId(nextFreeTag).tagNumber ?? nextFreeTag;
+                        router.push(`/t/${encodeURIComponent(String(nextNum))}`);
                       }}
                       className="py-2.5 px-3 rounded-xl bg-white text-black hover:bg-white/90 font-sans-clean font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
                     >
                       <UserPlus className="w-3.5 h-3.5" />
-                      <span>Onboard Next Guest</span>
+                      <span>Next Free (#{parseTagId(nextFreeTag).tagNumber ?? nextFreeTag})</span>
                     </button>
                   </div>
                 </div>

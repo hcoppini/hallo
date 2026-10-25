@@ -171,7 +171,7 @@ async function syncFromSupabaseGlobal() {
     const [settingsRes, guestsRes, logsRes] = await Promise.all([
       supabase.from('party_settings').select('*').single(),
       supabase.from('guests').select('*').order('id', { ascending: true }),
-      supabase.from('drink_logs').select('*').order('served_at', { ascending: false }).limit(100),
+      supabase.from('drink_logs').select('*').order('served_at', { ascending: false }).limit(1000),
     ]);
 
     if (settingsRes.data) {

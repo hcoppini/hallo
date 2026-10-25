@@ -60,22 +60,22 @@ export function HelpGuideModal({ isOpen, onClose }: HelpGuideModalProps) {
           {activeTab === 'stickers' && (
             <div className="space-y-3">
               <div className="p-3.5 rounded-2xl bg-black/5 border border-black/10">
-                <span className="font-bold text-black block mb-1">Universal Link vs Unique Band Links</span>
+                <span className="font-bold text-black block mb-1">Fastest iPhone Method (NFC Tools)</span>
                 <p className="text-black/70 leading-relaxed">
-                  Opening <code className="font-mono font-bold">/t/&#123;UID&#125;</code> always opens a fresh Onboarding Screen for the next free slot (e.g. <code className="font-mono font-bold">TAG-004</code>) and turns into <code className="font-mono font-bold">/t/TAG-004</code> once saved!
+                  In <strong>NFC Tools</strong> on iPhone, go to <strong>Write → Add a record → URL / URI</strong>. Write ultra-short numbers: <code className="font-mono font-bold">/t/1</code> on Sticker #1, <code className="font-mono font-bold">/t/2</code> on Sticker #2, up to <code className="font-mono font-bold">/t/100</code>. Because you only backspace 1 digit at the end of the URL, each sticker takes 3 seconds!
                 </p>
               </div>
 
               <div className="p-3.5 rounded-2xl bg-black/5 border border-black/10">
-                <span className="font-bold text-black block mb-1">iPhone (NFC Tools / NXP TagWriter)</span>
+                <span className="font-bold text-black block mb-1">1st Tap = Onboard • 2nd Tap = Active Pass</span>
                 <p className="text-black/70 leading-relaxed">
-                  Because iPhones only read the URL text written on a sticker, each physical band needs its own link (<code className="font-mono">/t/TAG-001</code>, <code className="font-mono">/t/TAG-002</code>) or hardware UID mirror. Use the 1-tap <strong>Copy TAG-00X Link</strong> button on the Onboarding confirmation screen to write the band in seconds!
+                  When you tap <code className="font-mono font-bold">/t/4</code> the first time, it opens the Onboarding Screen for slot #4. Once you save the guest&apos;s name (e.g. <em>papai</em>), every future tap on <code className="font-mono font-bold">/t/4</code> automatically loads their pass!
                 </p>
               </div>
 
-              <div className="p-3 rounded-xl bg-emerald-50 text-emerald-900 border border-emerald-200">
+              <div className="p-3 rounded-xl bg-amber-50 text-amber-950 border border-amber-200">
                 <p className="text-[11px]">
-                  💡 <strong>Android 1-Tap Shortcut:</strong> On Android Chrome, tap <strong>&quot;Save &amp; Write NFC Sticker&quot;</strong> during onboarding to save the guest and program the blank sticker in a single tap.
+                  ⚠️ <strong>Never write literal <code className="font-mono">/t/&#123;UID&#125;</code> on iPhone:</strong> Apple blocks browsers from reading NFC serial numbers, so a sticker with literal <code className="font-mono">&#123;UID&#125;</code> cannot remember its number. Always write <code className="font-mono font-bold">/t/1</code>, <code className="font-mono font-bold">/t/2</code>, <code className="font-mono font-bold">/t/4</code>!
                 </p>
               </div>
             </div>

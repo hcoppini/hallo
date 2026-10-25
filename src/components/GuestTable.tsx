@@ -14,6 +14,8 @@ import {
   ShieldAlert,
   Car,
   Users,
+  LayoutGrid,
+  Table2,
 } from 'lucide-react';
 import { Guest } from '@/lib/types';
 import { usePartyStore } from '@/lib/store';
@@ -33,7 +35,7 @@ interface GuestTableProps {
   onFilterChange?: (filter: AdminGuestFilter) => void;
 }
 
-const INITIAL_VISIBLE_COUNT = 24;
+const INITIAL_VISIBLE_COUNT = 30;
 
 export function GuestTable({ activeFilter, onFilterChange }: GuestTableProps) {
   const { guests, logs, settings } = usePartyStore();
@@ -42,6 +44,7 @@ export function GuestTable({ activeFilter, onFilterChange }: GuestTableProps) {
   const [sortBy, setSortBy] = useState<AdminGuestSort>('tag_asc');
   const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
   const [showAllRows, setShowAllRows] = useState(false);
+  const [desktopViewMode, setDesktopViewMode] = useState<'cards' | 'table'>('cards');
 
   const currentFilter = activeFilter ?? internalFilter;
 
@@ -115,7 +118,7 @@ export function GuestTable({ activeFilter, onFilterChange }: GuestTableProps) {
 
   return (
     <div className="w-full space-y-4">
-      {/* Top Search, Sort & Quick Assign Bar */}
+      {/* Top Search, Sort, View Mode & Quick Assign Bar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
         {/* Search Input */}
         <div className="relative flex-1">
@@ -139,7 +142,7 @@ export function GuestTable({ activeFilter, onFilterChange }: GuestTableProps) {
           )}
         </div>
 
-        {/* Sort & Quick Assign Controls */}
+        {/* Sort, Desktop View Toggle & Quick Assign Controls */}
         <div className="flex items-center gap-2">
           <div className="relative flex-1 sm:flex-initial">
             <ArrowUpDown className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-black/45 pointer-events-none" />
@@ -154,6 +157,36 @@ export function GuestTable({ activeFilter, onFilterChange }: GuestTableProps) {
               <option value="recent_entry">sort: recent entry</option>
               <option value="name_asc">sort: name a–z</option>
             </select>
+          </div>
+
+          {/* Desktop View Mode Toggle (Cards vs Table) on md+ */}
+          <div className="hidden md:flex items-center p-1 rounded-2xl bg-black/[0.05] border border-black/10">
+            <button
+              type="button"
+              onClick={() => setDesktopViewMode('cards')}
+              title="Card Grid View"
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-sans-clean font-semibold flex items-center gap-1 transition-all cursor-pointer ${
+                desktopViewMode === 'cards'
+                  ? 'bg-white text-black shadow-xs'
+                  : 'text-black/50 hover:text-black'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span className="hidden lg:inline">cards</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setDesktopViewMode('table')}
+              title="High-Density Table View"
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-sans-clean font-semibold flex items-center gap-1 transition-all cursor-pointer ${
+                desktopViewMode === 'table'
+                  ? 'bg-white text-black shadow-xs'
+                  : 'text-black/50 hover:text-black'
+              }`}
+            >
+              <Table2 className="w-3.5 h-3.5" />
+              <span className="hidden lg:inline">table</span>
+            </button>
           </div>
 
           {nextUnassignedGuest && (
@@ -179,7 +212,7 @@ export function GuestTable({ activeFilter, onFilterChange }: GuestTableProps) {
               key={tab.id}
               type="button"
               onClick={() => setFilter(tab.id)}
-              className={`px-3 py-1.5 rounded-full text-xs font-sans-clean font-semibold tracking-wide lowercase transition-all flex items-center gap-1.5 shrink-0 border ${
+              className={`px-3 py-1.5 rounded-full text-xs font-sans-clean font-semibold tracking-wide lowercase transition-all flex items-center gap-1.5 shrink-0 border cursor-pointer ${
                 isSelected
                   ? 'bg-black text-white border-black shadow-xs'
                   : tab.accent === 'danger' && tab.count > 0
@@ -204,7 +237,7 @@ export function GuestTable({ activeFilter, onFilterChange }: GuestTableProps) {
         })}
       </div>
 
-      {/* Guest Cards List / Responsive 2-Column Grid */}
+      {/* Guest List: Responsive 1/2/3-Column Card Grid OR Desktop Spreadsheet Table */}
       {filteredGuests.length === 0 ? (
         <div className="glass-card p-10 text-center border border-black/10 space-y-3">
           <div className="w-12 h-12 rounded-2xl bg-black/5 flex items-center justify-center mx-auto text-black/40">
@@ -257,7 +290,187 @@ export function GuestTable({ activeFilter, onFilterChange }: GuestTableProps) {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+          {/* Desktop High-Density Table View (only when selected on md+ screens) */}
+          {desktopViewMode === 'table' && (
+            <div className="hidden md:block glass-card border border-black/12 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-black/10 bg-black/[0.025] font-mono text-[10px] font-bold uppercase tracking-wider text-black/50">
+                      <th className="py-3.5 px-4">Wristband</th>
+                      <th className="py-3.5 px-4">Guest Name</th>
+                      <th className="py-3.5 px-4">Tier</th>
+                      <th className="py-3.5 px-4">Status &amp; Entry</th>
+                      <th className="py-3.5 px-4">Drinks / Limit</th>
+                      <th className="py-3.5 px-4">Notes</th>
+                      <th className="py-3.5 px-4 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-black/[0.06] font-sans-clean text-xs">
+                    {visibleGuests.map(guest => {
+                      const limit = calculateEffectiveLimit(guest, settings);
+                      const isAssigned = isGuestActiveOrAssigned(guest);
+                      const isAtLimit =
+                        guest.category !== 'vip' &&
+                        guest.category !== 'driver_minor' &&
+                        limit > 0 &&
+                        guest.drinks_consumed >= limit;
+                      const isNearLimit =
+                        guest.category !== 'vip' &&
+                        guest.category !== 'driver_minor' &&
+                        limit > 1 &&
+                        guest.drinks_consumed === limit - 1;
+                      const cleanNotes = extractCleanNotes(guest.notes);
+
+                      return (
+                        <tr
+                          key={guest.id}
+                          onClick={() => setEditingGuest(guest)}
+                          className={`transition-colors cursor-pointer ${
+                            guest.is_blocked || isAtLimit
+                              ? 'bg-red-50/35 hover:bg-red-50/70'
+                              : 'hover:bg-black/[0.025]'
+                          }`}
+                        >
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-mono text-[11px] font-bold ${
+                                guest.is_blocked
+                                  ? 'bg-red-600 text-white'
+                                  : isAssigned
+                                  ? 'bg-black text-white'
+                                  : 'bg-black/6 text-black/60'
+                              }`}
+                            >
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                  guest.is_blocked
+                                    ? 'bg-white'
+                                    : guest.is_entered
+                                    ? 'bg-emerald-400'
+                                    : 'bg-black/25'
+                                }`}
+                              />
+                              {guest.tag_id}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-bold text-black">
+                            {guest.name ? (
+                              guest.name
+                            ) : (
+                              <span className="font-normal italic text-black/35">
+                                unassigned slot
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            {guest.category === 'vip' ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 uppercase">
+                                <Sparkles className="w-2.5 h-2.5" />
+                                VIP
+                              </span>
+                            ) : guest.category === 'driver_minor' ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-900 uppercase">
+                                <Car className="w-2.5 h-2.5" />
+                                0 ALC
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center text-[10px] font-medium px-2.5 py-0.5 rounded-full bg-black/5 text-black/65 lowercase">
+                                standard
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            {guest.is_blocked ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-800 uppercase">
+                                <Ban className="w-2.5 h-2.5" />
+                                blocked
+                              </span>
+                            ) : isAtLimit ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-800 uppercase">
+                                <ShieldAlert className="w-2.5 h-2.5" />
+                                at limit
+                              </span>
+                            ) : guest.is_entered ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 lowercase">
+                                <CheckCircle className="w-2.5 h-2.5 text-emerald-600" />
+                                {guest.entered_at
+                                  ? new Date(guest.entered_at).toLocaleTimeString([], {
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                    })
+                                  : 'inside'}
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-black/35 lowercase">
+                                not entered
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <div className="flex items-center gap-2.5">
+                              <span
+                                className={`font-display text-lg font-bold w-10 ${
+                                  guest.is_blocked || isAtLimit
+                                    ? 'text-red-600'
+                                    : isNearLimit
+                                    ? 'text-amber-600'
+                                    : 'text-black'
+                                }`}
+                              >
+                                {guest.drinks_consumed}
+                                <span className="text-xs font-normal text-black/35">
+                                  /{guest.category === 'vip' ? '∞' : limit}
+                                </span>
+                              </span>
+                              {guest.category !== 'vip' && (
+                                <div className="w-16 bg-black/10 rounded-full h-1.5 overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full ${
+                                      guest.is_blocked || isAtLimit
+                                        ? 'bg-red-600'
+                                        : isNearLimit
+                                        ? 'bg-amber-500'
+                                        : 'bg-black'
+                                    }`}
+                                    style={{
+                                      width: `${
+                                        limit === 0
+                                          ? guest.is_entered
+                                            ? 100
+                                            : 0
+                                          : Math.min(100, (guest.drinks_consumed / limit) * 100)
+                                      }%`,
+                                    }}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 max-w-[200px] truncate text-black/55">
+                            {cleanNotes || '—'}
+                          </td>
+                          <td className="py-3 px-4 text-right whitespace-nowrap">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-black/5 hover:bg-black hover:text-white text-[11px] font-semibold lowercase transition-colors">
+                              <span>edit</span>
+                              <ChevronRight className="w-3 h-3" />
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Responsive Card Grid (Always on mobile, and on desktop when desktopViewMode === 'cards') */}
+          <div
+            className={`grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5 lg:gap-3.5 ${
+              desktopViewMode === 'table' ? 'md:hidden' : ''
+            }`}
+          >
             {visibleGuests.map(guest => {
               const limit = calculateEffectiveLimit(guest, settings);
               const isAssigned = isGuestActiveOrAssigned(guest);

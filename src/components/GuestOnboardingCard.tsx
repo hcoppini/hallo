@@ -263,7 +263,7 @@ export function GuestOnboardingCard({
         </div>
       </div>
 
-      {/* Expandable Slot Selector (if host wants a specific band number instead of auto-assigned) */}
+      {/* Expandable Slot Selector */}
       {isSlotPickerOpen && onTargetTagChange && (
         <div className="p-4 mb-6 rounded-2xl bg-black/[0.03] border border-black/10 space-y-3 animate-in fade-in duration-150">
           <div className="flex items-center justify-between">
@@ -336,284 +336,283 @@ export function GuestOnboardingCard({
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* ================================================================ */}
-        {/* STEP 1: GUEST NAME / NICKNAME                                    */}
-        {/* ================================================================ */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="font-mono text-[10px] font-bold uppercase tracking-widest text-black/50">
-              01 // GUEST NAME OR NICKNAME
-            </label>
-            <span className="text-[11px] font-sans-clean text-black/40 lowercase">
-              required
-            </span>
-          </div>
-
-          <div className="relative">
-            <input
-              type="text"
-              required
-              autoFocus
-              placeholder="e.g. Janek Smagieł"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              className="w-full px-4 py-3.5 pr-10 bg-black/[0.035] border border-black/15 rounded-2xl font-sans-clean text-base font-semibold text-black placeholder:text-black/30 placeholder:font-normal outline-none focus:bg-white focus:border-black transition-all"
-            />
-            {name && (
-              <button
-                type="button"
-                onClick={() => setName('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-full text-black/35 hover:text-black hover:bg-black/5"
-                title="Clear name"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* ================================================================ */}
-        {/* STEP 2: GUEST CATEGORY & REACTIVE DRINK LIMIT                    */}
-        {/* ================================================================ */}
-        <div className="space-y-3">
-          <label className="font-mono text-[10px] font-bold uppercase tracking-widest text-black/50 block">
-            02 // GUEST TYPE & DRINK LIMIT
-          </label>
-
-          {/* 3 Tactile Tier Cards */}
-          <div className="grid grid-cols-3 gap-2.5">
-            {(
-              [
-                {
-                  id: 'standard',
-                  label: 'standard 18+',
-                  sub: `${isCustomLimit ? drinkLimit : settings.default_drink_limit} drinks`,
-                  icon: Beer,
-                },
-                {
-                  id: 'driver_minor',
-                  label: 'driver / minor',
-                  sub: '0 alcohol',
-                  icon: Car,
-                },
-                {
-                  id: 'vip',
-                  label: 'vip / host',
-                  sub: 'unlimited ∞',
-                  icon: Sparkles,
-                },
-              ] as const
-            ).map(tier => {
-              const Icon = tier.icon;
-              const isSelected = category === tier.id;
-              return (
-                <button
-                  key={tier.id}
-                  type="button"
-                  onClick={() => {
-                    soundSystem.vibrate(12);
-                    setCategory(tier.id);
-                  }}
-                  className={`p-3.5 rounded-2xl text-left border transition-all cursor-pointer active:scale-[0.98] flex flex-col justify-between gap-2 ${
-                    isSelected
-                      ? 'bg-black text-white border-black shadow-md'
-                      : 'bg-white/80 hover:bg-white text-black border-black/12 hover:border-black/30'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <Icon
-                      className={`w-4 h-4 ${
-                        isSelected ? 'text-emerald-400' : 'text-black/45'
-                      }`}
-                    />
-                    {isSelected && (
-                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                    )}
-                  </div>
-                  <div>
-                    <span className="font-sans-clean text-xs font-bold block lowercase leading-tight">
-                      {tier.label}
-                    </span>
-                    <span
-                      className={`text-[10px] font-mono block mt-0.5 ${
-                        isSelected ? 'text-white/70' : 'text-black/50'
-                      }`}
-                    >
-                      {tier.sub}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Reactive Drink Limit Control Bar */}
-          {category === 'standard' ? (
-            <div className="p-4 rounded-2xl bg-black/[0.025] border border-black/10 space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-sans-clean text-xs font-bold text-black lowercase">
-                      personal drink limit
-                    </span>
-                    {isCustomLimit ? (
-                      <span className="px-2 py-0.5 rounded-full bg-black text-white font-mono text-[9px] font-bold uppercase">
-                        custom
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-full bg-black/8 text-black/55 font-mono text-[9px] font-bold uppercase">
-                        party default
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-[11px] font-sans-clean text-black/50 lowercase block mt-0.5">
-                    max alcoholic drinks before bar cut-off
-                  </span>
-                </div>
-
-                {/* Tactile - / + Steppers */}
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => handleLimitChange(drinkLimit - 1)}
-                    className="w-9 h-9 rounded-xl bg-white border border-black/15 flex items-center justify-center text-black hover:bg-black/5 active:scale-95 transition-all cursor-pointer"
-                    aria-label="Decrease drink limit"
-                  >
-                    <Minus className="w-3.5 h-3.5" />
-                  </button>
-
-                  <div className="w-12 py-1 bg-white border border-black/15 rounded-xl font-display text-2xl font-bold text-black text-center select-none">
-                    {drinkLimit}
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleLimitChange(drinkLimit + 1)}
-                    className="w-9 h-9 rounded-xl bg-black text-white flex items-center justify-center hover:bg-black/85 active:scale-95 transition-all cursor-pointer"
-                    aria-label="Increase drink limit"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+        {/* Responsive Desktop Two-Column Split (Stacked on Mobile, 2 Columns on Desktop) */}
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 xl:gap-6 items-start">
+          {/* Left Column: Identity & Tier Selection */}
+          <div className="xl:col-span-6 space-y-5">
+            {/* STEP 1: GUEST NAME / NICKNAME */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="font-mono text-[10px] font-bold uppercase tracking-widest text-black/50">
+                  01 // GUEST NAME OR NICKNAME
+                </label>
+                <span className="text-[11px] font-sans-clean text-black/40 lowercase">
+                  required
+                </span>
               </div>
 
-              {/* Quick Limit Presets */}
-              <div className="flex items-center justify-between gap-2 pt-1 border-t border-black/6">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-[10px] font-sans-clean text-black/45 lowercase mr-1">
-                    quick set:
-                  </span>
-                  {[3, 4, 5, 6, 8, 10].map(preset => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => handleLimitChange(preset)}
-                      className={`px-2.5 py-1 rounded-lg font-mono text-xs font-bold transition-all cursor-pointer ${
-                        drinkLimit === preset
-                          ? 'bg-black text-white'
-                          : 'bg-white border border-black/10 text-black/65 hover:border-black/30'
-                      }`}
-                    >
-                      {preset}
-                    </button>
-                  ))}
-                </div>
-
-                {isCustomLimit && (
+              <div className="relative">
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  placeholder="e.g. Janek Smagieł"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  className="w-full px-4 py-3.5 pr-10 bg-black/[0.035] border border-black/15 rounded-2xl font-sans-clean text-base font-semibold text-black placeholder:text-black/30 placeholder:font-normal outline-none focus:bg-white focus:border-black transition-all"
+                />
+                {name && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setDrinkLimit(settings.default_drink_limit);
-                      setIsCustomLimit(false);
-                    }}
-                    className="text-[11px] font-sans-clean text-black/50 hover:text-black underline shrink-0"
+                    onClick={() => setName('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-full text-black/35 hover:text-black hover:bg-black/5"
+                    title="Clear name"
                   >
-                    reset ({settings.default_drink_limit})
+                    <X className="w-4 h-4" />
                   </button>
                 )}
               </div>
             </div>
-          ) : category === 'driver_minor' ? (
-            <div className="p-3.5 rounded-2xl bg-blue-50/80 border border-blue-200 text-blue-950 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <Lock className="w-4 h-4 text-blue-700 shrink-0" />
-                <div>
-                  <span className="font-sans-clean text-xs font-bold block lowercase">
-                    0 alcohol safety lock active
-                  </span>
-                  <span className="font-sans-clean text-[11px] text-blue-800/80 block lowercase">
-                    barman terminal will block alcoholic drinks and allow unlimited soft drinks.
-                  </span>
-                </div>
-              </div>
-              <span className="font-mono text-xs font-bold px-2.5 py-1 rounded-full bg-blue-200/70 text-blue-900 shrink-0">
-                0 ALC
-              </span>
-            </div>
-          ) : (
-            <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 text-amber-950 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <Sparkles className="w-4 h-4 text-amber-700 shrink-0" />
-                <div>
-                  <span className="font-sans-clean text-xs font-bold block lowercase">
-                    vip / host unlimited pass
-                  </span>
-                  <span className="font-sans-clean text-[11px] text-amber-800/80 block lowercase">
-                    all drinks are tracked in history without triggering a bar cut-off.
-                  </span>
-                </div>
-              </div>
-              <span className="font-mono text-xs font-bold px-2.5 py-1 rounded-full bg-amber-200/70 text-amber-900 shrink-0">
-                ∞ VIP
-              </span>
-            </div>
-          )}
-        </div>
 
-        {/* ================================================================ */}
-        {/* STEP 3: NOTES & QUICK TAGS                                       */}
-        {/* ================================================================ */}
-        <div className="space-y-2.5">
-          <div className="flex items-center justify-between">
-            <label className="font-mono text-[10px] font-bold uppercase tracking-widest text-black/50">
-              03 // NOTES & TAGS (OPTIONAL)
-            </label>
+            {/* STEP 2: GUEST CATEGORY */}
+            <div className="space-y-2.5">
+              <label className="font-mono text-[10px] font-bold uppercase tracking-widest text-black/50 block">
+                02 // GUEST TIER / CATEGORY
+              </label>
+
+              {/* 3 Tactile Tier Cards */}
+              <div className="grid grid-cols-3 gap-2">
+                {(
+                  [
+                    {
+                      id: 'standard',
+                      label: 'standard 18+',
+                      sub: `${isCustomLimit ? drinkLimit : settings.default_drink_limit} drinks`,
+                      icon: Beer,
+                    },
+                    {
+                      id: 'driver_minor',
+                      label: 'driver / minor',
+                      sub: '0 alcohol',
+                      icon: Car,
+                    },
+                    {
+                      id: 'vip',
+                      label: 'vip / host',
+                      sub: 'unlimited ∞',
+                      icon: Sparkles,
+                    },
+                  ] as const
+                ).map(tier => {
+                  const Icon = tier.icon;
+                  const isSelected = category === tier.id;
+                  return (
+                    <button
+                      key={tier.id}
+                      type="button"
+                      onClick={() => {
+                        soundSystem.vibrate(12);
+                        setCategory(tier.id);
+                      }}
+                      className={`p-3 rounded-2xl text-left border transition-all cursor-pointer active:scale-[0.98] flex flex-col justify-between gap-1.5 ${
+                        isSelected
+                          ? 'bg-black text-white border-black shadow-md'
+                          : 'bg-white/80 hover:bg-white text-black border-black/12 hover:border-black/30'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <Icon
+                          className={`w-4 h-4 ${
+                            isSelected ? 'text-emerald-400' : 'text-black/45'
+                          }`}
+                        />
+                        {isSelected && (
+                          <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                        )}
+                      </div>
+                      <div>
+                        <span className="font-sans-clean text-xs font-bold block lowercase leading-tight">
+                          {tier.label}
+                        </span>
+                        <span
+                          className={`text-[10px] font-mono block mt-0.5 ${
+                            isSelected ? 'text-white/70' : 'text-black/50'
+                          }`}
+                        >
+                          {tier.sub}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
-          <input
-            type="text"
-            placeholder="e.g. Birthday girl's friend, table 3..."
-            value={notes}
-            onChange={e => setNotes(e.target.value)}
-            className="w-full px-4 py-3 bg-black/[0.035] border border-black/15 rounded-2xl font-sans-clean text-xs text-black placeholder:text-black/35 outline-none focus:bg-white focus:border-black transition-all"
-          />
+          {/* Right Column: Drink Limit & Notes */}
+          <div className="xl:col-span-6 space-y-4">
+            {/* Reactive Drink Limit Control Bar */}
+            {category === 'standard' ? (
+              <div className="p-4 rounded-2xl bg-black/[0.025] border border-black/10 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-sans-clean text-xs font-bold text-black lowercase">
+                        personal drink limit
+                      </span>
+                      {isCustomLimit ? (
+                        <span className="px-2 py-0.5 rounded-full bg-black text-white font-mono text-[9px] font-bold uppercase">
+                          custom
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full bg-black/8 text-black/55 font-mono text-[9px] font-bold uppercase">
+                          party default
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[11px] font-sans-clean text-black/50 lowercase block mt-0.5">
+                      max drinks before bar cut-off
+                    </span>
+                  </div>
 
-          {/* 1-Tap Quick Note Chips */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            {QUICK_NOTE_TAGS.map(tag => {
-              const isActive = notes.toLowerCase().includes(tag.toLowerCase());
-              return (
-                <button
-                  key={tag}
-                  type="button"
-                  onClick={() => handleToggleQuickNote(tag)}
-                  className={`px-2.5 py-1 rounded-full font-sans-clean text-[11px] font-semibold transition-all cursor-pointer border ${
-                    isActive
-                      ? 'bg-black text-white border-black'
-                      : 'bg-black/[0.03] hover:bg-black/[0.07] text-black/65 border-black/10'
-                  }`}
-                >
-                  {isActive ? `✓ ${tag}` : `+ ${tag}`}
-                </button>
-              );
-            })}
+                  {/* Tactile - / + Steppers */}
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleLimitChange(drinkLimit - 1)}
+                      className="w-9 h-9 rounded-xl bg-white border border-black/15 flex items-center justify-center text-black hover:bg-black/5 active:scale-95 transition-all cursor-pointer"
+                      aria-label="Decrease drink limit"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+
+                    <div className="w-12 py-1 bg-white border border-black/15 rounded-xl font-display text-2xl font-bold text-black text-center select-none">
+                      {drinkLimit}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleLimitChange(drinkLimit + 1)}
+                      className="w-9 h-9 rounded-xl bg-black text-white flex items-center justify-center hover:bg-black/85 active:scale-95 transition-all cursor-pointer"
+                      aria-label="Increase drink limit"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Quick Limit Presets */}
+                <div className="flex items-center justify-between gap-2 pt-1 border-t border-black/6">
+                  <div className="flex flex-wrap items-center gap-1">
+                    <span className="text-[10px] font-sans-clean text-black/45 lowercase mr-1">
+                      quick:
+                    </span>
+                    {[3, 4, 5, 6, 8, 10].map(preset => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => handleLimitChange(preset)}
+                        className={`px-2 py-0.5 rounded-lg font-mono text-xs font-bold transition-all cursor-pointer ${
+                          drinkLimit === preset
+                            ? 'bg-black text-white'
+                            : 'bg-white border border-black/10 text-black/65 hover:border-black/30'
+                        }`}
+                      >
+                        {preset}
+                      </button>
+                    ))}
+                  </div>
+
+                  {isCustomLimit && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDrinkLimit(settings.default_drink_limit);
+                        setIsCustomLimit(false);
+                      }}
+                      className="text-[11px] font-sans-clean text-black/50 hover:text-black underline shrink-0"
+                    >
+                      reset
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : category === 'driver_minor' ? (
+              <div className="p-4 rounded-2xl bg-blue-50/80 border border-blue-200 text-blue-950 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <Lock className="w-4 h-4 text-blue-700 shrink-0" />
+                  <div>
+                    <span className="font-sans-clean text-xs font-bold block lowercase">
+                      0 alcohol safety lock active
+                    </span>
+                    <span className="font-sans-clean text-[11px] text-blue-800/80 block lowercase">
+                      bar station blocks alcohol; soft drinks unlimited.
+                    </span>
+                  </div>
+                </div>
+                <span className="font-mono text-xs font-bold px-2.5 py-1 rounded-full bg-blue-200/70 text-blue-900 shrink-0">
+                  0 ALC
+                </span>
+              </div>
+            ) : (
+              <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 text-amber-950 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <Sparkles className="w-4 h-4 text-amber-700 shrink-0" />
+                  <div>
+                    <span className="font-sans-clean text-xs font-bold block lowercase">
+                      vip / host unlimited pass
+                    </span>
+                    <span className="font-sans-clean text-[11px] text-amber-800/80 block lowercase">
+                      all drinks tracked without cutoff limit.
+                    </span>
+                  </div>
+                </div>
+                <span className="font-mono text-xs font-bold px-2.5 py-1 rounded-full bg-amber-200/70 text-amber-900 shrink-0">
+                  ∞ VIP
+                </span>
+              </div>
+            )}
+
+            {/* STEP 3: NOTES & QUICK TAGS */}
+            <div className="space-y-2">
+              <label className="font-mono text-[10px] font-bold uppercase tracking-widest text-black/50 block">
+                03 // NOTES &amp; TAGS (OPTIONAL)
+              </label>
+
+              <input
+                type="text"
+                placeholder="e.g. Birthday girl's friend, table 3..."
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+                className="w-full px-4 py-2.5 bg-black/[0.035] border border-black/15 rounded-2xl font-sans-clean text-xs text-black placeholder:text-black/35 outline-none focus:bg-white focus:border-black transition-all"
+              />
+
+              {/* Quick Note Chips */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {QUICK_NOTE_TAGS.map(tag => {
+                  const isActive = notes.toLowerCase().includes(tag.toLowerCase());
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => handleToggleQuickNote(tag)}
+                      className={`px-2.5 py-1 rounded-full font-sans-clean text-[10px] font-semibold transition-all cursor-pointer border ${
+                        isActive
+                          ? 'bg-black text-white border-black'
+                          : 'bg-black/[0.03] hover:bg-black/[0.07] text-black/65 border-black/10'
+                      }`}
+                    >
+                      {isActive ? `✓ ${tag}` : `+ ${tag}`}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* ================================================================ */}
-        {/* SUBMIT CTA: SAVE & TURN INTO /t/TAG-00X                          */}
-        {/* ================================================================ */}
-        <div className="space-y-2.5 pt-2 border-t border-black/10">
+        {/* SUBMIT CTA: SAVE & ACTIVATE PASS */}
+        <div className="space-y-2.5 pt-3 border-t border-black/10">
           <button
             type="submit"
             disabled={isSubmitting || isNfcWriting}
@@ -627,7 +626,7 @@ export function GuestOnboardingCard({
             <span>
               {isSubmitting
                 ? 'saving & activating pass...'
-                : `save & activate pass (${effectiveTagId})`}
+                : `save & activate pass (${displaySlotNumber})`}
             </span>
           </button>
 
@@ -646,14 +645,16 @@ export function GuestOnboardingCard({
               <span>
                 {isNfcWriting
                   ? 'hold blank sticker to back of phone...'
-                  : `save & write nfc sticker (${effectiveTagId})`}
+                  : `save & write nfc sticker (${displaySlotNumber})`}
               </span>
             </button>
           )}
 
           <p className="text-[11px] font-sans-clean text-black/45 text-center lowercase">
-            saves guest profile and assigns pass link{' '}
-            <span className="font-mono font-bold text-black/65">/t/{effectiveTagId}</span>
+            saves guest profile and binds to sticker link{' '}
+            <span className="font-mono font-bold text-black/65">
+              /t/{parsedTarget.tagNumber ?? effectiveTagId}
+            </span>
           </p>
         </div>
       </form>

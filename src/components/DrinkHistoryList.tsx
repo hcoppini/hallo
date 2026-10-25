@@ -104,7 +104,7 @@ export function DrinkHistoryList() {
   return (
     <div className="w-full space-y-4">
       {/* 1. Drink-Type Breakdown Bar */}
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 lg:gap-3">
         {breakdownItems.map(item => {
           const Icon = item.icon;
           const isSelected = selectedCategory === item.id;
@@ -113,7 +113,7 @@ export function DrinkHistoryList() {
               key={item.id}
               type="button"
               onClick={() => setSelectedCategory(item.id)}
-              className={`p-3 rounded-2xl border text-left transition-all cursor-pointer active:scale-95 ${
+              className={`p-3 sm:p-4 rounded-2xl border text-left transition-all cursor-pointer active:scale-95 ${
                 isSelected
                   ? 'bg-black text-white border-black shadow-sm'
                   : 'bg-white/90 hover:bg-white text-black border-black/10'
@@ -126,7 +126,7 @@ export function DrinkHistoryList() {
                   }`}
                 />
                 <span
-                  className={`font-display text-2xl font-bold leading-none ${
+                  className={`font-display text-2xl sm:text-3xl font-bold leading-none ${
                     isSelected ? 'text-white' : 'text-black'
                   }`}
                 >
@@ -134,7 +134,7 @@ export function DrinkHistoryList() {
                 </span>
               </div>
               <span
-                className={`font-sans-clean text-[10px] font-semibold lowercase tracking-wide block truncate ${
+                className={`font-sans-clean text-[10px] sm:text-[11px] font-semibold lowercase tracking-wide block truncate ${
                   isSelected ? 'text-white/75' : 'text-black/55'
                 }`}
               >
@@ -172,7 +172,7 @@ export function DrinkHistoryList() {
           <button
             type="button"
             onClick={() => setShowReverted(prev => !prev)}
-            className={`px-3.5 py-2.5 rounded-2xl text-xs font-sans-clean font-semibold lowercase flex items-center justify-center gap-1.5 border transition-all shrink-0 ${
+            className={`px-3.5 py-2.5 rounded-2xl text-xs font-sans-clean font-semibold lowercase flex items-center justify-center gap-1.5 border transition-all shrink-0 cursor-pointer ${
               showReverted
                 ? 'bg-black text-white border-black'
                 : 'bg-white text-black/60 border-black/12 hover:text-black'
@@ -226,8 +226,8 @@ export function DrinkHistoryList() {
             )}
           </div>
         ) : (
-          <div className="space-y-2 max-h-[540px] overflow-y-auto pr-1">
-            {filteredLogs.slice(0, 60).map(log => {
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5 max-h-[580px] overflow-y-auto pr-1">
+            {filteredLogs.slice(0, 80).map(log => {
               const drinkCat = getDrinkCategory(log.drink_type);
               const Icon = drinkCategoryIcons[drinkCat] || GlassWater;
               const guest = guestMap.get(log.guest_id);
@@ -299,7 +299,7 @@ export function DrinkHistoryList() {
                     <button
                       type="button"
                       onClick={() => revertLastDrink(log.guest_id, log.id)}
-                      className="px-2.5 py-1.5 rounded-xl bg-black/5 hover:bg-black/10 text-black/65 hover:text-black text-[11px] font-sans-clean font-semibold lowercase flex items-center gap-1 transition-colors shrink-0"
+                      className="px-2.5 py-1.5 rounded-xl bg-black/5 hover:bg-black/10 text-black/65 hover:text-black text-[11px] font-sans-clean font-semibold lowercase flex items-center gap-1 transition-colors shrink-0 cursor-pointer"
                       title="Undo this drink"
                     >
                       <RotateCcw className="w-3 h-3" />
