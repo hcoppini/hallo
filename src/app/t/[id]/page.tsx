@@ -264,122 +264,12 @@ export default function DirectTapPage() {
       assignedGuest.drinks_consumed >= effectiveLimit
   );
 
-  // 3. Select guest in store & auto-serve on staff phones (when in 'barman' station mode)
+  // 3. Select guest in store on staff phones (no forced auto-pour: staff explicitly selects drink)
   useEffect(() => {
     if (isAuthenticated && assignedGuest) {
       setSelectedGuestId(assignedGuest.id);
     }
   }, [isAuthenticated, assignedGuest, setSelectedGuestId]);
-
-  useEffect(() => {
-    if (
-      !isAuthenticated ||
-      !assignedGuest ||
-      isLoading ||
-      justOnboarded ||
-      hasAutoServedRef.current
-    ) {
-      return;
-    }
-
-    if (relayedStation === 'door' || getStaffStationMode() === 'door') {
-      hasAutoServedRef.current = true;
-      return;
-    }
-
-    if (typeof window !== 'undefined') {
-      const sp = new URLSearchParams(window.location.search);
-      if (
-        sp.get('mode') === 'view' ||
-        sp.get('noserve') === '1' ||
-        sp.get('onboarded') === '1'
-      ) {
-        hasAutoServedRef.current = true;
-        return;
-      }
-    }
-
-    hasAutoServedRef.current = true;
-
-    async function executeAutoServe() {
-      if (!assignedGuest) return;
-
-      await new Promise(resolve => setTimeout(resolve, 80));
-      if (getStaffStationMode() === 'door') return;
-
-      if (assignedGuest.category === 'driver_minor') {
-        soundSystem.playErrorSound();
-        setAutoServedResult({
-          status: 'driver_minor',
-          message: 'Driver / Minor: 0 alcohol permitted. Soft drinks only.',
-        });
-        return;
-      }
-
-      const curLimit = calculateEffectiveLimit(assignedGuest, settings);
-      if (assignedGuest.category !== 'vip' && assignedGuest.drinks_consumed >= curLimit) {
-        soundSystem.playCutoffSound();
-        setAutoServedResult({
-          status: 'limit_reached',
-          message: `Limit reached (${assignedGuest.drinks_consumed}/${curLimit}). Do not serve alcohol.`,
-        });
-        return;
-      }
-
-      const preferredDrink = (getStaffActiveDrinkType() as DrinkType) || 'beer';
-      setIsProcessing(true);
-      const res = await serveDrink(assignedGuest.tag_id, preferredDrink);
-      setIsProcessing(false);
-
-      sendTagRelayMessage(
-        {
-          type: 'DRINK_SERVED',
-          tagId: assignedGuest.tag_id,
-          drinkType: preferredDrink,
-          result: res,
-        },
-        { broadcastCrossDevice: true }
-      );
-
-      if (res.success) {
-        soundSystem.playApprovedSound();
-        confetti({
-          particleCount: 50,
-          spread: 60,
-          origin: { y: 0.6 },
-        });
-        setAutoServedResult({
-          status: 'served',
-          message: `Logged ${preferredDrink} (+1)`,
-        });
-        setUndoSeconds(10);
-        if (relayedStation === 'barman') {
-          attemptAutoCloseTab();
-        }
-      } else {
-        if (res.error === 'LIMIT_REACHED') {
-          soundSystem.playCutoffSound();
-          setAutoServedResult({
-            status: 'limit_reached',
-            message: res.message || 'Drink limit reached.',
-          });
-        } else {
-          soundSystem.playErrorSound();
-          setErrorMsg(res.message || 'Failed to log drink.');
-        }
-      }
-    }
-
-    executeAutoServe();
-  }, [
-    isAuthenticated,
-    assignedGuest,
-    isLoading,
-    justOnboarded,
-    settings,
-    serveDrink,
-    relayedStation,
-  ]);
 
   // Undo 10-second countdown timer
   useEffect(() => {
@@ -576,257 +466,177 @@ export default function DirectTapPage() {
         <div className="w-full">
           {isAuthenticated ? (
             <div className="max-w-lg mx-auto w-full space-y-4">
-              {/* Staff Navigation & Station Mode Header */}
-              <div className="p-3 rounded-2xl bg-black text-white text-xs font-sans-clean space-y-2.5 shadow-lg">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        router.push(
-                          stationMode === 'door'
-                            ? '/door'
-                            : `/barman?tag=${encodeURIComponent(assignedGuest.tag_id)}`
-                        )
-                      }
-                      className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-[11px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-                    >
-                      <ArrowLeft className="w-3.5 h-3.5" />
-                      <span>{stationMode === 'door' ? 'Door Desk' : 'Barman'}</span>
-                    </button>
+              {/* Compact Staff Navigation Bar */}
+              <div className="p-2.5 rounded-2xl bg-black text-white text-xs font-sans-clean flex items-center justify-between shadow-md">
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      router.push(
+                        stationMode === 'door'
+                          ? '/door'
+                          : `/barman?tag=${encodeURIComponent(assignedGuest.tag_id)}`
+                      )
+                    }
+                    className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-[11px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>{stationMode === 'door' ? 'Door' : 'Barman Desk'}</span>
+                  </button>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setJustOnboarded(false);
-                        setSelectedSlotOverride(null);
-                        router.push('/door');
-                      }}
-                      className="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400/30 text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                    >
-                      <UserPlus className="w-3 h-3" />
-                      <span>+ Onboard Next</span>
-                    </button>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-[10px] text-emerald-400 uppercase font-bold tracking-wider flex items-center gap-1">
-                      <Wifi className="w-3 h-3" />
-                      {relayedStation ? `Synced (${relayedStation})` : 'Staff'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={logout}
-                      title="Lock Terminal"
-                      className="p-1 rounded-lg hover:bg-white/10 text-white/70 hover:text-white cursor-pointer"
-                    >
-                      <LogOut className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setJustOnboarded(false);
+                      setSelectedSlotOverride(null);
+                      router.push('/door');
+                    }}
+                    className="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400/30 text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                  >
+                    <UserPlus className="w-3 h-3" />
+                    <span>+ Onboard</span>
+                  </button>
                 </div>
 
-                {/* 1-Tap Station Mode Toggle: Bar Auto-Serve vs Door Inspect */}
-                <div className="grid grid-cols-2 gap-1.5 bg-white/10 p-1 rounded-xl">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[10px] text-emerald-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                    <Wifi className="w-3 h-3" />
+                    <span>Staff</span>
+                  </span>
                   <button
                     type="button"
-                    onClick={() => setStationMode('barman')}
-                    className={`py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
-                      stationMode === 'barman'
-                        ? 'bg-emerald-500 text-black shadow-sm'
-                        : 'text-white/60 hover:text-white'
-                    }`}
+                    onClick={logout}
+                    title="Lock Terminal"
+                    className="p-1 rounded-lg hover:bg-white/10 text-white/70 hover:text-white cursor-pointer"
                   >
-                    🍸 Bar Mode (Auto +1)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStationMode('door')}
-                    className={`py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
-                      stationMode === 'door'
-                        ? 'bg-white text-black shadow-sm'
-                        : 'text-white/60 hover:text-white'
-                    }`}
-                  >
-                    🚪 Door Mode (Inspect)
+                    <LogOut className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
 
-              {/* Celebratory Banner right after Onboarding */}
-              {justOnboarded && (
-                <div className="p-5 rounded-3xl bg-emerald-600 text-white shadow-xl space-y-3 animate-in fade-in zoom-in-95 duration-200">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-[10px] font-bold uppercase tracking-widest bg-white/20 px-2.5 py-0.5 rounded-full">
-                      PASS ACTIVATED • #{displayTagNum ?? assignedGuest.tag_id}
-                    </span>
-                    <CheckCircle2 className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="font-display text-2xl font-bold lowercase leading-tight">
-                      {assignedGuest.name} is checked in!
-                    </h3>
-                    <p className="font-sans-clean text-xs text-white/90 mt-0.5">
-                      Sticker link for NFC Tools:{' '}
-                      <strong className="font-mono">/t/{displayTagNum ?? assignedGuest.tag_id}</strong>
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={handleCopyActivePassUrl}
-                      className="py-2.5 px-3 rounded-xl bg-white/20 hover:bg-white/30 text-white font-sans-clean font-bold text-xs flex items-center justify-center gap-1.5 border border-white/25 transition-all cursor-pointer"
-                    >
-                      {copiedPassUrl ? (
-                        <>
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Link Copied!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5" />
-                          <span>Copy /t/{displayTagNum ?? assignedGuest.tag_id}</span>
-                        </>
-                      )}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setJustOnboarded(false);
-                        setSelectedSlotOverride(null);
-                        const nextNum = parseTagId(nextFreeTag).tagNumber ?? nextFreeTag;
-                        router.push(`/t/${encodeURIComponent(String(nextNum))}`);
-                      }}
-                      className="py-2.5 px-3 rounded-xl bg-white text-black hover:bg-white/90 font-sans-clean font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                    >
-                      <UserPlus className="w-3.5 h-3.5" />
-                      <span>Next Free (#{parseTagId(nextFreeTag).tagNumber ?? nextFreeTag})</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-
+              {/* Status Notifications */}
               {servedSuccess && (
-                <div className="p-3 rounded-2xl bg-emerald-600 text-white text-xs font-sans-clean font-bold text-center shadow-md">
+                <div className="p-3 rounded-2xl bg-emerald-600 text-white text-xs font-sans-clean font-bold text-center shadow-md animate-in fade-in duration-150">
                   {servedSuccess}
                 </div>
               )}
 
               {errorMsg && (
-                <div className="p-3 rounded-2xl bg-red-600 text-white text-xs font-sans-clean font-bold text-center shadow-md">
+                <div className="p-3 rounded-2xl bg-red-600 text-white text-xs font-sans-clean font-bold text-center shadow-md animate-in fade-in duration-150">
                   {errorMsg}
                 </div>
               )}
 
-              {/* Status Alert Banners */}
-              {autoServedResult.status === 'served' && (
-                <div className="rounded-3xl bg-emerald-600 text-white p-5 text-center shadow-xl space-y-2 animate-in fade-in zoom-in-95 duration-200">
-                  <CheckCircle2 className="w-10 h-10 text-white mx-auto" />
-                  <div className="font-sans-clean text-xs font-bold">
-                    {servedSuccess || autoServedResult.message}
-                  </div>
-                  {undoSeconds > 0 && (
-                    <button
-                      type="button"
-                      onClick={handleUndo}
-                      disabled={isProcessing}
-                      className="w-full py-2.5 rounded-xl bg-white/20 hover:bg-white/30 text-white font-sans-clean font-bold text-xs flex items-center justify-center gap-2 border border-white/30 transition-all mt-2"
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                      <span>Undo Last Drink (-1) [{undoSeconds}s]</span>
-                    </button>
-                  )}
+              {/* Undo Toast Banner (Appears right after serving) */}
+              {undoSeconds > 0 && (
+                <div className="rounded-2xl bg-stone-900 text-white p-3 shadow-lg flex items-center justify-between border border-stone-800 animate-in fade-in duration-150">
+                  <span className="text-xs text-stone-300 font-medium truncate">
+                    {servedSuccess || 'Drink served (+1)'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleUndo}
+                    disabled={isProcessing}
+                    className="shrink-0 px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white font-sans-clean font-bold text-xs flex items-center gap-1.5 transition-all"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Undo ({undoSeconds}s)</span>
+                  </button>
                 </div>
               )}
 
-              {/* Main Card */}
-              <div className="glass-card p-6 border border-black/15 shadow-xl space-y-5">
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-xs text-black/50 font-bold">{tagLabel}</span>
-                  <span className="bg-black/5 text-black/70 text-[10px] font-semibold px-2.5 py-0.5 rounded-full lowercase">
-                    {assignedGuest.category === 'vip'
-                      ? 'vip host'
-                      : assignedGuest.category === 'driver_minor'
-                      ? 'driver (0 alc)'
-                      : 'standard 18+'}
-                  </span>
-                </div>
+              {/* Fast POS Drink Card (Compact & Above the fold) */}
+              <div className="glass-card p-5 border border-black/15 shadow-xl space-y-4">
+                {/* Guest Summary Header */}
+                <div className="flex items-center justify-between pb-3 border-b border-black/10">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-black text-white">
+                        #{displayTagNum ?? assignedGuest.tag_id}
+                      </span>
+                      <span className="text-[11px] font-sans-clean font-semibold text-black/60 truncate">
+                        {assignedGuest.tag_id}
+                      </span>
+                      {assignedGuest.category === 'vip' && (
+                        <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                          VIP
+                        </span>
+                      )}
+                      {assignedGuest.category === 'driver_minor' && (
+                        <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                          0 Alc
+                        </span>
+                      )}
+                    </div>
+                    <h2 className="font-display text-2xl font-bold lowercase text-black truncate">
+                      {assignedGuest.name}
+                    </h2>
+                  </div>
 
-                <div className="text-center">
-                  <h2 className="font-display text-3xl font-bold lowercase text-black mb-1">
-                    {assignedGuest.name}
-                  </h2>
-                  {cleanNotes && (
-                    <span className="inline-block px-2.5 py-0.5 rounded-full bg-black/[0.04] border border-black/8 text-[11px] font-sans-clean text-black/60 mb-1">
-                      {cleanNotes}
-                    </span>
-                  )}
-                  <div className="font-display text-5xl font-bold text-black my-1">
-                    {assignedGuest.drinks_consumed}
-                    <span className="text-2xl text-black/30 font-normal">
-                      /{assignedGuest.category === 'vip' ? '∞' : effectiveLimit}
+                  <div className="text-right shrink-0">
+                    <div className="font-display text-3xl font-bold text-black leading-none">
+                      {assignedGuest.drinks_consumed}
+                      <span className="text-xl text-black/30 font-normal">
+                        /{assignedGuest.category === 'vip' ? '∞' : effectiveLimit}
+                      </span>
+                    </div>
+                    <span className="font-sans-clean text-[11px] font-semibold text-black/55 block mt-0.5">
+                      {assignedGuest.category === 'vip'
+                        ? 'unlimited'
+                        : isLimitReached
+                        ? 'limit reached'
+                        : `${Math.max(0, effectiveLimit - assignedGuest.drinks_consumed)} left`}
                     </span>
                   </div>
-                  <span className="font-sans-clean text-xs font-semibold text-black/60 lowercase block">
-                    {assignedGuest.category === 'vip'
-                      ? 'unlimited drinks'
-                      : isLimitReached
-                      ? 'maximum limit reached'
-                      : `${Math.max(0, effectiveLimit - assignedGuest.drinks_consumed)} drinks remaining`}
-                  </span>
                 </div>
 
-                {/* Specific Drink Controls */}
-                <div className="space-y-3 pt-3 border-t border-black/10">
-                  <span className="font-mono text-[10px] text-black/40 uppercase tracking-widest block text-center">
-                    SERVE DRINK / SET DEFAULT FOR NEXT TAP
+                {/* 1-Tap Drink Selector Grid (Tap to Pour Instantly) */}
+                <div className="space-y-2">
+                  <span className="font-mono text-[10px] text-black/45 uppercase tracking-wider block font-bold">
+                    TAP DRINK TO POUR:
                   </span>
-                  <div className="flex flex-wrap gap-2 justify-center">
+
+                  <div className="grid grid-cols-2 gap-2">
                     {BAR_DRINKS.map(({ type, label, category }) => {
                       const Icon = categoryIcons[category];
-                      const isActive = activeDrinkType === type;
+                      const isSelected = activeDrinkType === type;
                       return (
                         <button
                           key={type}
                           type="button"
                           onClick={() => handleServe(type)}
                           disabled={isProcessing || isLimitReached}
-                          className={`px-3.5 py-2 rounded-xl text-xs font-sans-clean font-semibold lowercase flex items-center gap-1.5 border transition-colors disabled:opacity-40 cursor-pointer ${
-                            isActive
+                          className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                            isSelected
                               ? 'bg-black text-white border-black shadow-sm'
-                              : 'bg-black/5 hover:bg-black hover:text-white text-black border-black/10'
+                              : 'bg-white hover:bg-black/5 text-black border-black/15 shadow-2xs'
                           }`}
                         >
-                          <Icon className="w-3.5 h-3.5" />
-                          <span>{label}</span>
+                          <div className="flex items-center gap-2">
+                            <Icon className={`w-4 h-4 ${isSelected ? 'text-white' : 'text-black/60'}`} />
+                            <span className="font-sans-clean text-xs font-bold capitalize">
+                              {label}
+                            </span>
+                          </div>
+                          <span className={`text-[10px] font-mono ${isSelected ? 'text-white/60' : 'text-black/40'}`}>
+                            +1
+                          </span>
                         </button>
                       );
                     })}
                   </div>
-
-                  {assignedGuest.drinks_consumed > 0 && undoSeconds === 0 && (
-                    <button
-                      type="button"
-                      onClick={handleUndo}
-                      disabled={isProcessing}
-                      className="w-full py-2.5 rounded-xl bg-black/5 hover:bg-black/10 text-black/70 hover:text-black font-sans-clean text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors mt-2"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>Revert 1 Drink (-1)</span>
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      router.push(`/barman?tag=${encodeURIComponent(assignedGuest.tag_id)}`)
-                    }
-                    className="w-full py-3 rounded-xl bg-black text-white hover:bg-black/90 font-sans-clean text-xs font-bold flex items-center justify-center gap-1.5 transition-colors mt-2 cursor-pointer"
-                  >
-                    <span>Open Full Barman Station</span>
-                  </button>
                 </div>
+
+                {/* Quick Switch to Full Desk */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    router.push(`/barman?tag=${encodeURIComponent(assignedGuest.tag_id)}`)
+                  }
+                  className="w-full py-2.5 rounded-xl bg-black/5 hover:bg-black/10 text-black/75 hover:text-black font-sans-clean text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <span>Open Full Bar Desk View</span>
+                </button>
               </div>
             </div>
           ) : (

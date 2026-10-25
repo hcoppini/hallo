@@ -74,7 +74,6 @@ export function MobileHeader() {
       shortLabel: 'door',
       sub: 'admit & link tags',
       icon: DoorOpen,
-      badge: enteredCount > 0 ? `${enteredCount}` : undefined,
     },
     {
       href: '/admin',
@@ -126,11 +125,6 @@ export function MobileHeader() {
                   lua // pass
                 </span>
               </Link>
-              {pathname !== '/' && (
-                <span className="hidden lg:inline-flex items-center px-2.5 py-0.5 rounded-full bg-black/[0.04] border border-black/10 font-mono text-[10px] font-bold uppercase tracking-widest text-black/55">
-                  {getPageTitle()}
-                </span>
-              )}
             </div>
           )}
 
@@ -175,21 +169,6 @@ export function MobileHeader() {
 
           {/* Right Controls */}
           <div className="flex items-center gap-2 shrink-0">
-            {/* Search Guest Button on Barman */}
-            {pathname === '/barman' && isAuthenticated && (
-              <button
-                type="button"
-                onClick={() => setIsSearchOpen(true)}
-                className="btn-premium py-2 px-3.5 text-xs gap-1.5"
-                title="Search guest by name or wristband # (Shortcut: / or Ctrl+K)"
-              >
-                <Search className="w-3.5 h-3.5" />
-                <span>search guest</span>
-                <kbd className="hidden lg:inline-block ml-1 px-1.5 py-0.2 rounded bg-black/8 text-[10px] font-mono text-black/60">
-                  /
-                </kbd>
-              </button>
-            )}
 
             {/* Staff Exit / Lock Button */}
             {isAuthenticated && (

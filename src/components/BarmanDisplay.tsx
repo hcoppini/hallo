@@ -133,122 +133,109 @@ export function BarmanDisplay({
       {/* 1. CUSTOMER IDENTITY & PROGRESS SECTION                          */}
       {/* ================================================================ */}
       <section className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-black/10">
-          <div className="flex items-center gap-2">
-            <span className="font-sans-clean text-xs font-semibold lowercase tracking-widest text-black/45">
-              current customer:
-            </span>
-            {activeGuest && (
-              <>
-                <span className="font-mono text-xs font-bold px-3 py-1 rounded-full bg-black text-white shadow-xs">
-                  #{slotNumber} ({activeGuest.tag_id})
+        {activeGuest ? (
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-black/10">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs font-bold px-2.5 py-1 rounded-lg bg-black text-white shadow-xs">
+                  #{slotNumber}
                 </span>
-                {isVip ? (
-                  <span className="text-[10px] font-sans-clean font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                <span className="font-sans-clean text-xs font-semibold text-black/60">
+                  {activeGuest.tag_id}
+                </span>
+                {isVip && (
+                  <span className="text-xs font-sans-clean font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
                     VIP Unlimited
                   </span>
-                ) : isDriver ? (
-                  <span className="text-[10px] font-sans-clean font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-blue-100 text-blue-900 border border-blue-300">
+                )}
+                {isDriver && (
+                  <span className="text-xs font-sans-clean font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
                     Driver / 0 Alc
                   </span>
-                ) : (
-                  <span className="text-[10px] font-sans-clean font-semibold lowercase px-2.5 py-1 rounded-full bg-black/5 text-black/60 border border-black/8">
-                    standard 18+
-                  </span>
                 )}
-              </>
-            )}
-          </div>
+              </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onOpenSearch}
-              className="inline-flex items-center gap-1.5 text-xs font-sans-clean font-semibold text-black/60 hover:text-black px-3 py-1.5 rounded-xl hover:bg-black/5 transition-colors cursor-pointer lowercase border border-black/10"
-            >
-              <Search className="w-3.5 h-3.5" />
-              <span>search / switch customer</span>
-              <kbd className="hidden lg:inline-block ml-1 px-1.5 py-0.2 rounded bg-black/8 font-mono text-[10px]">
-                /
-              </kbd>
-            </button>
+              <div className="flex items-center gap-2">
+                {onClearCustomer && (
+                  <button
+                    type="button"
+                    onClick={onClearCustomer}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl hover:bg-black/5 text-black/60 hover:text-black transition-colors font-sans-clean text-xs font-semibold cursor-pointer"
+                    title="Clear customer (Esc)"
+                  >
+                    <X className="w-4 h-4" />
+                    <span>clear bar (esc)</span>
+                  </button>
+                )}
+              </div>
+            </div>
 
-            {activeGuest && onClearCustomer && (
-              <button
-                type="button"
-                onClick={onClearCustomer}
-                className="p-1.5 rounded-xl hover:bg-black/5 text-black/40 hover:text-black transition-colors"
-                title="Deselect customer (Esc)"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Customer Name & Counter Row */}
-        <div className="flex items-baseline justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            {activeGuest ? (
-              <div>
+            {/* Customer Name & Counter Row */}
+            <div className="flex items-baseline justify-between gap-4">
+              <div className="min-w-0 flex-1">
                 <h2
                   onClick={onOpenSearch}
                   title="Click to search or switch customer"
-                  className="font-display text-5xl sm:text-6xl lg:text-7xl font-bold lowercase text-black leading-none tracking-tight truncate cursor-pointer hover:opacity-75 transition-opacity"
+                  className="font-display text-4xl sm:text-5xl lg:text-6xl font-bold lowercase text-black leading-none tracking-tight truncate cursor-pointer hover:opacity-75 transition-opacity"
                 >
                   {customerName}
                 </h2>
                 {cleanNotes && (
-                  <span className="inline-block mt-2 px-3 py-1 rounded-full bg-black/[0.04] border border-black/8 text-xs font-sans-clean text-black/60">
+                  <p className="mt-1.5 text-xs font-sans-clean text-black/60">
                     {cleanNotes}
-                  </span>
+                  </p>
                 )}
               </div>
-            ) : (
-              <button
-                type="button"
-                onClick={onOpenSearch}
-                className="font-display text-4xl sm:text-5xl lg:text-6xl font-bold lowercase text-black/30 hover:text-black leading-none tracking-tight text-left transition-colors cursor-pointer"
-              >
-                select customer...
-              </button>
-            )}
-          </div>
 
-          <div className="text-right shrink-0">
-            <div
-              className={`font-display text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight leading-none ${
-                isLimitReached ? 'text-red-600' : 'text-black'
-              }`}
-            >
-              {drinksConsumed}
-              <span className="text-3xl sm:text-4xl text-black/25 font-normal">
-                /{isVip ? '∞' : effectiveLimit}
-              </span>
+              <div className="text-right shrink-0">
+                <div
+                  className={`font-display text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-none ${
+                    isLimitReached ? 'text-red-600' : 'text-black'
+                  }`}
+                >
+                  {drinksConsumed}
+                  <span className="text-2xl sm:text-3xl text-black/25 font-normal">
+                    /{isVip ? '∞' : effectiveLimit}
+                  </span>
+                </div>
+                <span
+                  className={`font-sans-clean text-xs font-semibold tracking-wider lowercase block mt-1.5 ${
+                    isLimitReached ? 'text-red-600 font-bold' : 'text-black/50'
+                  }`}
+                >
+                  {isVip
+                    ? 'unlimited drinks unlocked'
+                    : isLimitReached
+                    ? 'maximum limit reached'
+                    : `${Math.max(0, effectiveLimit - drinksConsumed)} drinks remaining`}
+                </span>
+              </div>
             </div>
-            <span
-              className={`font-sans-clean text-xs font-semibold tracking-wider lowercase block mt-1.5 ${
-                isLimitReached ? 'text-red-600 font-bold' : 'text-black/50'
-              }`}
-            >
-              {isVip
-                ? 'unlimited drinks unlocked'
-                : isLimitReached
-                ? 'maximum limit reached'
-                : `${Math.max(0, effectiveLimit - drinksConsumed)} drinks remaining`}
-            </span>
-          </div>
-        </div>
 
-        {/* High-Contrast Progress Bar */}
-        <div className="w-full h-4 rounded-full bg-black/[0.05] border border-black/20 p-0.5 mt-2 overflow-hidden">
-          <div
-            className={`h-full rounded-full transition-all duration-300 ${
-              isLimitReached ? 'bg-red-600' : 'bg-black'
-            }`}
-            style={{ width: `${progressPercent}%` }}
-          />
-        </div>
+            {/* High-Contrast Progress Bar */}
+            <div className="w-full h-3 rounded-full bg-black/[0.05] border border-black/15 p-0.5 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-300 ${
+                  isLimitReached ? 'bg-red-600' : 'bg-black'
+                }`}
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+          </>
+        ) : (
+          /* Clean Empty / Idle State */
+          <div className="py-8 sm:py-10 text-center space-y-2 border border-dashed border-black/15 rounded-2xl bg-black/[0.02]">
+            <div className="w-12 h-12 rounded-2xl bg-black/5 border border-black/10 flex items-center justify-center mx-auto text-black/50 mb-2">
+              <GlassWater className="w-6 h-6" />
+            </div>
+            <h3 className="font-display text-2xl sm:text-3xl font-bold lowercase text-black">
+              bar station ready.
+            </h3>
+            <p className="font-sans-clean text-xs sm:text-sm text-black/50 lowercase max-w-sm mx-auto">
+              no customer active. search by name or wristband # above, or tap an nfc band.
+            </p>
+          </div>
+        )}
       </section>
 
       {/* ================================================================ */}
@@ -412,15 +399,19 @@ export function BarmanDisplay({
                   </span>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => revertLastDrink(activeGuest.id, log.id)}
-                  className="text-xs font-sans-clean font-semibold text-black/45 hover:text-black flex items-center gap-1 px-3 py-1 rounded-lg hover:bg-black/5 transition-colors cursor-pointer lowercase"
-                  title="Undo this drink"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>undo</span>
-                </button>
+                {idx === 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => revertLastDrink(activeGuest.id, log.id)}
+                    className="text-xs font-sans-clean font-semibold text-red-600 hover:text-red-700 flex items-center gap-1 px-2.5 py-1 rounded-lg hover:bg-red-50 transition-colors cursor-pointer lowercase"
+                    title="Undo last drink"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>undo last drink</span>
+                  </button>
+                ) : (
+                  <span className="text-[11px] font-mono text-black/30">logged</span>
+                )}
               </div>
             ))}
 

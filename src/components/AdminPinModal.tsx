@@ -71,18 +71,24 @@ export function AdminPinModal({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key >= '0' && e.key <= '9') {
         e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
         handleDigit(e.key);
       } else if (e.key === 'Backspace') {
         e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
         handleBackspace();
       } else if (e.key === 'Escape') {
         e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
         onClose();
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [isOpen, handleDigit, handleBackspace, onClose]);
 
   if (!isOpen) return null;

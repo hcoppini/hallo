@@ -22,6 +22,7 @@ import {
   AlertTriangle,
   LayoutGrid,
   List,
+  X,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -189,126 +190,21 @@ export default function DoorCheckInPage() {
     : null;
 
   return (
-    <div className="w-full py-4 lg:py-6 space-y-5 lg:space-y-6 animate-in fade-in duration-150">
-      {/* 1. Host Status Header */}
-      <div className="p-3.5 sm:p-4 rounded-2xl bg-black text-white text-xs font-sans-clean flex flex-wrap items-center justify-between gap-3 shadow-lg">
-        <div className="flex items-center gap-2.5">
-          <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-          <div>
-            <span className="font-bold text-[10px] tracking-wider uppercase block leading-tight">
-              Door Onboarding Station
-            </span>
-            <span className="text-[10px] text-emerald-400/90 flex items-center gap-1 font-mono leading-tight">
-              <Wifi className="w-2.5 h-2.5" />
-              iPhone &amp; Live Wristband Relay Active
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setIsBatchEncoderOpen(true)}
-            className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400/30 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-          >
-            <Smartphone className="w-3 h-3" />
-            <span>NFC Sticker Copier (/t/1..100)</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={logout}
-            className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            <span>Lock</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Live Relay Notice */}
+    <div className="w-full py-2 sm:py-4 lg:py-6 space-y-4 lg:space-y-6 animate-in fade-in duration-150">
+      {/* Live Relay Notice (Only appears when wristband tapped remotely) */}
       {relayedTagNotice && (
         <div className="p-3 rounded-2xl bg-emerald-600 text-white text-xs font-sans-clean font-bold text-center shadow-lg animate-in fade-in duration-150">
           ⚡ {relayedTagNotice}
         </div>
       )}
 
-      {/* 2. Live Door Telemetry KPI Strip */}
-      <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-6">
-        <div className="glass-card p-4 sm:p-5 lg:p-6 border border-black/10">
-          <div className="flex items-center justify-between mb-1">
-            <span className="font-sans-clean text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-black/45">
-              admitted inside
-            </span>
-            <UserCheck className="w-4 h-4 text-black/40" />
-          </div>
-          <div className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold text-black leading-none">
-            {admittedGuests.length}
-            <span className="text-base sm:text-xl text-black/35 font-normal">/{guests.length}</span>
-          </div>
-          <span className="text-[11px] font-sans-clean text-black/50 lowercase block mt-1.5 truncate">
-            {freeSlotsCount} wristbands free
-          </span>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setSelectedTagId(nextFreeTag)}
-          className="glass-card p-4 sm:p-5 lg:p-6 border border-black/10 hover:border-black/30 text-left transition-all cursor-pointer"
-          title="Click to reset target slot to next free wristband"
-        >
-          <div className="flex items-center justify-between mb-1">
-            <span className="font-sans-clean text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-black/45">
-              next free slot
-            </span>
-            <Tag className="w-4 h-4 text-emerald-600" />
-          </div>
-          <div className="font-mono text-xl sm:text-2xl lg:text-3xl font-bold text-black leading-none mt-1">
-            #{parseTagId(nextFreeTag).tagNumber ?? nextFreeTag}
-          </div>
-          <span className="text-[11px] font-sans-clean text-black/50 lowercase block mt-1.5 truncate">
-            {nextFreeTag} auto-assigned
-          </span>
-        </button>
-
-        <div className="glass-card p-4 sm:p-5 lg:p-6 border border-black/10">
-          <div className="flex items-center justify-between mb-1">
-            <span className="font-sans-clean text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-black/45">
-              vip hosts
-            </span>
-            <Sparkles className="w-4 h-4 text-amber-600" />
-          </div>
-          <div className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold text-black leading-none">
-            {vipCount}
-          </div>
-          <span className="text-[11px] font-sans-clean text-black/50 lowercase block mt-1.5 truncate">
-            unlimited drink privilege
-          </span>
-        </div>
-
-        <div className="glass-card p-4 sm:p-5 lg:p-6 border border-black/10">
-          <div className="flex items-center justify-between mb-1">
-            <span className="font-sans-clean text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-black/45">
-              designated drivers
-            </span>
-            <span className="font-mono text-xs font-bold text-blue-700">0 ALC</span>
-          </div>
-          <div className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold text-black leading-none">
-            {driverCount}
-          </div>
-          <span className="text-[11px] font-sans-clean text-black/50 lowercase block mt-1.5 truncate">
-            soft drinks only
-          </span>
-        </div>
-      </section>
-
-      {/* 3. Main 2-Column Onboarding & Registry Workspace */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
-        {/* Left Column (7 cols, sticky on desktop): Unified Onboarding Console */}
-        <div className="lg:col-span-7 xl:col-span-7 space-y-4 lg:sticky lg:top-24">
-          {/* Celebratory Last Admitted Banner */}
+      {/* Main 2-Column Onboarding & Registry Workspace */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-8 items-start">
+        {/* Left Column (7 cols): Primary Wristband Onboarding Console */}
+        <div className="lg:col-span-7 xl:col-span-7 space-y-4">
+          {/* Celebratory Last Admitted Banner (Dismissible) */}
           {lastAdmittedGuest && (
-            <div className="p-5 rounded-3xl bg-emerald-600 text-white shadow-xl space-y-3 animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-4 sm:p-5 rounded-3xl bg-emerald-600 text-white shadow-xl space-y-3 animate-in fade-in zoom-in-95 duration-200">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-5 h-5 text-white shrink-0" />
@@ -316,9 +212,19 @@ export default function DoorCheckInPage() {
                     ONBOARDED • #{lastAdmittedSlotNum} ({lastAdmittedGuest.tag_id})
                   </span>
                 </div>
-                <span className="font-mono text-[11px] text-white/80">
-                  next up: {nextFreeTag}
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-[11px] text-white/80 hidden sm:inline">
+                    next up: {nextFreeTag}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setLastAdmittedGuest(null)}
+                    className="p-1 rounded-full text-white/70 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                    title="Dismiss"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -377,7 +283,7 @@ export default function DoorCheckInPage() {
             </div>
           )}
 
-          {/* Unified Guest Onboarding Card */}
+          {/* 1. PRIMARY HERO: Unified Guest Onboarding Card */}
           <GuestOnboardingCard
             targetTagId={effectiveTargetTag}
             isUniversalLink={false}
@@ -387,67 +293,125 @@ export default function DoorCheckInPage() {
             onCheckIn={checkIn}
             onComplete={handleOnboardingComplete}
           />
-        </div>
 
-        {/* Right Column (5 cols): iPhone Sticker Helper + Admitted Registry */}
-        <div className="lg:col-span-5 xl:col-span-5 space-y-5">
-          {/* Card 1: iPhone-Optimized Sticker Link Helper */}
-          <div className="glass-card p-5 sm:p-6 border border-black/12 shadow-md space-y-3.5">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-black text-white flex items-center justify-center shrink-0">
-                <Link2 className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="font-display text-xl font-bold lowercase text-black leading-none">
-                  iphone nfc sticker links
-                </h3>
-                <p className="font-sans-clean text-[11px] text-black/50 lowercase mt-0.5">
-                  short urls (<code className="font-mono">/t/1</code> .. <code className="font-mono">/t/100</code>) for nfc tools
-                </p>
-              </div>
+          {/* 2. MOVED DOWN: Door Telemetry Stats Strip */}
+          <div className="space-y-2 pt-2">
+            <div className="flex items-center justify-between px-1">
+              <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-black/45">
+                door capacity & stats
+              </span>
+              <span className="text-[11px] font-sans-clean text-black/50 lowercase">
+                {freeSlotsCount} wristbands free
+              </span>
             </div>
 
-            {/* Current Target Slot Shortcut */}
-            <div className="p-3 rounded-2xl bg-black/[0.03] border border-black/8 space-y-2">
-              <div className="flex items-center justify-between text-[10px] font-mono font-bold text-black/60">
-                <span>STICKER #{effectiveSlotNumber}</span>
-                <span className="text-emerald-700 font-sans-clean">1st tap onboard • 2nd pass</span>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+              <div className="glass-card p-3.5 sm:p-4 border border-black/10">
+                <div className="flex items-center justify-between mb-0.5">
+                  <span className="font-sans-clean text-[10px] font-bold uppercase tracking-wider text-black/45">
+                    admitted
+                  </span>
+                  <UserCheck className="w-3.5 h-3.5 text-black/40" />
+                </div>
+                <div className="font-display text-2xl sm:text-3xl font-bold text-black leading-none">
+                  {admittedGuests.length}
+                  <span className="text-xs sm:text-sm text-black/35 font-normal">/{guests.length}</span>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 px-3 py-2 rounded-xl bg-white border border-black/10 font-mono text-xs font-bold text-black truncate select-all">
-                  {currentShortUrl}
-                </code>
-                <button
-                  type="button"
-                  onClick={() => handleCopyText(currentShortUrl, 'slot')}
-                  className="btn-premium-primary py-2 px-3 text-xs gap-1.5 shrink-0 cursor-pointer"
-                >
-                  {copiedKey === 'slot' ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>copied</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>copy</span>
-                    </>
-                  )}
-                </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedTagId(nextFreeTag)}
+                className="glass-card p-3.5 sm:p-4 border border-black/10 hover:border-black/30 text-left transition-all cursor-pointer"
+                title="Click to reset target slot to next free wristband"
+              >
+                <div className="flex items-center justify-between mb-0.5">
+                  <span className="font-sans-clean text-[10px] font-bold uppercase tracking-wider text-black/45">
+                    next free
+                  </span>
+                  <Tag className="w-3.5 h-3.5 text-emerald-600" />
+                </div>
+                <div className="font-mono text-lg sm:text-xl font-bold text-black leading-none">
+                  #{parseTagId(nextFreeTag).tagNumber ?? nextFreeTag}
+                </div>
+              </button>
+
+              <div className="glass-card p-3.5 sm:p-4 border border-black/10">
+                <div className="flex items-center justify-between mb-0.5">
+                  <span className="font-sans-clean text-[10px] font-bold uppercase tracking-wider text-black/45">
+                    vip hosts
+                  </span>
+                  <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                </div>
+                <div className="font-display text-2xl sm:text-3xl font-bold text-black leading-none">
+                  {vipCount}
+                </div>
+              </div>
+
+              <div className="glass-card p-3.5 sm:p-4 border border-black/10">
+                <div className="flex items-center justify-between mb-0.5">
+                  <span className="font-sans-clean text-[10px] font-bold uppercase tracking-wider text-black/45">
+                    drivers
+                  </span>
+                  <span className="font-mono text-[10px] font-bold text-blue-700">0 ALC</span>
+                </div>
+                <div className="font-display text-2xl sm:text-3xl font-bold text-black leading-none">
+                  {driverCount}
+                </div>
               </div>
             </div>
-
-            <button
-              type="button"
-              onClick={() => setIsBatchEncoderOpen(true)}
-              className="btn-premium w-full py-2.5 text-xs gap-2 cursor-pointer"
-            >
-              <Smartphone className="w-3.5 h-3.5" />
-              <span>sequential nfc copier (/t/1 → /t/100)</span>
-            </button>
           </div>
 
-          {/* Card 2: Admitted Guests Feed with Filters & View Switcher */}
+          {/* 3. MOVED DOWN: Rare NFC Sticker Copy & Backup Helper */}
+          <div className="glass-card p-4 sm:p-5 border border-black/10 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Link2 className="w-3.5 h-3.5 text-black/60 shrink-0" />
+                <span className="font-sans-clean text-xs font-bold text-black lowercase">
+                  nfc sticker link lookup
+                </span>
+              </div>
+              <span className="text-[10px] font-mono text-black/40 lowercase">
+                rare / backup
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <code className="flex-1 px-3 py-2 rounded-xl bg-black/[0.03] border border-black/8 font-mono text-xs font-bold text-black truncate select-all">
+                {currentShortUrl}
+              </code>
+              <button
+                type="button"
+                onClick={() => handleCopyText(currentShortUrl, 'slot')}
+                className="btn-premium-primary py-2 px-3 text-xs gap-1.5 shrink-0 cursor-pointer"
+              >
+                {copiedKey === 'slot' ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>copied</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>copy</span>
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsBatchEncoderOpen(true)}
+                className="btn-premium py-2 px-3 text-xs gap-1.5 shrink-0 cursor-pointer"
+                title="Open sequential NFC sticker copier (/t/1..100)"
+              >
+                <Smartphone className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">batch copier</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column (5 cols): Admitted Guests Registry */}
+        <div className="lg:col-span-5 xl:col-span-5 space-y-4">
           <div className="glass-card p-5 sm:p-6 border border-black/12 shadow-md space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>

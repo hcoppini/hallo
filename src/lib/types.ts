@@ -182,6 +182,7 @@ export interface ServeDrinkResult {
   is_final_drink?: boolean;
   is_limit_reached?: boolean;
   log_id?: string;
+  log?: DrinkLog;
 }
 
 export interface DoorCheckInInput {

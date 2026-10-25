@@ -631,23 +631,21 @@ export function GuestOnboardingCard({
           </button>
 
           {isNfcSupported && (
-            <button
-              type="button"
-              onClick={() => executeOnboarding(true)}
-              disabled={isSubmitting || isNfcWriting}
-              className="btn-premium w-full py-3 text-xs gap-2 cursor-pointer"
-            >
-              {isNfcWriting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Radio className="w-4 h-4" />
-              )}
-              <span>
-                {isNfcWriting
-                  ? 'hold blank sticker to back of phone...'
-                  : `save & write nfc sticker (${displaySlotNumber})`}
-              </span>
-            </button>
+            <div className="text-center pt-0.5">
+              <button
+                type="button"
+                onClick={() => executeOnboarding(true)}
+                disabled={isSubmitting || isNfcWriting}
+                className="text-[11px] font-sans-clean font-semibold text-black/50 hover:text-black transition-colors cursor-pointer inline-flex items-center gap-1.5 underline decoration-black/20"
+              >
+                {isNfcWriting ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Radio className="w-3 h-3 text-black/60" />
+                )}
+                <span>write to blank physical nfc sticker</span>
+              </button>
+            </div>
           )}
 
           <p className="text-[11px] font-sans-clean text-black/45 text-center lowercase">
