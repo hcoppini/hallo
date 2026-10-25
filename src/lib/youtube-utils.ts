@@ -3,59 +3,80 @@
  * Supports standard watch URLs, share links, embed links, playlists, and raw IDs.
  */
 
-export interface YouTubePreset {
+export interface QueueItem {
   id: string;
-  label: string;
+  title: string;
   artist: string;
-  description: string;
-  videoId?: string;
+  videoId: string;
   playlistId?: string;
 }
 
-export const PROJECTOR_PRESETS: YouTubePreset[] = [
+export type YouTubePreset = QueueItem;
+
+export const DEFAULT_PARTY_QUEUE: QueueItem[] = [
   {
-    id: 'thriller',
-    label: 'Michael Jackson – Thriller',
+    id: 'track-1',
+    title: 'Thriller',
     artist: 'Michael Jackson',
-    description: 'Official Music Video',
     videoId: 'sOnqjkJTMaA',
   },
   {
-    id: 'blinding-lights',
-    label: 'The Weeknd – Blinding Lights',
+    id: 'track-2',
+    title: 'Blinding Lights',
     artist: 'The Weeknd',
-    description: 'Official Music Video',
     videoId: '4NRXx6U8ABQ',
   },
   {
-    id: 'daft-punk',
-    label: 'Daft Punk – Around The World',
+    id: 'track-3',
+    title: 'Around The World',
     artist: 'Daft Punk',
-    description: 'Official Music Video',
     videoId: 'K0HSD_i2DvA',
   },
   {
-    id: 'ghostbusters',
-    label: 'Ray Parker Jr. – Ghostbusters',
+    id: 'track-4',
+    title: 'Ghostbusters',
     artist: 'Ray Parker Jr.',
-    description: 'Official Music Video',
     videoId: 'm9We2XsVZfc',
   },
   {
-    id: 'dua-lipa',
-    label: 'Dua Lipa – Levitating',
+    id: 'track-5',
+    title: 'Levitating',
     artist: 'Dua Lipa',
-    description: 'Official Music Video',
     videoId: 'TUVcZfQe-Kw',
   },
   {
-    id: 'gorillaz',
-    label: 'Gorillaz – Feel Good Inc.',
+    id: 'track-6',
+    title: 'Feel Good Inc.',
     artist: 'Gorillaz',
-    description: 'Official Music Video',
     videoId: 'HyHNuVaZJ-k',
   },
+  {
+    id: 'track-7',
+    title: "Somebody's Watching Me",
+    artist: 'Rockwell',
+    videoId: '7YvAYIJSSZY',
+  },
+  {
+    id: 'track-8',
+    title: "Don't Stop 'Til You Get Enough",
+    artist: 'Michael Jackson',
+    videoId: 'yURRmWtbTbo',
+  },
+  {
+    id: 'track-9',
+    title: 'Heads Will Roll (A-Trak Remix)',
+    artist: 'Yeah Yeah Yeahs',
+    videoId: 'umAL-6-j1Ew',
+  },
+  {
+    id: 'track-10',
+    title: 'One More Time',
+    artist: 'Daft Punk',
+    videoId: 'FGBhQbmMxH8',
+  },
 ];
+
+export const PROJECTOR_PRESETS = DEFAULT_PARTY_QUEUE;
 
 export interface YouTubeParseResult {
   videoId: string | null;
@@ -105,7 +126,7 @@ export function buildEmbedUrl({
   }
 
   // Fallback to Thriller
-  return `https://www.youtube.com/embed/sOnqjkJTMaA?autoplay=1&loop=1&playlist=sOnqjkJTMaA&controls=1`;
+  return `https://www.youtube.com/embed/sOnqjkJTMaA?autoplay=1&loop=1&playlist=sOnqjkJTMaA&controls=1&enablejsapi=1`;
 }
 
 /**
@@ -120,10 +141,10 @@ export function parseYouTubeInput(
   const cleanInput = (input || '').trim();
 
   if (!cleanInput) {
-    const defaultPreset = PROJECTOR_PRESETS[0];
-    const embedUrl = buildEmbedUrl({ videoId: defaultPreset.videoId, autoplay, muted });
+    const defaultTrack = DEFAULT_PARTY_QUEUE[0];
+    const embedUrl = buildEmbedUrl({ videoId: defaultTrack.videoId, autoplay, muted });
     return {
-      videoId: defaultPreset.videoId || null,
+      videoId: defaultTrack.videoId || null,
       playlistId: null,
       embedUrl,
       isValid: false,
@@ -184,7 +205,7 @@ export function parseYouTubeInput(
   }
 
   const isValid = Boolean(videoId || playlistId);
-  const finalVideoId = videoId || (playlistId ? null : PROJECTOR_PRESETS[0].videoId || null);
+  const finalVideoId = videoId || (playlistId ? null : DEFAULT_PARTY_QUEUE[0].videoId || null);
   const embedUrl = buildEmbedUrl({ videoId: finalVideoId, playlistId, autoplay, muted });
 
   return {

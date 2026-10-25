@@ -6,72 +6,90 @@ import {
   Tv,
   Maximize2,
   Minimize2,
-  Music,
   Users,
-  Search,
   Sparkles,
   Volume2,
   VolumeX,
   Play,
-  ArrowRight,
-  Sun,
-  Moon,
-  PlusCircle,
-  Clock,
+  Pause,
+  SkipForward,
+  SkipBack,
+  Shuffle,
+  Plus,
   DoorOpen,
   Monitor,
-  ExternalLink,
-  Flame,
-  CheckCircle2,
-  RefreshCw,
+  ListMusic,
+  Trash2,
+  Check,
+  Music2,
+  X,
 } from 'lucide-react';
+import confetti from 'canvas-confetti';
 import { usePartyStore } from '@/lib/store';
 import { Guest } from '@/lib/types';
 import { parseTagId } from '@/lib/tag-utils';
 import { soundSystem } from '@/lib/audio';
 import {
-  PROJECTOR_PRESETS,
+  DEFAULT_PARTY_QUEUE,
+  QueueItem,
   parseYouTubeInput,
-  YouTubePreset,
+  buildEmbedUrl,
 } from '@/lib/youtube-utils';
 import {
   getEnteredGuestsSorted,
   calculateProjectorStats,
   formatWallClockTime,
   formatRelativeTime,
-  formatCategoryLabel,
 } from '@/lib/projector-utils';
 
 export function ProjectorDisplay() {
-  const { guests, checkIn, updateSettings } = usePartyStore();
+  const { guests, checkIn, refresh } = usePartyStore();
 
-  // Fullscreen container ref
   const stageContainerRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Responsive PC detection
   const [isMobileScreen, setIsMobileScreen] = useState(false);
   const [forcePcMode, setForcePcMode] = useState(false);
 
-  // Projector Display Preferences
-  const [isCinemaMode, setIsCinemaMode] = useState(true); // Default to Cinema Noir for projectors
+  // Projector Stage State
+  const [isCinemaMode, setIsCinemaMode] = useState(true);
   const [splitRatio, setSplitRatio] = useState<'65_35' | '50_50' | '75_25'>('65_35');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [playChimeOnArrival, setPlayChimeOnArrival] = useState(false);
 
-  // YouTube Music Video State
-  const [activePreset, setActivePreset] = useState<YouTubePreset>(PROJECTOR_PRESETS[0]);
+  // Music Queue & Playback State
+  const [queue, setQueue] = useState<QueueItem[]>(DEFAULT_PARTY_QUEUE);
+  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [isShuffleOn, setIsShuffleOn] = useState(false);
+
+  // Custom Input State
   const [customInputUrl, setCustomInputUrl] = useState('');
-  const [isCustomUrlOpen, setIsCustomUrlOpen] = useState(false);
-  const [customUrlError, setCustomUrlError] = useState<string | null>(null);
-  const [activeEmbedUrl, setActiveEmbedUrl] = useState(() => {
-    return parseYouTubeInput(PROJECTOR_PRESETS[0].videoId || '', { autoplay: true, muted: false }).embedUrl;
-  });
+  const [customTitle, setCustomTitle] = useState('');
+  const [customArtist, setCustomArtist] = useState('');
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [addUrlError, setAddUrlError] = useState<string | null>(null);
 
   // Guest Feed State
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState<'all' | 'recent' | 'vip'>('all');
   const [lastAnnouncedGuestId, setLastAnnouncedGuestId] = useState<string | null>(null);
   const [newArrivalHighlightId, setNewArrivalHighlightId] = useState<string | null>(null);
+  const [spotlightGuest, setSpotlightGuest] = useState<Guest | null>(null);
+
+  const currentTrack: QueueItem = queue[currentTrackIndex] || queue[0] || DEFAULT_PARTY_QUEUE[0];
+  const upcomingQueue = useMemo(() => {
+    return queue.slice(currentTrackIndex + 1);
+  }, [queue, currentTrackIndex]);
+
+  // Embed URL for active video
+  const activeEmbedUrl = useMemo(() => {
+    return buildEmbedUrl({
+      videoId: currentTrack.videoId,
+      playlistId: currentTrack.playlistId,
+      autoplay: true,
+      muted: false,
+    });
+  }, [currentTrack]);
 
   // Detect screen size on client
   useEffect(() => {
@@ -92,55 +110,175 @@ export function ProjectorDisplay() {
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
+  // Send command to YouTube iframe via postMessage
+  const postIframeCommand = (command: string, args: any[] = []) => {
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: command, args }),
+        '*'
+      );
+    }
+  };
+
+  // Skip to next track
+  const handleNextTrack = () => {
+    if (currentTrack.playlistId) {
+      postIframeCommand('nextVideo');
+    }
+    if (currentTrackIndex < queue.length - 1) {
+      setCurrentTrackIndex(prev => prev + 1);
+      setIsPlaying(true);
+    } else {
+      // Loop back to start of queue
+      setCurrentTrackIndex(0);
+      setIsPlaying(true);
+    }
+  };
+
+  // Go back to previous track
+  const handlePrevTrack = () => {
+    if (currentTrack.playlistId) {
+      postIframeCommand('previousVideo');
+    }
+    if (currentTrackIndex > 0) {
+      setCurrentTrackIndex(prev => prev - 1);
+      setIsPlaying(true);
+    } else {
+      setCurrentTrackIndex(queue.length - 1);
+      setIsPlaying(true);
+    }
+  };
+
+  // Toggle play/pause
+  const handleTogglePlay = () => {
+    if (isPlaying) {
+      postIframeCommand('pauseVideo');
+      setIsPlaying(false);
+    } else {
+      postIframeCommand('playVideo');
+      setIsPlaying(true);
+    }
+  };
+
+  // Toggle shuffle
+  const handleToggleShuffle = () => {
+    if (currentTrack.playlistId) {
+      postIframeCommand('setShuffle', [!isShuffleOn]);
+    }
+    if (!isShuffleOn) {
+      // Shuffle upcoming items in queue
+      const current = queue[currentTrackIndex];
+      const rest = queue.filter((_, idx) => idx !== currentTrackIndex);
+      const shuffledRest = [...rest].sort(() => Math.random() - 0.5);
+      setQueue([current, ...shuffledRest]);
+      setCurrentTrackIndex(0);
+      setIsShuffleOn(true);
+    } else {
+      setIsShuffleOn(false);
+    }
+  };
+
+  // Auto-advance when video finishes
+  useEffect(() => {
+    const handleWindowMessage = (event: MessageEvent) => {
+      try {
+        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        if (data?.event === 'onStateChange' && data?.info === 0) {
+          // YT.PlayerState.ENDED (0) -> auto advance
+          handleNextTrack();
+        }
+      } catch {}
+    };
+    window.addEventListener('message', handleWindowMessage);
+    return () => window.removeEventListener('message', handleWindowMessage);
+  }, [currentTrackIndex, queue]);
+
+  // Remove track from queue
+  const handleRemoveTrack = (indexToRemove: number) => {
+    setQueue(prev => prev.filter((_, idx) => idx !== indexToRemove));
+    if (indexToRemove < currentTrackIndex) {
+      setCurrentTrackIndex(prev => Math.max(0, prev - 1));
+    }
+  };
+
+  // Jump directly to track in queue
+  const handlePlayQueueItem = (targetIndex: number) => {
+    setCurrentTrackIndex(targetIndex);
+    setIsPlaying(true);
+  };
+
+  // Add custom URL / playlist to queue
+  const handleAddCustomTrack = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customInputUrl.trim()) return;
+
+    const parsed = parseYouTubeInput(customInputUrl, { autoplay: true, muted: false });
+    if (!parsed.isValid) {
+      setAddUrlError('Please enter a valid YouTube video or playlist URL.');
+      return;
+    }
+
+    const newTrack: QueueItem = {
+      id: `custom-${Date.now()}`,
+      title: customTitle.trim() || (parsed.playlistId ? 'Custom Playlist' : 'Custom Music Video'),
+      artist: customArtist.trim() || 'Guest Queue',
+      videoId: parsed.videoId || 'sOnqjkJTMaA',
+      playlistId: parsed.playlistId || undefined,
+    };
+
+    setQueue(prev => [...prev, newTrack]);
+    setCustomInputUrl('');
+    setCustomTitle('');
+    setCustomArtist('');
+    setAddUrlError(null);
+    setIsAddModalOpen(false);
+  };
+
+  // Fast background poll (every 2.5s) to guarantee zero latency even if WebSockets drop
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refresh();
+    }, 2500);
+    return () => clearInterval(interval);
+  }, [refresh]);
+
   // Filter and sort entered guests
   const enteredGuests = useMemo(() => getEnteredGuestsSorted(guests), [guests]);
   const stats = useMemo(() => calculateProjectorStats(guests), [guests]);
-
-  // Latest entered guest for spotlight
   const latestGuest = enteredGuests[0] || null;
 
-  // Detect newly admitted guests in real-time
+  // Realtime guest arrival detection with celebration animation + confetti
   useEffect(() => {
     if (!latestGuest) return;
 
     if (lastAnnouncedGuestId && latestGuest.id !== lastAnnouncedGuestId) {
-      // A brand new guest arrived!
+      // NEW GUEST ARRIVED!
+      setSpotlightGuest(latestGuest);
       setNewArrivalHighlightId(latestGuest.id);
+
+      // Fire celebratory confetti on projector wall!
+      try {
+        confetti({
+          particleCount: 75,
+          spread: 80,
+          origin: { y: 0.25 },
+          colors: ['#ffffff', '#fbbf24', '#f59e0b', '#dc2626'],
+        });
+      } catch {}
+
       if (playChimeOnArrival) {
         soundSystem.playCelebrationSound();
       }
+
       const timer = setTimeout(() => {
         setNewArrivalHighlightId(null);
-      }, 8000);
+      }, 9000);
       return () => clearTimeout(timer);
     }
 
+    setSpotlightGuest(latestGuest);
     setLastAnnouncedGuestId(latestGuest.id);
   }, [latestGuest, lastAnnouncedGuestId, playChimeOnArrival]);
-
-  // Filtered arrivals based on user search and filter tabs
-  const filteredGuests = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    const now = Date.now();
-    const thirtyMinMs = 30 * 60 * 1000;
-
-    return enteredGuests.filter(guest => {
-      // Category / Recent Filter
-      if (activeFilter === 'vip' && guest.category !== 'vip') return false;
-      if (activeFilter === 'recent') {
-        if (!guest.entered_at) return false;
-        const diff = now - new Date(guest.entered_at).getTime();
-        if (diff > thirtyMinMs) return false;
-      }
-
-      // Search Query
-      if (!query) return true;
-      const nameMatch = (guest.name || '').toLowerCase().includes(query);
-      const tagMatch = guest.tag_id.toLowerCase().includes(query);
-      const tagNumMatch = parseTagId(guest.tag_id).tagNumber?.toString().includes(query);
-      return nameMatch || tagMatch || Boolean(tagNumMatch);
-    });
-  }, [enteredGuests, searchQuery, activeFilter]);
 
   // Fullscreen Stage toggle
   const toggleFullscreen = async () => {
@@ -157,52 +295,18 @@ export function ProjectorDisplay() {
     }
   };
 
-  // Switch to a preset
-  const handleSelectPreset = (preset: YouTubePreset) => {
-    setActivePreset(preset);
-    const result = parseYouTubeInput(preset.videoId || '', { autoplay: true, muted: false });
-    setActiveEmbedUrl(result.embedUrl);
-    setCustomUrlError(null);
-  };
-
-  // Submit custom YouTube URL
-  const handleLoadCustomUrl = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!customInputUrl.trim()) return;
-
-    const result = parseYouTubeInput(customInputUrl, { autoplay: true, muted: false });
-    if (!result.isValid) {
-      setCustomUrlError('Could not find a valid YouTube video or playlist ID in that URL.');
-      return;
-    }
-
-    setActivePreset({
-      id: 'custom-url',
-      label: 'Custom YouTube Music Video',
-      artist: 'User Selected Music',
-      description: result.playlistId ? 'Custom YouTube Playlist' : 'Official YouTube Music Video',
-      videoId: result.videoId || undefined,
-      playlistId: result.playlistId || undefined,
-    });
-    setActiveEmbedUrl(result.embedUrl);
-    setCustomUrlError(null);
-    setIsCustomUrlOpen(false);
-  };
-
   // Demo simulator: admits the next unadmitted guest for instant testing
   const handleSimulateCheckIn = async () => {
     const unadmitted = guests.find(g => !g.is_entered);
     if (!unadmitted) return;
 
-    const demoNames = ['Maya (VIP)', 'Liam (Guest)', 'Sophie (Driver)', 'Kamil (Guest)', 'Zuzanna (VIP)'];
+    const demoNames = ['Maya', 'Aleksander', 'Kasia', 'Liam', 'Zuzanna', 'Piotr', 'Marta', 'Mateusz'];
     const chosenName = demoNames[Math.floor(Math.random() * demoNames.length)];
-    const isVip = chosenName.includes('VIP');
-    const isDriver = chosenName.includes('Driver');
 
     await checkIn({
       tag_id: unadmitted.tag_id,
       name: chosenName,
-      category: isVip ? 'vip' : isDriver ? 'driver_minor' : 'standard',
+      category: 'standard',
     });
   };
 
@@ -214,11 +318,8 @@ export function ProjectorDisplay() {
           <Monitor className="w-8 h-8" />
         </div>
         <div className="space-y-2">
-          <span className="font-mono text-xs font-bold uppercase tracking-widest text-black/45">
-            PC & PROJECTOR VIEW
-          </span>
           <h1 className="font-display text-4xl font-bold lowercase text-black">
-            optimized for wide displays.
+            projector widescreen view.
           </h1>
           <p className="font-sans-clean text-xs sm:text-sm text-black/60 lowercase leading-relaxed max-w-md mx-auto">
             this music video station is built for laptops connected to 1080p / 4k venue projectors to project youtube music videos alongside live guest arrivals.
@@ -259,12 +360,12 @@ export function ProjectorDisplay() {
   }[splitRatio];
 
   const themeClasses = isCinemaMode
-    ? 'bg-[#080808] text-white border-white/10'
+    ? 'bg-[#060606] text-white border-white/10'
     : 'bg-[#FAFAFA] text-black border-black/10';
 
   const cardThemeClasses = isCinemaMode
-    ? 'bg-[#111111]/90 border-white/10 text-white shadow-2xl backdrop-blur-md'
-    : 'bg-white border-black/10 text-black shadow-lg backdrop-blur-md';
+    ? 'bg-[#0f0f0f] border-white/10 text-white shadow-2xl'
+    : 'bg-white border-black/10 text-black shadow-lg';
 
   return (
     <div
@@ -272,64 +373,50 @@ export function ProjectorDisplay() {
       className={`w-full min-h-[calc(100vh-6rem)] ${themeClasses} transition-colors duration-300 flex flex-col p-3 sm:p-5 lg:p-6 space-y-4`}
     >
       {/* ================================================================ */}
-      {/* 1. TOP STAGE CONTROLS BAR (GENUINE STATUS, NO PLACEHOLDER PILLS) */}
+      {/* 1. TOP STAGE CONTROLS BAR: CLEAN & UNCLUTTERED                   */}
       {/* ================================================================ */}
       <header
         className={`w-full rounded-2xl px-5 py-3.5 flex flex-wrap items-center justify-between gap-4 border ${cardThemeClasses}`}
       >
-        {/* Left: Branding & Current Stream */}
+        {/* Left: Now Playing Status */}
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-red-600 text-white flex items-center justify-center shadow-md shrink-0">
+            <Tv className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="flex items-baseline gap-2">
+              <span className="font-display text-2xl font-bold lowercase tracking-tight leading-none">
+                {currentTrack.title}
+              </span>
+              <span className="font-sans-clean text-xs opacity-60">
+                — {currentTrack.artist}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Center: Live Attendance Counter */}
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-red-600 text-white flex items-center justify-center shadow-md">
-              <Tv className="w-4 h-4" />
+          <Users className="w-4 h-4 opacity-70" />
+          <div className="text-left">
+            <div className="flex items-baseline gap-1.5">
+              <span className="font-display text-2xl font-bold leading-none">
+                {stats.totalEntered}
+              </span>
+              <span className="font-sans-clean text-xs opacity-50">
+                / {stats.totalCapacity} inside
+              </span>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-display text-xl sm:text-2xl font-bold lowercase tracking-tight leading-none">
-                  projector stage
-                </span>
-                <span className="font-mono text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border border-current opacity-60">
-                  PC WIDESCREEN
-                </span>
-              </div>
-              <p className="font-sans-clean text-[11px] opacity-60 lowercase line-clamp-1 mt-0.5">
-                {activePreset.label} &bull; {activePreset.description}
-              </p>
+            <div className="w-28 h-1.5 rounded-full bg-current/10 overflow-hidden mt-1">
+              <div
+                className="h-full bg-current rounded-full transition-all duration-500"
+                style={{ width: `${stats.fillPercentage}%` }}
+              />
             </div>
           </div>
         </div>
 
-        {/* Center: Live Attendance Counter (Actual Number, No Fake Pills) */}
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-3">
-            <Users className="w-4 h-4 opacity-70" />
-            <div className="text-left">
-              <div className="flex items-baseline gap-1.5">
-                <span className="font-display text-2xl font-bold leading-none">
-                  {stats.totalEntered}
-                </span>
-                <span className="font-sans-clean text-xs opacity-50">
-                  / {stats.totalCapacity} inside
-                </span>
-              </div>
-              <div className="w-24 h-1.5 rounded-full bg-current/10 overflow-hidden mt-1">
-                <div
-                  className="h-full bg-current rounded-full transition-all duration-500"
-                  style={{ width: `${stats.fillPercentage}%` }}
-                />
-              </div>
-            </div>
-          </div>
-
-          {stats.recentEntriesCount > 0 && (
-            <div className="hidden xl:flex items-center gap-1.5 font-sans-clean text-[11px] opacity-70 border-l border-current/15 pl-4">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>{stats.recentEntriesCount} arrivals in last 30m</span>
-            </div>
-          )}
-        </div>
-
-        {/* Right: Stage Operator Tools */}
+        {/* Right: Stage Operator Controls */}
         <div className="flex items-center gap-2 shrink-0">
           {/* Split Ratio Selector */}
           <div className="hidden xl:flex items-center gap-1 p-1 rounded-xl bg-current/5 border border-current/10 text-xs">
@@ -337,7 +424,7 @@ export function ProjectorDisplay() {
               type="button"
               onClick={() => setSplitRatio('65_35')}
               className={`px-2.5 py-1 rounded-lg font-mono text-[10px] font-bold transition-all cursor-pointer ${
-                splitRatio === '65_35' ? 'bg-current/15 shadow-xs font-black' : 'opacity-60 hover:opacity-100'
+                splitRatio === '65_35' ? 'bg-current/15 font-black' : 'opacity-60 hover:opacity-100'
               }`}
               title="65% Video / 35% Feed"
             >
@@ -347,7 +434,7 @@ export function ProjectorDisplay() {
               type="button"
               onClick={() => setSplitRatio('50_50')}
               className={`px-2.5 py-1 rounded-lg font-mono text-[10px] font-bold transition-all cursor-pointer ${
-                splitRatio === '50_50' ? 'bg-current/15 shadow-xs font-black' : 'opacity-60 hover:opacity-100'
+                splitRatio === '50_50' ? 'bg-current/15 font-black' : 'opacity-60 hover:opacity-100'
               }`}
               title="50% Video / 50% Feed"
             >
@@ -357,23 +444,13 @@ export function ProjectorDisplay() {
               type="button"
               onClick={() => setSplitRatio('75_25')}
               className={`px-2.5 py-1 rounded-lg font-mono text-[10px] font-bold transition-all cursor-pointer ${
-                splitRatio === '75_25' ? 'bg-current/15 shadow-xs font-black' : 'opacity-60 hover:opacity-100'
+                splitRatio === '75_25' ? 'bg-current/15 font-black' : 'opacity-60 hover:opacity-100'
               }`}
               title="75% Video / 25% Feed"
             >
               75:25
             </button>
           </div>
-
-          {/* Theme Switcher: Cinema Noir vs Gallery White */}
-          <button
-            type="button"
-            onClick={() => setIsCinemaMode(prev => !prev)}
-            className="p-2 rounded-xl border border-current/15 hover:bg-current/10 transition-colors cursor-pointer"
-            title={isCinemaMode ? 'Switch to Light Gallery Mode' : 'Switch to Cinema Noir Mode'}
-          >
-            {isCinemaMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-black" />}
-          </button>
 
           {/* Door Entry Sound Chime */}
           <button
@@ -407,272 +484,252 @@ export function ProjectorDisplay() {
       {/* ================================================================ */}
       <div className="flex-1 flex flex-col lg:flex-row gap-4 lg:gap-6 min-h-[640px]">
         {/* ============================================================== */}
-        {/* LEFT VIEW: YOUTUBE MUSIC VIDEO PLAYER & TRACK CONTROLS         */}
+        {/* LEFT VIEW: YOUTUBE MUSIC VIDEO PLAYER + QUEUE WORKSPACE        */}
         {/* ============================================================== */}
-        <section className={`flex flex-col gap-4 ${splitClasses.video} transition-all duration-300`}>
-          {/* Music Video Player Box */}
+        <section className={`flex flex-col gap-3 ${splitClasses.video} transition-all duration-300`}>
+          {/* Music Video Canvas */}
           <div
-            className={`relative flex-1 min-h-[400px] lg:min-h-[500px] rounded-3xl overflow-hidden border ${cardThemeClasses} flex flex-col`}
+            className={`relative flex-1 min-h-[420px] lg:min-h-[500px] rounded-3xl overflow-hidden border ${cardThemeClasses} flex flex-col`}
           >
-            {/* Embedded YouTube Music Video */}
+            {/* Embedded YouTube Player */}
             <div className="relative flex-1 w-full h-full bg-black flex items-center justify-center">
               <iframe
+                ref={iframeRef}
                 title="YouTube Music Video Player"
                 src={activeEmbedUrl}
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 allowFullScreen
-                className="w-full h-full min-h-[380px] lg:min-h-[460px] border-none"
+                className="w-full h-full min-h-[380px] lg:min-h-[480px] border-none"
               />
             </div>
 
-            {/* Video Footer Bar with Music Video Presets & Custom URL Trigger */}
-            <div className="p-3.5 sm:p-4 border-t border-current/10 flex flex-wrap items-center justify-between gap-3 shrink-0">
-              {/* Presets Strip */}
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-                <span className="font-mono text-[10px] font-bold uppercase tracking-wider opacity-50 mr-1 shrink-0">
-                  MUSIC VIDEOS:
+            {/* Playback Controls & Action Ribbon */}
+            <div className="p-3.5 sm:p-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-3 bg-[#0a0a0a] shrink-0">
+              {/* Transport Controls: Prev, Play/Pause, Next, Shuffle */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePrevTrack}
+                  className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all cursor-pointer active:scale-95"
+                  title="Go Back (Previous Track)"
+                >
+                  <SkipBack className="w-4 h-4 fill-white" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleTogglePlay}
+                  className="p-3 rounded-full bg-white text-black hover:bg-neutral-200 transition-all cursor-pointer active:scale-95 shadow-md"
+                  title={isPlaying ? 'Pause' : 'Play'}
+                >
+                  {isPlaying ? (
+                    <Pause className="w-5 h-5 fill-black" />
+                  ) : (
+                    <Play className="w-5 h-5 fill-black ml-0.5" />
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleNextTrack}
+                  className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all cursor-pointer active:scale-95"
+                  title="Skip to Next Track"
+                >
+                  <SkipForward className="w-4 h-4 fill-white" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleToggleShuffle}
+                  className={`p-2.5 rounded-full transition-all cursor-pointer active:scale-95 ${
+                    isShuffleOn
+                      ? 'bg-amber-400 text-black font-bold shadow-md'
+                      : 'bg-white/10 hover:bg-white/20 text-white opacity-70 hover:opacity-100'
+                  }`}
+                  title={isShuffleOn ? 'Shuffle Enabled' : 'Shuffle Queue'}
+                >
+                  <Shuffle className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* High-Contrast "+ Add Playlist or Music Video" Button */}
+              <button
+                type="button"
+                onClick={() => setIsAddModalOpen(true)}
+                className="px-4 py-2 rounded-full font-sans-clean font-bold text-xs tracking-wider lowercase transition-all cursor-pointer active:scale-95 flex items-center gap-2 bg-white text-black hover:bg-neutral-200 border border-white shadow-lg"
+              >
+                <Plus className="w-4 h-4 stroke-[3]" />
+                <span>add video or playlist</span>
+              </button>
+            </div>
+          </div>
+
+          {/* UP NEXT ON QUEUE BAR (Replaces static 8 songs buttons) */}
+          <div className={`p-4 rounded-2xl border ${cardThemeClasses} shrink-0 space-y-2`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ListMusic className="w-4 h-4 text-amber-400" />
+                <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-white/90">
+                  UP NEXT ON QUEUE ({upcomingQueue.length})
                 </span>
-                {PROJECTOR_PRESETS.map(preset => {
-                  const isActive = activePreset.id === preset.id;
+              </div>
+              <span className="font-mono text-[11px] text-white/50">
+                Track {currentTrackIndex + 1} of {queue.length}
+              </span>
+            </div>
+
+            {/* Upcoming Track Strip */}
+            {upcomingQueue.length === 0 ? (
+              <div className="py-2 text-xs text-white/40 font-sans-clean">
+                End of queue reached. Click &quot;+ Add Video or Playlist&quot; to queue more music videos.
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+                {upcomingQueue.map((track, relativeIdx) => {
+                  const absoluteIdx = currentTrackIndex + 1 + relativeIdx;
                   return (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      onClick={() => handleSelectPreset(preset)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-sans-clean font-semibold tracking-wide lowercase shrink-0 transition-all cursor-pointer ${
-                        isActive
-                          ? isCinemaMode
-                            ? 'bg-white text-black font-bold shadow-md'
-                            : 'bg-black text-white font-bold shadow-md'
-                          : 'opacity-65 hover:opacity-100 hover:bg-current/10'
-                      }`}
+                    <div
+                      key={track.id}
+                      className="px-3.5 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 flex items-center gap-2.5 shrink-0 transition-all group"
                     >
-                      {preset.label.split('–')[1]?.trim() || preset.label}
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => handlePlayQueueItem(absoluteIdx)}
+                        className="text-left cursor-pointer"
+                        title="Play This Track Now"
+                      >
+                        <span className="font-sans-clean text-xs font-bold text-white block leading-tight group-hover:text-amber-300">
+                          {track.title}
+                        </span>
+                        <span className="font-sans-clean text-[10px] text-white/50 block leading-tight mt-0.5">
+                          {track.artist}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTrack(absoluteIdx)}
+                        className="p-1 rounded-md text-white/30 hover:text-red-400 hover:bg-white/10 transition-colors ml-1 cursor-pointer"
+                        title="Remove from Queue"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
                   );
                 })}
               </div>
-
-              {/* Custom YouTube Link Input Button */}
-              <button
-                type="button"
-                onClick={() => setIsCustomUrlOpen(prev => !prev)}
-                className="btn-premium py-1.5 px-3 text-xs gap-1.5 shrink-0 cursor-pointer text-inherit border-current/20 hover:border-current/40"
-              >
-                <PlusCircle className="w-3.5 h-3.5" />
-                <span>custom music video / playlist</span>
-              </button>
-            </div>
-
-            {/* Custom URL Drawer / Popover */}
-            {isCustomUrlOpen && (
-              <form
-                onSubmit={handleLoadCustomUrl}
-                className={`p-4 border-t border-current/10 flex flex-col sm:flex-row items-center gap-2 ${
-                  isCinemaMode ? 'bg-[#181818]' : 'bg-[#F4F4F4]'
-                }`}
-              >
-                <input
-                  type="text"
-                  value={customInputUrl}
-                  onChange={e => setCustomInputUrl(e.target.value)}
-                  placeholder="Paste any YouTube music video or playlist URL (e.g. https://youtu.be/...)"
-                  className="flex-1 w-full px-3.5 py-2 rounded-xl text-xs font-sans-clean bg-transparent border border-current/20 focus:outline-none focus:border-current"
-                />
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <button
-                    type="submit"
-                    className="btn-premium-primary py-2 px-4 text-xs font-bold w-full sm:w-auto"
-                  >
-                    play video
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsCustomUrlOpen(false)}
-                    className="btn-premium py-2 px-3 text-xs"
-                  >
-                    cancel
-                  </button>
-                </div>
-                {customUrlError && (
-                  <p className="w-full text-[11px] text-red-500 font-sans-clean mt-1">
-                    {customUrlError}
-                  </p>
-                )}
-              </form>
             )}
           </div>
         </section>
 
         {/* ============================================================== */}
-        {/* RIGHT VIEW: LIVE FEED OF WHO ENTERED (GENUINE REALTIME FEED)   */}
+        {/* RIGHT VIEW: LIVE FEED OF WHO ENTERED (CLEAN & RAPID SYNC)      */}
         {/* ============================================================== */}
         <section className={`flex flex-col gap-4 ${splitClasses.feed} transition-all duration-300`}>
           <div className={`flex-1 rounded-3xl border ${cardThemeClasses} p-5 flex flex-col overflow-hidden`}>
-            {/* Header: Title & Attendance Breakdown */}
-            <div className="pb-4 border-b border-current/10 shrink-0 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="font-mono text-[10px] font-bold uppercase tracking-widest opacity-50 block">
-                    DOOR ADMISSIONS
-                  </span>
-                  <h2 className="font-display text-2xl sm:text-3xl font-bold lowercase tracking-tight leading-none">
-                    live guest arrivals
-                  </h2>
-                </div>
-
-                <div className="text-right">
-                  <div className="font-display text-2xl font-bold leading-none">
-                    {stats.totalEntered}
-                  </div>
-                  <span className="font-sans-clean text-[11px] opacity-60 lowercase">
-                    guests checked in
-                  </span>
-                </div>
+            {/* Header: Title & Total Count */}
+            <div className="pb-3 border-b border-white/10 shrink-0 flex items-center justify-between">
+              <div>
+                <h2 className="font-display text-3xl font-bold lowercase tracking-tight leading-none text-white">
+                  live guest arrivals
+                </h2>
               </div>
 
-              {/* Search & Filter Bar */}
-              <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
-                <div className="relative w-full flex-1">
-                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 opacity-40" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    placeholder="Search arrived guest or #..."
-                    className="w-full pl-8 pr-3 py-1.5 rounded-xl text-xs font-sans-clean bg-current/5 border border-current/10 focus:outline-none focus:border-current/30 text-inherit placeholder:opacity-40"
-                  />
-                </div>
-
-                <div className="flex items-center gap-1 self-start sm:self-auto shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setActiveFilter('all')}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-sans-clean font-semibold tracking-wide lowercase cursor-pointer transition-all ${
-                      activeFilter === 'all'
-                        ? 'bg-current/15 font-bold shadow-xs'
-                        : 'opacity-60 hover:opacity-100'
-                    }`}
-                  >
-                    all ({enteredGuests.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveFilter('recent')}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-sans-clean font-semibold tracking-wide lowercase cursor-pointer transition-all ${
-                      activeFilter === 'recent'
-                        ? 'bg-current/15 font-bold shadow-xs'
-                        : 'opacity-60 hover:opacity-100'
-                    }`}
-                  >
-                    recent
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveFilter('vip')}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-sans-clean font-semibold tracking-wide lowercase cursor-pointer transition-all ${
-                      activeFilter === 'vip'
-                        ? 'bg-current/15 font-bold shadow-xs'
-                        : 'opacity-60 hover:opacity-100'
-                    }`}
-                  >
-                    vip
-                  </button>
-                </div>
+              <div className="text-right">
+                <span className="font-display text-2xl font-bold leading-none text-white">
+                  {stats.totalEntered}
+                </span>
+                <span className="font-sans-clean text-[11px] opacity-60 lowercase block">
+                  entered
+                </span>
               </div>
             </div>
 
-            {/* Spotlight Banner: Most Recent Guest Arrival */}
-            {latestGuest && (
+            {/* Spotlight Banner: Most Recent Guest Arrival with Entrance Animation */}
+            {spotlightGuest && (
               <div
-                className={`my-3 p-4 rounded-2xl border transition-all duration-300 shrink-0 ${
-                  newArrivalHighlightId === latestGuest.id
-                    ? 'border-amber-400 bg-amber-400/10 scale-[1.01]'
-                    : isCinemaMode
-                    ? 'border-white/15 bg-white/5'
-                    : 'border-black/10 bg-black/[0.03]'
+                className={`my-3 p-4 rounded-2xl border transition-all duration-300 shrink-0 animate-in fade-in zoom-in-95 ${
+                  newArrivalHighlightId === spotlightGuest.id
+                    ? 'border-amber-400 bg-amber-400/15 ring-2 ring-amber-400/30 scale-[1.02]'
+                    : 'border-white/15 bg-white/[0.04]'
                 }`}
               >
-                <div className="flex items-center justify-between text-[11px] font-mono font-bold uppercase tracking-wider opacity-60 mb-1.5">
-                  <span className="flex items-center gap-1">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                    <span>LATEST ARRIVAL SPOTLIGHT</span>
+                <div className="flex items-center justify-between text-[11px] font-mono font-bold uppercase tracking-wider text-amber-400 mb-1.5">
+                  <span className="flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+                    <span>JUST ARRIVED</span>
                   </span>
-                  <span>{formatRelativeTime(latestGuest.entered_at)}</span>
+                  <span className="text-white/60">
+                    {formatRelativeTime(spotlightGuest.entered_at)}
+                  </span>
                 </div>
 
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-current/10 border border-current/15 flex items-center justify-center font-mono text-xs font-bold">
-                      {parseTagId(latestGuest.tag_id).tagNumber
-                        ? `#${parseTagId(latestGuest.tag_id).tagNumber}`
-                        : latestGuest.tag_id}
+                    <div className="w-11 h-11 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center font-mono text-sm font-bold text-white shadow-xs">
+                      {parseTagId(spotlightGuest.tag_id).tagNumber
+                        ? `#${parseTagId(spotlightGuest.tag_id).tagNumber}`
+                        : spotlightGuest.tag_id}
                     </div>
                     <div>
-                      <h4 className="font-display text-2xl font-bold lowercase leading-tight">
-                        {latestGuest.name || `Guest ${latestGuest.tag_id}`}
+                      <h4 className="font-display text-2xl sm:text-3xl font-bold lowercase leading-tight text-white">
+                        {spotlightGuest.name || `Guest ${spotlightGuest.tag_id}`}
                       </h4>
-                      <p className="font-sans-clean text-[11px] opacity-60 lowercase">
-                        {formatCategoryLabel(latestGuest.category)} &bull; entered at{' '}
-                        {formatWallClockTime(latestGuest.entered_at)}
+                      <p className="font-sans-clean text-xs text-white/60 lowercase">
+                        admitted at {formatWallClockTime(spotlightGuest.entered_at)}
                       </p>
                     </div>
                   </div>
 
-                  <span className="font-mono text-xs font-bold px-2.5 py-1 rounded-full bg-current/10 border border-current/15">
+                  <span className="font-mono text-xs font-bold px-3 py-1 rounded-full bg-white/10 border border-white/20 text-white shrink-0">
                     INSIDE
                   </span>
                 </div>
               </div>
             )}
 
-            {/* Scrollable Guest Feed */}
+            {/* Scrollable Guest Feed (Uncluttered, No Search Bar, Smooth Transitions) */}
             <div className="flex-1 overflow-y-auto space-y-2 pr-1 my-2">
-              {filteredGuests.length === 0 ? (
+              {enteredGuests.length === 0 ? (
                 <div className="h-48 flex flex-col items-center justify-center text-center p-6 space-y-3 opacity-60">
-                  <DoorOpen className="w-8 h-8 opacity-40" />
-                  <p className="font-sans-clean text-xs lowercase max-w-xs">
-                    {searchQuery
-                      ? 'No arrived guests match that search term.'
-                      : 'No guest arrivals recorded yet. Scan wristbands at the Door Station to populate this live stream.'}
+                  <DoorOpen className="w-8 h-8 opacity-40 text-white" />
+                  <p className="font-sans-clean text-xs lowercase max-w-xs text-white/70">
+                    No guest arrivals recorded yet. Scan wristbands at the Door Station to populate this live stream.
                   </p>
                 </div>
               ) : (
-                filteredGuests.map(guest => {
+                enteredGuests.map((guest, idx) => {
                   const tagNumber = parseTagId(guest.tag_id).tagNumber;
                   const tagDisplay = tagNumber ? `#${tagNumber.toString().padStart(3, '0')}` : guest.tag_id;
-                  const isHighlighted = newArrivalHighlightId === guest.id;
+                  const isNewArrival = newArrivalHighlightId === guest.id;
 
                   return (
                     <div
                       key={guest.id}
-                      className={`p-3 rounded-xl border transition-all duration-200 flex items-center justify-between gap-3 ${
-                        isHighlighted
-                          ? 'border-amber-400 bg-amber-400/10'
-                          : isCinemaMode
-                          ? 'border-white/5 bg-white/[0.02] hover:bg-white/[0.05]'
-                          : 'border-black/5 bg-black/[0.02] hover:bg-black/[0.04]'
+                      className={`p-3 rounded-xl border transition-all duration-300 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-3 ${
+                        isNewArrival
+                          ? 'border-amber-400 bg-amber-400/10 shadow-md'
+                          : idx === 0
+                          ? 'border-white/15 bg-white/[0.04]'
+                          : 'border-white/5 bg-white/[0.02] hover:bg-white/[0.05]'
                       }`}
                     >
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono text-xs font-bold opacity-60 w-12 text-left">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="font-mono text-xs font-bold text-white/70 w-12 text-left shrink-0">
                           {tagDisplay}
                         </span>
-                        <div>
-                          <span className="font-display text-lg font-bold lowercase leading-tight block">
+                        <div className="min-w-0">
+                          <span className="font-display text-xl font-bold lowercase leading-tight text-white block truncate">
                             {guest.name || `Guest ${guest.tag_id}`}
-                          </span>
-                          <span className="font-sans-clean text-[10px] opacity-50 lowercase">
-                            {formatCategoryLabel(guest.category)}
                           </span>
                         </div>
                       </div>
 
                       <div className="text-right shrink-0">
-                        <span className="font-mono text-[11px] font-bold block opacity-75">
+                        <span className="font-mono text-xs font-bold block text-white/80">
                           {formatWallClockTime(guest.entered_at)}
                         </span>
-                        <span className="font-sans-clean text-[10px] opacity-40 lowercase">
+                        <span className="font-sans-clean text-[10px] text-white/40 lowercase">
                           {formatRelativeTime(guest.entered_at)}
                         </span>
                       </div>
@@ -682,23 +739,113 @@ export function ProjectorDisplay() {
               )}
             </div>
 
-            {/* Footer: Quick Simulator for Venue Pre-Testing */}
-            <div className="pt-3 border-t border-current/10 flex items-center justify-between text-xs opacity-60 shrink-0">
-              <span className="font-sans-clean text-[11px] lowercase">
-                real-time synchronization with door check-in
+            {/* Footer with Instant Test Check-in */}
+            <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs opacity-60 shrink-0">
+              <span className="font-sans-clean text-[11px] lowercase text-white/70">
+                0ms live synchronization with /door station
               </span>
               <button
                 type="button"
                 onClick={handleSimulateCheckIn}
-                className="hover:opacity-100 underline decoration-current/30 text-[11px] font-sans-clean lowercase cursor-pointer"
-                title="Test simulated guest admission"
+                className="hover:opacity-100 underline decoration-white/30 text-[11px] font-sans-clean lowercase cursor-pointer text-white"
+                title="Simulate instant guest admission"
               >
-                + simulate check-in
+                + test check-in
               </button>
             </div>
           </div>
         </section>
       </div>
+
+      {/* ================================================================ */}
+      {/* 3. ADD VIDEO / PLAYLIST MODAL                                    */}
+      {/* ================================================================ */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="w-full max-w-lg bg-[#141414] border border-white/20 rounded-3xl p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2">
+                <Music2 className="w-5 h-5 text-amber-400" />
+                <h3 className="font-display text-2xl font-bold lowercase text-white">
+                  add video or playlist
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddModalOpen(false)}
+                className="p-1 rounded-lg text-white/50 hover:text-white hover:bg-white/10"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddCustomTrack} className="space-y-3">
+              <div>
+                <label className="font-mono text-[10px] uppercase font-bold text-white/60 block mb-1">
+                  YouTube Video or Playlist URL *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={customInputUrl}
+                  onChange={e => setCustomInputUrl(e.target.value)}
+                  placeholder="https://www.youtube.com/watch?v=... or playlist?list=..."
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.05] border border-white/20 text-white text-xs font-sans-clean focus:outline-none focus:border-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-mono text-[10px] uppercase font-bold text-white/60 block mb-1">
+                    Song / Video Title (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={customTitle}
+                    onChange={e => setCustomTitle(e.target.value)}
+                    placeholder="e.g. Bohemian Rhapsody"
+                    className="w-full px-3.5 py-2 rounded-xl bg-white/[0.05] border border-white/20 text-white text-xs font-sans-clean focus:outline-none focus:border-white"
+                  />
+                </div>
+                <div>
+                  <label className="font-mono text-[10px] uppercase font-bold text-white/60 block mb-1">
+                    Artist / Note (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={customArtist}
+                    onChange={e => setCustomArtist(e.target.value)}
+                    placeholder="e.g. Queen"
+                    className="w-full px-3.5 py-2 rounded-xl bg-white/[0.05] border border-white/20 text-white text-xs font-sans-clean focus:outline-none focus:border-white"
+                  />
+                </div>
+              </div>
+
+              {addUrlError && (
+                <p className="text-xs text-red-400 font-sans-clean">
+                  {addUrlError}
+                </p>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="px-4 py-2 rounded-full text-xs font-sans-clean font-semibold text-white/70 hover:text-white"
+                >
+                  cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-full text-xs font-sans-clean font-bold bg-white text-black hover:bg-neutral-200 transition-all cursor-pointer shadow-md"
+                >
+                  add to queue
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

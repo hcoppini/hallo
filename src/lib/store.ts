@@ -16,6 +16,7 @@ import {
   isUniversalOnboardingTag,
   getNextFreeGuestSlot,
 } from './tag-utils';
+import { sendTagRelayMessage, subscribeToTagRelay, TagRelayMessage } from './tag-relay';
 
 /**
  * Cleans up any legacy guest records that accidentally got bound to the literal `{UID}` / `UID` placeholder.
@@ -161,6 +162,7 @@ let globalIsSearchOpen = false;
 let isInitialized = false;
 let isSyncingGlobal = false;
 let isRealtimeInitialized = false;
+let isCrossTabInitialized = false;
 
 function notifySubscribers() {
   listeners.forEach(fn => fn());
@@ -176,6 +178,52 @@ function persistLocalState() {
   } catch {
     // Storage quota or private mode protection
   }
+}
+
+/**
+ * Instant local cross-tab / cross-window synchronization (<5ms)
+ */
+function initLocalCrossTabSync() {
+  if (isCrossTabInitialized || typeof window === 'undefined') return;
+  isCrossTabInitialized = true;
+
+  // 1. Cross-tab storage event
+  window.addEventListener('storage', (e: StorageEvent) => {
+    if (e.key === STORAGE_KEY_GUESTS && e.newValue) {
+      try {
+        const parsed = JSON.parse(e.newValue);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          globalGuests = parsed;
+          notifySubscribers();
+        }
+      } catch {}
+    } else if (e.key === STORAGE_KEY_SETTINGS && e.newValue) {
+      try {
+        globalSettings = JSON.parse(e.newValue);
+        notifySubscribers();
+      } catch {}
+    } else if (e.key === STORAGE_KEY_LOGS && e.newValue) {
+      try {
+        globalLogs = JSON.parse(e.newValue);
+        notifySubscribers();
+      } catch {}
+    }
+  });
+
+  // 2. BroadcastChannel message listener
+  subscribeToTagRelay((msg: TagRelayMessage) => {
+    if (msg.type === 'GUEST_CHECKED_IN' && msg.guest) {
+      const g = msg.guest as Guest;
+      const idx = globalGuests.findIndex(item => item.id === g.id);
+      if (idx >= 0) {
+        globalGuests[idx] = { ...globalGuests[idx], ...g };
+      } else {
+        globalGuests = [g, ...globalGuests];
+      }
+      persistLocalState();
+      notifySubscribers();
+    }
+  });
 }
 
 /**
@@ -234,7 +282,19 @@ function initGlobalRealtime() {
   try {
     supabase
       .channel('party_realtime_singleton')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'guests' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'guests' }, (payload: any) => {
+        // Fast-path: immediately update memory with changed guest row
+        if (payload?.new && payload.new.id) {
+          const updated = payload.new as Guest;
+          const idx = globalGuests.findIndex(g => g.id === updated.id);
+          if (idx >= 0) {
+            globalGuests[idx] = { ...globalGuests[idx], ...updated };
+          } else {
+            globalGuests = [updated, ...globalGuests];
+          }
+          persistLocalState();
+          notifySubscribers();
+        }
         syncFromSupabaseGlobal();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'drink_logs' }, () => {
@@ -281,6 +341,8 @@ export function usePartyStore() {
 
     const rerender = () => setTick(t => t + 1);
     listeners.add(rerender);
+
+    initLocalCrossTabSync();
 
     // Initialize singleton remote sync & realtime once
     if (isSupabaseConfigured && supabase) {
@@ -610,50 +672,7 @@ export function usePartyStore() {
       };
     }
 
-    // 3. Write to Supabase with resilient update/upsert
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const dbPayload = {
-          name: updatedGuest.name,
-          category: updatedGuest.category,
-          is_entered: true,
-          entered_at: updatedGuest.entered_at,
-          custom_drink_limit: updatedGuest.custom_drink_limit,
-          notes: updatedGuest.notes,
-          updated_at: now,
-        };
-
-        if (existingGuest?.id) {
-          const { error: updateError } = await supabase
-            .from('guests')
-            .update(dbPayload)
-            .eq('id', existingGuest.id);
-
-          if (updateError) {
-            console.error('Supabase update error during checkIn:', updateError);
-          }
-        } else {
-          const { error: upsertError } = await supabase
-            .from('guests')
-            .upsert({
-              id: updatedGuest.id,
-              tag_id: updatedGuest.tag_id,
-              drinks_consumed: 0,
-              is_blocked: false,
-              ...dbPayload,
-              created_at: now,
-            }, { onConflict: 'id' });
-
-          if (upsertError) {
-            console.error('Supabase upsert error during checkIn:', upsertError);
-          }
-        }
-      } catch (err) {
-        console.error('Supabase write error during checkIn:', err);
-      }
-    }
-
-    // 4. Update memory state
+    // 3. Update memory state IMMEDIATELY (0ms latency!)
     const index = globalGuests.findIndex(
       g =>
         g.id === updatedGuest.id ||
@@ -672,6 +691,62 @@ export function usePartyStore() {
     persistLocalState();
     notifySubscribers();
     soundSystem.playApprovedSound();
+
+    // Broadcast immediately across all open tabs, windows & devices (0ms latency!)
+    sendTagRelayMessage(
+      {
+        type: 'GUEST_CHECKED_IN',
+        guestName: updatedGuest.name,
+        tagId: updatedGuest.tag_id,
+        guest: updatedGuest,
+      },
+      { broadcastCrossDevice: true }
+    );
+
+    // 4. Asynchronously persist to Supabase in background without blocking UI
+    if (isSupabaseConfigured && supabase) {
+      const dbPayload = {
+        name: updatedGuest.name,
+        category: updatedGuest.category,
+        is_entered: true,
+        entered_at: updatedGuest.entered_at,
+        custom_drink_limit: updatedGuest.custom_drink_limit,
+        notes: updatedGuest.notes,
+        updated_at: now,
+      };
+
+      (async () => {
+        try {
+          if (existingGuest?.id) {
+            const { error: updateError } = await supabase
+              .from('guests')
+              .update(dbPayload)
+              .eq('id', existingGuest.id);
+
+            if (updateError) {
+              console.error('Supabase update error during checkIn:', updateError);
+            }
+          } else {
+            const { error: upsertError } = await supabase
+              .from('guests')
+              .upsert({
+                id: updatedGuest.id,
+                tag_id: updatedGuest.tag_id,
+                drinks_consumed: 0,
+                is_blocked: false,
+                ...dbPayload,
+                created_at: now,
+              }, { onConflict: 'id' });
+
+            if (upsertError) {
+              console.error('Supabase upsert error during checkIn:', upsertError);
+            }
+          }
+        } catch (err) {
+          console.error('Supabase write error during checkIn:', err);
+        }
+      })();
+    }
 
     return updatedGuest;
   }, []);
