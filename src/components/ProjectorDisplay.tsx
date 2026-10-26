@@ -20,9 +20,10 @@ import {
   Monitor,
   ListMusic,
   Trash2,
-  Check,
   Music2,
   X,
+  Loader2,
+  RotateCcw,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { usePartyStore } from '@/lib/store';
@@ -69,6 +70,7 @@ export function ProjectorDisplay() {
   const [customTitle, setCustomTitle] = useState('');
   const [customArtist, setCustomArtist] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isLoadingPlaylist, setIsLoadingPlaylist] = useState(false);
   const [addUrlError, setAddUrlError] = useState<string | null>(null);
 
   // Guest Feed State
@@ -85,7 +87,6 @@ export function ProjectorDisplay() {
   const activeEmbedUrl = useMemo(() => {
     return buildEmbedUrl({
       videoId: currentTrack.videoId,
-      playlistId: currentTrack.playlistId,
       autoplay: true,
       muted: false,
     });
@@ -120,11 +121,8 @@ export function ProjectorDisplay() {
     }
   };
 
-  // Skip to next track
+  // Skip to next track in queue
   const handleNextTrack = () => {
-    if (currentTrack.playlistId) {
-      postIframeCommand('nextVideo');
-    }
     if (currentTrackIndex < queue.length - 1) {
       setCurrentTrackIndex(prev => prev + 1);
       setIsPlaying(true);
@@ -135,11 +133,8 @@ export function ProjectorDisplay() {
     }
   };
 
-  // Go back to previous track
+  // Go back to previous track in queue
   const handlePrevTrack = () => {
-    if (currentTrack.playlistId) {
-      postIframeCommand('previousVideo');
-    }
     if (currentTrackIndex > 0) {
       setCurrentTrackIndex(prev => prev - 1);
       setIsPlaying(true);
@@ -160,22 +155,42 @@ export function ProjectorDisplay() {
     }
   };
 
-  // Toggle shuffle
+  // Shuffle array helper (Fisher-Yates)
+  const shuffleArray = <T,>(arr: T[]): T[] => {
+    const result = [...arr];
+    for (let i = result.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [result[i], result[j]] = [result[j], result[i]];
+    }
+    return result;
+  };
+
+  // Toggle shuffle & shuffle upcoming queue
   const handleToggleShuffle = () => {
-    if (currentTrack.playlistId) {
-      postIframeCommand('setShuffle', [!isShuffleOn]);
-    }
-    if (!isShuffleOn) {
-      // Shuffle upcoming items in queue
+    const nextShuffleState = !isShuffleOn;
+    setIsShuffleOn(nextShuffleState);
+
+    if (nextShuffleState) {
+      // Shuffle all upcoming tracks in the queue
       const current = queue[currentTrackIndex];
-      const rest = queue.filter((_, idx) => idx !== currentTrackIndex);
-      const shuffledRest = [...rest].sort(() => Math.random() - 0.5);
-      setQueue([current, ...shuffledRest]);
-      setCurrentTrackIndex(0);
-      setIsShuffleOn(true);
-    } else {
-      setIsShuffleOn(false);
+      const past = queue.slice(0, currentTrackIndex);
+      const upcoming = queue.slice(currentTrackIndex + 1);
+      const shuffledUpcoming = shuffleArray(upcoming);
+
+      setQueue([...past, current, ...shuffledUpcoming]);
     }
+  };
+
+  // Dedicated Shuffle Queue button
+  const handleShuffleUpcomingQueue = () => {
+    setIsShuffleOn(true);
+    const current = queue[currentTrackIndex];
+    const past = queue.slice(0, currentTrackIndex);
+    const upcoming = queue.slice(currentTrackIndex + 1);
+    const shuffledUpcoming = shuffleArray(upcoming);
+
+    setQueue([...past, current, ...shuffledUpcoming]);
+    soundSystem.vibrate(20);
   };
 
   // Auto-advance when video finishes
@@ -184,7 +199,7 @@ export function ProjectorDisplay() {
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
         if (data?.event === 'onStateChange' && data?.info === 0) {
-          // YT.PlayerState.ENDED (0) -> auto advance
+          // YT.PlayerState.ENDED (0) -> auto advance to next song in queue
           handleNextTrack();
         }
       } catch {}
@@ -208,7 +223,7 @@ export function ProjectorDisplay() {
   };
 
   // Add custom URL / playlist to queue
-  const handleAddCustomTrack = (e: React.FormEvent) => {
+  const handleAddCustomTrack = async (e: React.FormEvent, shouldShuffle = false) => {
     e.preventDefault();
     if (!customInputUrl.trim()) return;
 
@@ -218,9 +233,58 @@ export function ProjectorDisplay() {
       return;
     }
 
+    setAddUrlError(null);
+
+    // If it is a playlist, fetch its actual queue of videos!
+    if (parsed.playlistId) {
+      setIsLoadingPlaylist(true);
+      try {
+        const res = await fetch(`/api/youtube/playlist?list=${encodeURIComponent(parsed.playlistId)}`);
+        const data = await res.json();
+
+        if (data.success && Array.isArray(data.items) && data.items.length > 0) {
+          const playlistItems: QueueItem[] = data.items.map((it: any, index: number) => ({
+            id: `pl-${parsed.playlistId}-${it.videoId}-${index}`,
+            title: it.title || `Track ${index + 1}`,
+            artist: it.artist || data.playlistTitle || 'Playlist',
+            videoId: it.videoId,
+            playlistId: parsed.playlistId || undefined,
+          }));
+
+          let finalQueue = playlistItems;
+          let targetIndex = 0;
+
+          if (shouldShuffle) {
+            finalQueue = shuffleArray(playlistItems);
+            setIsShuffleOn(true);
+          } else if (parsed.videoId) {
+            // If URL was a specific video in a playlist, start from that video
+            const foundIdx = playlistItems.findIndex(it => it.videoId === parsed.videoId);
+            if (foundIdx >= 0) targetIndex = foundIdx;
+          }
+
+          setQueue(finalQueue);
+          setCurrentTrackIndex(targetIndex);
+          setIsPlaying(true);
+
+          setCustomInputUrl('');
+          setCustomTitle('');
+          setCustomArtist('');
+          setIsAddModalOpen(false);
+          setIsLoadingPlaylist(false);
+          return;
+        }
+      } catch (err) {
+        console.warn('Failed to load playlist items via API:', err);
+      } finally {
+        setIsLoadingPlaylist(false);
+      }
+    }
+
+    // Single video addition
     const newTrack: QueueItem = {
       id: `custom-${Date.now()}`,
-      title: customTitle.trim() || (parsed.playlistId ? 'Custom Playlist' : 'Custom Music Video'),
+      title: customTitle.trim() || 'Custom Music Video',
       artist: customArtist.trim() || 'Guest Queue',
       videoId: parsed.videoId || 'sOnqjkJTMaA',
       playlistId: parsed.playlistId || undefined,
@@ -546,13 +610,13 @@ export function ProjectorDisplay() {
                       ? 'bg-amber-400 text-black font-bold shadow-md'
                       : 'bg-white/10 hover:bg-white/20 text-white opacity-70 hover:opacity-100'
                   }`}
-                  title={isShuffleOn ? 'Shuffle Enabled' : 'Shuffle Queue'}
+                  title={isShuffleOn ? 'Shuffle Mode On (Click to turn off)' : 'Shuffle Queue'}
                 >
                   <Shuffle className="w-4 h-4" />
                 </button>
               </div>
 
-              {/* High-Contrast "+ Add Playlist or Music Video" Button */}
+              {/* High-Contrast "+ Add Video or Playlist" Button */}
               <button
                 type="button"
                 onClick={() => setIsAddModalOpen(true)}
@@ -564,14 +628,25 @@ export function ProjectorDisplay() {
             </div>
           </div>
 
-          {/* UP NEXT ON QUEUE BAR (Replaces static 8 songs buttons) */}
+          {/* UP NEXT ON QUEUE BAR (Shows Real Playlist Queue) */}
           <div className={`p-4 rounded-2xl border ${cardThemeClasses} shrink-0 space-y-2`}>
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
                 <ListMusic className="w-4 h-4 text-amber-400" />
                 <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-white/90">
                   UP NEXT ON QUEUE ({upcomingQueue.length})
                 </span>
+                {upcomingQueue.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={handleShuffleUpcomingQueue}
+                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-300 hover:bg-amber-400/30 font-mono text-[10px] font-bold transition-all cursor-pointer"
+                    title="Randomly shuffle all upcoming songs in queue"
+                  >
+                    <Shuffle className="w-3 h-3" />
+                    <span>shuffle queue</span>
+                  </button>
+                )}
               </div>
               <span className="font-mono text-[11px] text-white/50">
                 Track {currentTrackIndex + 1} of {queue.length}
@@ -595,13 +670,13 @@ export function ProjectorDisplay() {
                       <button
                         type="button"
                         onClick={() => handlePlayQueueItem(absoluteIdx)}
-                        className="text-left cursor-pointer"
+                        className="text-left cursor-pointer max-w-[200px]"
                         title="Play This Track Now"
                       >
-                        <span className="font-sans-clean text-xs font-bold text-white block leading-tight group-hover:text-amber-300">
+                        <span className="font-sans-clean text-xs font-bold text-white block leading-tight group-hover:text-amber-300 truncate">
                           {track.title}
                         </span>
-                        <span className="font-sans-clean text-[10px] text-white/50 block leading-tight mt-0.5">
+                        <span className="font-sans-clean text-[10px] text-white/50 block leading-tight mt-0.5 truncate">
                           {track.artist}
                         </span>
                       </button>
@@ -779,7 +854,7 @@ export function ProjectorDisplay() {
               </button>
             </div>
 
-            <form onSubmit={handleAddCustomTrack} className="space-y-3">
+            <form onSubmit={e => handleAddCustomTrack(e, false)} className="space-y-4">
               <div>
                 <label className="font-mono text-[10px] uppercase font-bold text-white/60 block mb-1">
                   YouTube Video or Playlist URL *
@@ -789,37 +864,42 @@ export function ProjectorDisplay() {
                   required
                   value={customInputUrl}
                   onChange={e => setCustomInputUrl(e.target.value)}
-                  placeholder="https://www.youtube.com/watch?v=... or playlist?list=..."
+                  placeholder="https://www.youtube.com/playlist?list=... or watch?v=..."
                   className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.05] border border-white/20 text-white text-xs font-sans-clean focus:outline-none focus:border-white"
                 />
+                <p className="text-[11px] text-white/50 mt-1">
+                  Tip: Pasting a playlist URL loads all tracks directly into the &quot;Up Next&quot; queue!
+                </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-mono text-[10px] uppercase font-bold text-white/60 block mb-1">
-                    Song / Video Title (optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={customTitle}
-                    onChange={e => setCustomTitle(e.target.value)}
-                    placeholder="e.g. Bohemian Rhapsody"
-                    className="w-full px-3.5 py-2 rounded-xl bg-white/[0.05] border border-white/20 text-white text-xs font-sans-clean focus:outline-none focus:border-white"
-                  />
+              {!customInputUrl.includes('list=') && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-mono text-[10px] uppercase font-bold text-white/60 block mb-1">
+                      Song Title (optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={customTitle}
+                      onChange={e => setCustomTitle(e.target.value)}
+                      placeholder="e.g. Bohemian Rhapsody"
+                      className="w-full px-3.5 py-2 rounded-xl bg-white/[0.05] border border-white/20 text-white text-xs font-sans-clean focus:outline-none focus:border-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-mono text-[10px] uppercase font-bold text-white/60 block mb-1">
+                      Artist (optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={customArtist}
+                      onChange={e => setCustomArtist(e.target.value)}
+                      placeholder="e.g. Queen"
+                      className="w-full px-3.5 py-2 rounded-xl bg-white/[0.05] border border-white/20 text-white text-xs font-sans-clean focus:outline-none focus:border-white"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="font-mono text-[10px] uppercase font-bold text-white/60 block mb-1">
-                    Artist / Note (optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={customArtist}
-                    onChange={e => setCustomArtist(e.target.value)}
-                    placeholder="e.g. Queen"
-                    className="w-full px-3.5 py-2 rounded-xl bg-white/[0.05] border border-white/20 text-white text-xs font-sans-clean focus:outline-none focus:border-white"
-                  />
-                </div>
-              </div>
+              )}
 
               {addUrlError && (
                 <p className="text-xs text-red-400 font-sans-clean">
@@ -835,11 +915,36 @@ export function ProjectorDisplay() {
                 >
                   cancel
                 </button>
+
+                {customInputUrl.includes('list=') && (
+                  <button
+                    type="button"
+                    disabled={isLoadingPlaylist}
+                    onClick={e => handleAddCustomTrack(e, true)}
+                    className="px-4 py-2 rounded-full text-xs font-sans-clean font-bold bg-amber-400 text-black hover:bg-amber-300 transition-all cursor-pointer shadow-md flex items-center gap-1.5"
+                  >
+                    {isLoadingPlaylist ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Shuffle className="w-3.5 h-3.5" />
+                    )}
+                    <span>shuffle & play</span>
+                  </button>
+                )}
+
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-full text-xs font-sans-clean font-bold bg-white text-black hover:bg-neutral-200 transition-all cursor-pointer shadow-md"
+                  disabled={isLoadingPlaylist}
+                  className="px-5 py-2 rounded-full text-xs font-sans-clean font-bold bg-white text-black hover:bg-neutral-200 transition-all cursor-pointer shadow-md flex items-center gap-1.5"
                 >
-                  add to queue
+                  {isLoadingPlaylist ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>loading playlist...</span>
+                    </>
+                  ) : (
+                    <span>{customInputUrl.includes('list=') ? 'load playlist queue' : 'add to queue'}</span>
+                  )}
                 </button>
               </div>
             </form>
