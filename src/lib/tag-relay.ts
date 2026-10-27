@@ -14,7 +14,8 @@ export type RelayMessageType =
   | 'TAG_TAPPED'
   | 'DRINK_SERVED'
   | 'NEW_TAP_TAB_OPENED'
-  | 'GUEST_CHECKED_IN';
+  | 'GUEST_CHECKED_IN'
+  | 'GUEST_ROSTER_UPDATED';
 
 export interface TagRelayMessage {
   type: RelayMessageType;
@@ -28,6 +29,7 @@ export interface TagRelayMessage {
   guestName?: string | null;
   isAssigned?: boolean;
   guest?: any;
+  importedGuests?: any[];
 }
 
 type RelayListener = (msg: TagRelayMessage) => void;

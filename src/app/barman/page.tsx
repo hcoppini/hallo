@@ -10,6 +10,7 @@ import { DrinkType, Guest, BAR_DRINKS } from '@/lib/types';
 import { isWebNfcSupported, nfcController } from '@/lib/nfc';
 import { findGuestByTag, parseTagId } from '@/lib/tag-utils';
 import { calculateEffectiveLimit } from '@/lib/party-engine';
+import { soundSystem } from '@/lib/audio';
 import {
   useStaffAuth,
   setStaffActiveDrinkType,

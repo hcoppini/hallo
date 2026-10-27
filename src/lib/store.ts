@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Guest, PartySettings, DrinkLog, ServeDrinkResult, DoorCheckInInput, DrinkType, MenuItem, DEFAULT_MENU_ITEMS } from './types';
+import { Guest, PartySettings, DrinkLog, ServeDrinkResult, DoorCheckInInput, DrinkType, MenuItem, DEFAULT_MENU_ITEMS, ImportedGuest, GuestCategory } from './types';
+import { exportGuestRosterCsv } from './guest-import-utils';
 import {
   processDrinkRequest,
   revertDrinkRequest,
@@ -62,6 +63,7 @@ const STORAGE_KEY_SETTINGS = 'halloween_party_settings_v1';
 const STORAGE_KEY_GUESTS = 'halloween_party_guests_v1';
 const STORAGE_KEY_LOGS = 'halloween_party_logs_v1';
 const STORAGE_KEY_MENU = 'halloween_party_menu_v1';
+const STORAGE_KEY_IMPORTED_GUESTS = 'halloween_party_imported_guests_v1';
 
 const initialSettings: PartySettings = {
   id: 'default_party',
@@ -93,6 +95,7 @@ function getInitialLocalData() {
       guests: generateWristbandBatch(100),
       logs: [] as DrinkLog[],
       menu: DEFAULT_MENU_ITEMS,
+      importedGuests: [] as ImportedGuest[],
     };
   }
 
@@ -146,7 +149,37 @@ function getInitialLocalData() {
     // fallback
   }
 
-  return { settings, guests, logs, menu };
+  let importedGuests: ImportedGuest[] = [];
+  try {
+    const rawImported = localStorage.getItem(STORAGE_KEY_IMPORTED_GUESTS);
+    if (rawImported) {
+      const parsed = JSON.parse(rawImported);
+      if (Array.isArray(parsed)) {
+        importedGuests = parsed;
+      }
+    }
+  } catch {
+    // fallback
+  }
+
+  // Cross-reference imported roster with entered wristband guests
+  if (importedGuests.length > 0) {
+    const enteredMap = new Map<string, string>();
+    for (const g of guests) {
+      if (g.is_entered && g.name) {
+        enteredMap.set(g.name.trim().toLowerCase(), g.tag_id);
+      }
+    }
+    importedGuests = importedGuests.map(ig => {
+      const matchedTag = enteredMap.get(ig.name.trim().toLowerCase());
+      if (matchedTag) {
+        return { ...ig, is_checked_in: true, checked_in_tag_id: matchedTag };
+      }
+      return ig;
+    });
+  }
+
+  return { settings, guests, logs, menu, importedGuests };
 }
 
 // Global subscribers for multi-component reactive synchronization
@@ -157,6 +190,7 @@ let globalSettings = initialSettings;
 let globalGuests: Guest[] = [];
 let globalLogs: DrinkLog[] = [];
 let globalMenu: MenuItem[] = DEFAULT_MENU_ITEMS;
+let globalImportedGuests: ImportedGuest[] = [];
 let globalSelectedGuestId: string | null = null;
 let globalIsSearchOpen = false;
 let isInitialized = false;
@@ -175,8 +209,42 @@ function persistLocalState() {
     localStorage.setItem(STORAGE_KEY_GUESTS, JSON.stringify(globalGuests));
     localStorage.setItem(STORAGE_KEY_LOGS, JSON.stringify(globalLogs));
     localStorage.setItem(STORAGE_KEY_MENU, JSON.stringify(globalMenu));
+    localStorage.setItem(STORAGE_KEY_IMPORTED_GUESTS, JSON.stringify(globalImportedGuests));
   } catch {
     // Storage quota or private mode protection
+  }
+}
+
+/**
+ * Marks an imported roster guest as checked in when an onboarding occurs.
+ */
+function markRosterGuestCheckedInInternal(
+  name: string | null | undefined,
+  tagId: string | null | undefined
+) {
+  const clean = (name || '').trim().toLowerCase();
+  if (!clean || globalImportedGuests.length === 0) return;
+
+  let changed = false;
+  globalImportedGuests = globalImportedGuests.map(ig => {
+    if (ig.name.trim().toLowerCase() === clean) {
+      changed = true;
+      return {
+        ...ig,
+        is_checked_in: true,
+        checked_in_tag_id: tagId,
+      };
+    }
+    return ig;
+  });
+
+  if (changed) {
+    persistLocalState();
+    notifySubscribers();
+    sendTagRelayMessage({
+      type: 'GUEST_ROSTER_UPDATED',
+      importedGuests: globalImportedGuests,
+    });
   }
 }
 
@@ -207,6 +275,11 @@ function initLocalCrossTabSync() {
         globalLogs = JSON.parse(e.newValue);
         notifySubscribers();
       } catch {}
+    } else if (e.key === STORAGE_KEY_IMPORTED_GUESTS && e.newValue) {
+      try {
+        globalImportedGuests = JSON.parse(e.newValue);
+        notifySubscribers();
+      } catch {}
     }
   });
 
@@ -220,6 +293,13 @@ function initLocalCrossTabSync() {
       } else {
         globalGuests = [g, ...globalGuests];
       }
+      if (g.name) {
+        markRosterGuestCheckedInInternal(g.name, g.tag_id);
+      }
+      persistLocalState();
+      notifySubscribers();
+    } else if (msg.type === 'GUEST_ROSTER_UPDATED' && Array.isArray(msg.importedGuests)) {
+      globalImportedGuests = msg.importedGuests;
       persistLocalState();
       notifySubscribers();
     }
@@ -336,6 +416,7 @@ export function usePartyStore() {
       globalGuests = data.guests;
       globalLogs = data.logs;
       globalMenu = data.menu;
+      globalImportedGuests = data.importedGuests || [];
       isInitialized = true;
     }
 
@@ -689,6 +770,7 @@ export function usePartyStore() {
 
     globalSelectedGuestId = updatedGuest.id;
     persistLocalState();
+    markRosterGuestCheckedInInternal(updatedGuest.name, updatedGuest.tag_id);
     notifySubscribers();
     soundSystem.playApprovedSound();
 
@@ -767,6 +849,20 @@ export function usePartyStore() {
 
     globalGuests = globalGuests.map(g => (g.id === updates.id ? updated : g));
     persistLocalState();
+
+    if (updated.is_entered && updated.name) {
+      markRosterGuestCheckedInInternal(updated.name, updated.tag_id);
+    } else if (updates.is_entered === false && guest.name) {
+      const prevClean = guest.name.trim().toLowerCase();
+      globalImportedGuests = globalImportedGuests.map(ig => {
+        if (ig.name.trim().toLowerCase() === prevClean) {
+          return { ...ig, is_checked_in: false, checked_in_tag_id: null };
+        }
+        return ig;
+      });
+      persistLocalState();
+    }
+
     notifySubscribers();
 
     if (isSupabaseConfigured && supabase) {
@@ -833,6 +929,11 @@ export function usePartyStore() {
     globalLogs = [];
     globalSettings = { ...initialSettings };
     globalSelectedGuestId = null;
+    globalImportedGuests = globalImportedGuests.map(ig => ({
+      ...ig,
+      is_checked_in: false,
+      checked_in_tag_id: null,
+    }));
 
     persistLocalState();
     notifySubscribers();
@@ -921,11 +1022,121 @@ export function usePartyStore() {
     notifySubscribers();
   }, []);
 
+  /**
+   * Imports or merges a batch of guests into the expected roster.
+   */
+  const importGuestList = useCallback(
+    (newGuests: ImportedGuest[], mode: 'append' | 'replace' = 'replace') => {
+      // Re-evaluate check-in status against currently entered guests
+      const enteredMap = new Map<string, string>();
+      for (const g of globalGuests) {
+        if (g.is_entered && g.name) {
+          enteredMap.set(g.name.trim().toLowerCase(), g.tag_id);
+        }
+      }
+
+      const verifiedNew = newGuests.map(ig => {
+        const matchedTag = enteredMap.get(ig.name.trim().toLowerCase());
+        if (matchedTag) {
+          return { ...ig, is_checked_in: true, checked_in_tag_id: matchedTag };
+        }
+        return ig;
+      });
+
+      if (mode === 'replace') {
+        globalImportedGuests = verifiedNew;
+      } else {
+        // Append mode: deduplicate against existing roster by name (case-insensitive)
+        const existingNames = new Set(globalImportedGuests.map(g => g.name.toLowerCase()));
+        const uniqueToAdd = verifiedNew.filter(g => !existingNames.has(g.name.toLowerCase()));
+        globalImportedGuests = [...globalImportedGuests, ...uniqueToAdd];
+      }
+
+      persistLocalState();
+      notifySubscribers();
+      sendTagRelayMessage({
+        type: 'GUEST_ROSTER_UPDATED',
+        importedGuests: globalImportedGuests,
+      });
+    },
+    []
+  );
+
+  /**
+   * Adds an individual guest to the expected roster.
+   */
+  const addImportedGuest = useCallback(
+    (guest: { name: string; category?: GuestCategory; notes?: string }) => {
+      const trimmed = guest.name.trim();
+      if (!trimmed) return;
+      const lower = trimmed.toLowerCase();
+      const existingMatch = globalImportedGuests.find(g => g.name.toLowerCase() === lower);
+      if (existingMatch) return;
+
+      const enteredMatch = globalGuests.find(
+        g => g.is_entered && g.name && g.name.trim().toLowerCase() === lower
+      );
+
+      const newItem: ImportedGuest = {
+        id: `imp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        name: trimmed,
+        category: guest.category || 'standard',
+        notes: guest.notes?.trim() || null,
+        is_checked_in: Boolean(enteredMatch),
+        checked_in_tag_id: enteredMatch?.tag_id || null,
+        imported_at: new Date().toISOString(),
+      };
+
+      globalImportedGuests = [...globalImportedGuests, newItem];
+      persistLocalState();
+      notifySubscribers();
+      sendTagRelayMessage({
+        type: 'GUEST_ROSTER_UPDATED',
+        importedGuests: globalImportedGuests,
+      });
+    },
+    []
+  );
+
+  /**
+   * Removes an individual guest from the expected roster.
+   */
+  const removeImportedGuest = useCallback((id: string) => {
+    globalImportedGuests = globalImportedGuests.filter(g => g.id !== id);
+    persistLocalState();
+    notifySubscribers();
+    sendTagRelayMessage({
+      type: 'GUEST_ROSTER_UPDATED',
+      importedGuests: globalImportedGuests,
+    });
+  }, []);
+
+  /**
+   * Clears the entire imported guest roster.
+   */
+  const clearImportedGuests = useCallback(() => {
+    globalImportedGuests = [];
+    persistLocalState();
+    notifySubscribers();
+    sendTagRelayMessage({
+      type: 'GUEST_ROSTER_UPDATED',
+      importedGuests: [],
+    });
+  }, []);
+
+  /**
+   * Exports current expected roster to CSV format.
+   */
+  const exportImportedGuestsCsv = useCallback((): string => {
+    return exportGuestRosterCsv(globalImportedGuests);
+  }, []);
+
   return {
     settings: globalSettings,
     guests: globalGuests,
     logs: globalLogs,
     menu: globalMenu,
+    importedGuests: globalImportedGuests,
     selectedGuestId: globalSelectedGuestId,
     setSelectedGuestId,
     isSearchOpen: globalIsSearchOpen,
@@ -946,5 +1157,10 @@ export function usePartyStore() {
     deleteMenuItem,
     toggleMenuItemAvailability,
     resetMenuToDefault,
+    importGuestList,
+    addImportedGuest,
+    removeImportedGuest,
+    clearImportedGuests,
+    exportImportedGuestsCsv,
   };
 }

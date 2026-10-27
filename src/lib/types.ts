@@ -142,6 +142,16 @@ export interface PartySettings {
   updated_at?: string;
 }
 
+export interface ImportedGuest {
+  id: string;
+  name: string;
+  category?: GuestCategory;
+  notes?: string | null;
+  is_checked_in: boolean;
+  checked_in_tag_id?: string | null;
+  imported_at: string;
+}
+
 export interface Guest {
   id: string;
   tag_id: string;

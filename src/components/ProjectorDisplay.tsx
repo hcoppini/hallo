@@ -24,6 +24,13 @@ import {
   X,
   Loader2,
   RotateCcw,
+  ChevronDown,
+  ChevronUp,
+  ChevronRight,
+  Trophy,
+  QrCode,
+  Clock,
+  Layers,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { usePartyStore } from '@/lib/store';
@@ -42,6 +49,16 @@ import {
   formatWallClockTime,
   formatRelativeTime,
 } from '@/lib/projector-utils';
+import { PartyProgressBar } from './PartyProgressBar';
+import { PartyScheduleModal } from './PartyScheduleModal';
+import { PokerWidget } from './PokerWidget';
+import { PartyFunStatsWidget } from './PartyFunStatsWidget';
+import { PartyQrHubWidget } from './PartyQrHubWidget';
+import {
+  PartyProgramSchedule,
+  loadPartySchedule,
+  savePartySchedule,
+} from '@/lib/party-schedule-utils';
 
 export function ProjectorDisplay() {
   const { guests, checkIn, refresh } = usePartyStore();
@@ -77,6 +94,16 @@ export function ProjectorDisplay() {
   const [lastAnnouncedGuestId, setLastAnnouncedGuestId] = useState<string | null>(null);
   const [newArrivalHighlightId, setNewArrivalHighlightId] = useState<string | null>(null);
   const [spotlightGuest, setSpotlightGuest] = useState<Guest | null>(null);
+
+  // Party Program Progress Bar State
+  const [partySchedule, setPartySchedule] = useState<PartyProgramSchedule>(() => loadPartySchedule());
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+  const [simulatedTime, setSimulatedTime] = useState<string | null>(null);
+
+  // Arrivals Feed & Lounge Widget State
+  const [isArrivalsCollapsed, setIsArrivalsCollapsed] = useState(false);
+  const [activeLoungeTab, setActiveLoungeTab] = useState<'poker' | 'stats' | 'qrs'>('poker');
+  const [collapsedArrivalToast, setCollapsedArrivalToast] = useState<string | null>(null);
 
   const currentTrack: QueueItem = queue[currentTrackIndex] || queue[0] || DEFAULT_PARTY_QUEUE[0];
   const upcomingQueue = useMemo(() => {
@@ -334,6 +361,11 @@ export function ProjectorDisplay() {
         soundSystem.playCelebrationSound();
       }
 
+      if (isArrivalsCollapsed) {
+        setCollapsedArrivalToast(`${latestGuest.name || `Guest ${latestGuest.tag_id}`} just arrived!`);
+        setTimeout(() => setCollapsedArrivalToast(null), 8000);
+      }
+
       const timer = setTimeout(() => {
         setNewArrivalHighlightId(null);
       }, 9000);
@@ -544,6 +576,15 @@ export function ProjectorDisplay() {
       </header>
 
       {/* ================================================================ */}
+      {/* 1.5 BIG CUSTOMISABLE PARTY PROGRAM PROGRESS BAR                  */}
+      {/* ================================================================ */}
+      <PartyProgressBar
+        schedule={partySchedule}
+        onOpenSettings={() => setIsScheduleModalOpen(true)}
+        simulatedTime={simulatedTime}
+      />
+
+      {/* ================================================================ */}
       {/* 2. DUAL SPLIT WORKSPACE: YOUTUBE MUSIC VIDEO + LIVE GUEST FEED    */}
       {/* ================================================================ */}
       <div className="flex-1 flex flex-col lg:flex-row gap-4 lg:gap-6 min-h-[640px]">
@@ -698,136 +739,277 @@ export function ProjectorDisplay() {
         </section>
 
         {/* ============================================================== */}
-        {/* RIGHT VIEW: LIVE FEED OF WHO ENTERED (CLEAN & RAPID SYNC)      */}
+        {/* RIGHT VIEW: LIVE FEED & LOUNGE DROPDOWN WIDGET                */}
         {/* ============================================================== */}
         <section className={`flex flex-col gap-4 ${splitClasses.feed} transition-all duration-300`}>
           <div className={`flex-1 rounded-3xl border ${cardThemeClasses} p-5 flex flex-col overflow-hidden`}>
-            {/* Header: Title & Total Count */}
-            <div className="pb-3 border-b border-white/10 shrink-0 flex items-center justify-between">
-              <div>
-                <h2 className="font-display text-3xl font-bold lowercase tracking-tight leading-none text-white">
-                  live guest arrivals
-                </h2>
-              </div>
-
-              <div className="text-right">
-                <span className="font-display text-2xl font-bold leading-none text-white">
-                  {stats.totalEntered}
-                </span>
-                <span className="font-sans-clean text-[11px] opacity-60 lowercase block">
-                  entered
-                </span>
-              </div>
-            </div>
-
-            {/* Spotlight Banner: Most Recent Guest Arrival with Entrance Animation */}
-            {spotlightGuest && (
-              <div
-                className={`my-3 p-4 rounded-2xl border transition-all duration-300 shrink-0 animate-in fade-in zoom-in-95 ${
-                  newArrivalHighlightId === spotlightGuest.id
-                    ? 'border-amber-400 bg-amber-400/15 ring-2 ring-amber-400/30 scale-[1.02]'
-                    : 'border-white/15 bg-white/[0.04]'
-                }`}
-              >
-                <div className="flex items-center justify-between text-[11px] font-mono font-bold uppercase tracking-wider text-amber-400 mb-1.5">
-                  <span className="flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 animate-pulse" />
-                    <span>JUST ARRIVED</span>
-                  </span>
-                  <span className="text-white/60">
-                    {formatRelativeTime(spotlightGuest.entered_at)}
-                  </span>
+            {/* 1. Interactive Dropdown Widget Header */}
+            <div className="pb-3 border-b border-white/10 shrink-0 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <h2 className="font-display text-2xl sm:text-3xl font-bold lowercase tracking-tight leading-none text-white truncate">
+                    {isArrivalsCollapsed ? 'party lounge & games' : 'live guest arrivals'}
+                  </h2>
+                  {stats.totalEntered >= stats.totalCapacity && stats.totalCapacity > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-mono text-[10px] font-bold shrink-0">
+                      🎉 all here
+                    </span>
+                  )}
                 </div>
 
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center font-mono text-sm font-bold text-white shadow-xs">
-                      {parseTagId(spotlightGuest.tag_id).tagNumber
-                        ? `#${parseTagId(spotlightGuest.tag_id).tagNumber}`
-                        : spotlightGuest.tag_id}
-                    </div>
-                    <div>
-                      <h4 className="font-display text-2xl sm:text-3xl font-bold lowercase leading-tight text-white">
-                        {spotlightGuest.name || `Guest ${spotlightGuest.tag_id}`}
-                      </h4>
-                      <p className="font-sans-clean text-xs text-white/60 lowercase">
-                        admitted at {formatWallClockTime(spotlightGuest.entered_at)}
-                      </p>
-                    </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="text-right">
+                    <span className="font-display text-xl sm:text-2xl font-bold leading-none text-white">
+                      {stats.totalEntered}
+                    </span>
+                    <span className="font-sans-clean text-[10px] opacity-60 lowercase block">
+                      / {stats.totalCapacity} inside
+                    </span>
                   </div>
 
-                  <span className="font-mono text-xs font-bold px-3 py-1 rounded-full bg-white/10 border border-white/20 text-white shrink-0">
-                    INSIDE
-                  </span>
+                  {/* Dropdown Toggle Button */}
+                  <button
+                    type="button"
+                    onClick={() => setIsArrivalsCollapsed(prev => !prev)}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-sans-clean font-bold transition-all cursor-pointer hover:border-amber-400/50"
+                    title={isArrivalsCollapsed ? 'Expand live arrivals stream' : 'Collapse feed to show poker table & party stats'}
+                  >
+                    {isArrivalsCollapsed ? (
+                      <>
+                        <ChevronDown className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">feed</span>
+                      </>
+                    ) : (
+                      <>
+                        <ChevronUp className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">collapse</span>
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
-            )}
 
-            {/* Scrollable Guest Feed (Uncluttered, No Search Bar, Smooth Transitions) */}
-            <div className="flex-1 overflow-y-auto space-y-2 pr-1 my-2">
-              {enteredGuests.length === 0 ? (
-                <div className="h-48 flex flex-col items-center justify-center text-center p-6 space-y-3 opacity-60">
-                  <DoorOpen className="w-8 h-8 opacity-40 text-white" />
-                  <p className="font-sans-clean text-xs lowercase max-w-xs text-white/70">
-                    No guest arrivals recorded yet. Scan wristbands at the Door Station to populate this live stream.
-                  </p>
+              {/* Mode & Tab Switcher Ribbon */}
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1">
+                <button
+                  type="button"
+                  onClick={() => setIsArrivalsCollapsed(false)}
+                  className={`px-3 py-1 rounded-xl text-xs font-sans-clean font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                    !isArrivalsCollapsed
+                      ? 'bg-white text-black shadow-sm'
+                      : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>arrivals feed</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsArrivalsCollapsed(true);
+                    setActiveLoungeTab('poker');
+                  }}
+                  className={`px-3 py-1 rounded-xl text-xs font-sans-clean font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                    isArrivalsCollapsed && activeLoungeTab === 'poker'
+                      ? 'bg-amber-400 text-black shadow-sm font-extrabold'
+                      : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>poker table</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsArrivalsCollapsed(true);
+                    setActiveLoungeTab('stats');
+                  }}
+                  className={`px-3 py-1 rounded-xl text-xs font-sans-clean font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                    isArrivalsCollapsed && activeLoungeTab === 'stats'
+                      ? 'bg-amber-400 text-black shadow-sm font-extrabold'
+                      : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <Trophy className="w-3.5 h-3.5" />
+                  <span>fun stats</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsArrivalsCollapsed(true);
+                    setActiveLoungeTab('qrs');
+                  }}
+                  className={`px-3 py-1 rounded-xl text-xs font-sans-clean font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                    isArrivalsCollapsed && activeLoungeTab === 'qrs'
+                      ? 'bg-amber-400 text-black shadow-sm font-extrabold'
+                      : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <QrCode className="w-3.5 h-3.5" />
+                  <span>qr hub</span>
+                </button>
+              </div>
+
+              {/* Collapsed Arrival Toast / Notification banner if new arrival occurs while collapsed */}
+              {isArrivalsCollapsed && collapsedArrivalToast && (
+                <div
+                  onClick={() => setIsArrivalsCollapsed(false)}
+                  className="p-2.5 rounded-xl bg-amber-400/20 border border-amber-400/50 text-amber-300 text-xs font-sans-clean flex items-center justify-between cursor-pointer animate-in fade-in slide-in-from-top-1"
+                >
+                  <span className="flex items-center gap-1.5 truncate">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-spin shrink-0" />
+                    <span className="truncate">{collapsedArrivalToast}</span>
+                  </span>
+                  <span className="text-[10px] font-mono underline shrink-0 ml-2">view feed ➔</span>
                 </div>
-              ) : (
-                enteredGuests.map((guest, idx) => {
-                  const tagNumber = parseTagId(guest.tag_id).tagNumber;
-                  const tagDisplay = tagNumber ? `#${tagNumber.toString().padStart(3, '0')}` : guest.tag_id;
-                  const isNewArrival = newArrivalHighlightId === guest.id;
-
-                  return (
-                    <div
-                      key={guest.id}
-                      className={`p-3 rounded-xl border transition-all duration-300 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-3 ${
-                        isNewArrival
-                          ? 'border-amber-400 bg-amber-400/10 shadow-md'
-                          : idx === 0
-                          ? 'border-white/15 bg-white/[0.04]'
-                          : 'border-white/5 bg-white/[0.02] hover:bg-white/[0.05]'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="font-mono text-xs font-bold text-white/70 w-12 text-left shrink-0">
-                          {tagDisplay}
-                        </span>
-                        <div className="min-w-0">
-                          <span className="font-display text-xl font-bold lowercase leading-tight text-white block truncate">
-                            {guest.name || `Guest ${guest.tag_id}`}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="text-right shrink-0">
-                        <span className="font-mono text-xs font-bold block text-white/80">
-                          {formatWallClockTime(guest.entered_at)}
-                        </span>
-                        <span className="font-sans-clean text-[10px] text-white/40 lowercase">
-                          {formatRelativeTime(guest.entered_at)}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })
               )}
             </div>
 
-            {/* Footer with Instant Test Check-in */}
-            <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs opacity-60 shrink-0">
-              <span className="font-sans-clean text-[11px] lowercase text-white/70">
-                0ms live synchronization with /door station
-              </span>
-              <button
-                type="button"
-                onClick={handleSimulateCheckIn}
-                className="hover:opacity-100 underline decoration-white/30 text-[11px] font-sans-clean lowercase cursor-pointer text-white"
-                title="Simulate instant guest admission"
-              >
-                + test check-in
-              </button>
-            </div>
+            {!isArrivalsCollapsed ? (
+              // ==============================================================
+              // VIEW A: EXPANDED LIVE GUEST ARRIVALS FEED
+              // ==============================================================
+              <>
+                {/* Spotlight Banner: Most Recent Guest Arrival with Entrance Animation */}
+                {spotlightGuest && (
+                  <div
+                    className={`my-3 p-4 rounded-2xl border transition-all duration-300 shrink-0 animate-in fade-in zoom-in-95 ${
+                      newArrivalHighlightId === spotlightGuest.id
+                        ? 'border-amber-400 bg-amber-400/15 ring-2 ring-amber-400/30 scale-[1.02]'
+                        : 'border-white/15 bg-white/[0.04]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between text-[11px] font-mono font-bold uppercase tracking-wider text-amber-400 mb-1.5">
+                      <span className="flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+                        <span>JUST ARRIVED</span>
+                      </span>
+                      <span className="text-white/60">
+                        {formatRelativeTime(spotlightGuest.entered_at)}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-11 h-11 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center font-mono text-sm font-bold text-white shadow-xs">
+                          {parseTagId(spotlightGuest.tag_id).tagNumber
+                            ? `#${parseTagId(spotlightGuest.tag_id).tagNumber}`
+                            : spotlightGuest.tag_id}
+                        </div>
+                        <div>
+                          <h4 className="font-display text-2xl sm:text-3xl font-bold lowercase leading-tight text-white">
+                            {spotlightGuest.name || `Guest ${spotlightGuest.tag_id}`}
+                          </h4>
+                          <p className="font-sans-clean text-xs text-white/60 lowercase">
+                            admitted at {formatWallClockTime(spotlightGuest.entered_at)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <span className="font-mono text-xs font-bold px-3 py-1 rounded-full bg-white/10 border border-white/20 text-white shrink-0">
+                        INSIDE
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Scrollable Guest Feed */}
+                <div className="flex-1 overflow-y-auto space-y-2 pr-1 my-2">
+                  {enteredGuests.length === 0 ? (
+                    <div className="h-48 flex flex-col items-center justify-center text-center p-6 space-y-3 opacity-60">
+                      <DoorOpen className="w-8 h-8 opacity-40 text-white" />
+                      <p className="font-sans-clean text-xs lowercase max-w-xs text-white/70">
+                        No guest arrivals recorded yet. Scan wristbands at the Door Station to populate this live stream.
+                      </p>
+                    </div>
+                  ) : (
+                    enteredGuests.map((guest, idx) => {
+                      const tagNumber = parseTagId(guest.tag_id).tagNumber;
+                      const tagDisplay = tagNumber ? `#${tagNumber.toString().padStart(3, '0')}` : guest.tag_id;
+                      const isNewArrival = newArrivalHighlightId === guest.id;
+
+                      return (
+                        <div
+                          key={guest.id}
+                          className={`p-3 rounded-xl border transition-all duration-300 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-3 ${
+                            isNewArrival
+                              ? 'border-amber-400 bg-amber-400/10 shadow-md'
+                              : idx === 0
+                              ? 'border-white/15 bg-white/[0.04]'
+                              : 'border-white/5 bg-white/[0.02] hover:bg-white/[0.05]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="font-mono text-xs font-bold text-white/70 w-12 text-left shrink-0">
+                              {tagDisplay}
+                            </span>
+                            <div className="min-w-0">
+                              <span className="font-display text-xl font-bold lowercase leading-tight text-white block truncate">
+                                {guest.name || `Guest ${guest.tag_id}`}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="text-right shrink-0">
+                            <span className="font-mono text-xs font-bold block text-white/80">
+                              {formatWallClockTime(guest.entered_at)}
+                            </span>
+                            <span className="font-sans-clean text-[10px] text-white/40 lowercase">
+                              {formatRelativeTime(guest.entered_at)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Everyone Arrived Suggestion Banner */}
+                {stats.totalEntered >= stats.totalCapacity && stats.totalCapacity > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setIsArrivalsCollapsed(true)}
+                    className="w-full mb-2 py-2 px-3 rounded-xl bg-amber-400/15 border border-amber-400/30 text-amber-300 text-xs font-sans-clean font-bold flex items-center justify-center gap-1.5 hover:bg-amber-400/25 transition-all cursor-pointer"
+                  >
+                    <span>🎉 Everyone has arrived! Collapse feed to Poker Table & Live Stats</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                )}
+
+                {/* Footer with Instant Test Check-in */}
+                <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs opacity-60 shrink-0">
+                  <span className="font-sans-clean text-[11px] lowercase text-white/70">
+                    0ms live synchronization with /door station
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleSimulateCheckIn}
+                    className="hover:opacity-100 underline decoration-white/30 text-[11px] font-sans-clean lowercase cursor-pointer text-white"
+                    title="Simulate instant guest admission"
+                  >
+                    + test check-in
+                  </button>
+                </div>
+              </>
+            ) : (
+              // ==============================================================
+              // VIEW B: COLLAPSED SPACE REPLACED WITH POKER & PARTY LOUNGE
+              // ==============================================================
+              <div className="flex-1 flex flex-col pt-3 min-h-[380px] animate-in fade-in duration-200">
+                {activeLoungeTab === 'poker' && (
+                  <PokerWidget onExpandFeed={() => setIsArrivalsCollapsed(false)} />
+                )}
+                {activeLoungeTab === 'stats' && (
+                  <PartyFunStatsWidget guests={guests} />
+                )}
+                {activeLoungeTab === 'qrs' && (
+                  <PartyQrHubWidget />
+                )}
+              </div>
+            )}
           </div>
         </section>
       </div>
@@ -951,6 +1133,21 @@ export function ProjectorDisplay() {
           </div>
         </div>
       )}
+
+      {/* ================================================================ */}
+      {/* 4. PARTY PROGRAM SCHEDULE MODAL                                  */}
+      {/* ================================================================ */}
+      <PartyScheduleModal
+        isOpen={isScheduleModalOpen}
+        onClose={() => setIsScheduleModalOpen(false)}
+        schedule={partySchedule}
+        onSave={updated => {
+          setPartySchedule(updated);
+          savePartySchedule(updated);
+        }}
+        simulatedTime={simulatedTime}
+        onSetSimulatedTime={setSimulatedTime}
+      />
     </div>
   );
 }

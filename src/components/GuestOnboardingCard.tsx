@@ -9,8 +9,15 @@ import {
   AlertCircle,
   Radio,
   Sliders,
+  Users,
+  Search,
+  Check,
+  Sparkles,
+  Car,
 } from 'lucide-react';
-import { Guest, GuestCategory, PartySettings, DoorCheckInInput } from '@/lib/types';
+import { Guest, GuestCategory, PartySettings, DoorCheckInInput, ImportedGuest } from '@/lib/types';
+import { usePartyStore } from '@/lib/store';
+import { searchGuestRoster } from '@/lib/guest-import-utils';
 import {
   parseTagId,
   getNextFreeTagId,
@@ -62,6 +69,78 @@ export function GuestOnboardingCard({
   const [isCustomLimit, setIsCustomLimit] = useState(false);
   const [notes, setNotes] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
+
+  const { importedGuests } = usePartyStore();
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Suggestions for autocomplete
+  const suggestions = useMemo(() => {
+    if (!importedGuests || importedGuests.length === 0) return [];
+    return searchGuestRoster(importedGuests, name, 6);
+  }, [importedGuests, name]);
+
+  const pendingRosterCount = useMemo(() => {
+    return (importedGuests || []).filter(g => !g.is_checked_in).length;
+  }, [importedGuests]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent | TouchEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('touchstart', handleOutsideClick);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('touchstart', handleOutsideClick);
+    };
+  }, []);
+
+  const selectRosterGuest = (rosterGuest: ImportedGuest) => {
+    setName(rosterGuest.name);
+    if (rosterGuest.category) {
+      setCategory(rosterGuest.category);
+    }
+    if (rosterGuest.notes) {
+      setNotes(rosterGuest.notes);
+      setShowAdvanced(true);
+    }
+    setIsDropdownOpen(false);
+    setHighlightedIndex(-1);
+    soundSystem.playApprovedSound();
+    nameInputRef.current?.focus();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!isDropdownOpen || suggestions.length === 0) {
+      if (e.key === 'ArrowDown' && suggestions.length > 0) {
+        setIsDropdownOpen(true);
+        setHighlightedIndex(0);
+        e.preventDefault();
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightedIndex(prev => (prev < suggestions.length - 1 ? prev + 1 : 0));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightedIndex(prev => (prev > 0 ? prev - 1 : suggestions.length - 1));
+    } else if (e.key === 'Enter') {
+      if (highlightedIndex >= 0 && suggestions[highlightedIndex]) {
+        e.preventDefault();
+        selectRosterGuest(suggestions[highlightedIndex]);
+      }
+      // If highlightedIndex is -1, Enter normally submits the form!
+    } else if (e.key === 'Escape') {
+      setIsDropdownOpen(false);
+    }
+  };
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isNfcWriting, setIsNfcWriting] = useState(false);
@@ -150,6 +229,8 @@ export function GuestOnboardingCard({
       setIsCustomLimit(false);
       setNotes('');
       setShowAdvanced(false);
+      setIsDropdownOpen(false);
+      setHighlightedIndex(-1);
 
       // Refocus name input immediately
       setTimeout(() => {
