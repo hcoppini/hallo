@@ -120,8 +120,8 @@ export function PartyQrHubWidget() {
       </div>
 
       {/* Footer Helper */}
-      <div className="pt-2 border-t border-white/10 text-center sm:text-left text-[11px] text-white/40">
-        Switch tabs above to display different QR codes for guests on the venue projector.
+      <div className="pt-2 border-t border-white/10 text-center sm:text-left text-[11px] text-white/50">
+        Scan QR with phone camera
       </div>
     </div>
   );

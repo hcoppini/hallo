@@ -466,61 +466,48 @@ export function ProjectorDisplay() {
   return (
     <div
       ref={stageContainerRef}
-      className={`w-full min-h-[calc(100vh-6rem)] ${themeClasses} transition-colors duration-300 flex flex-col p-3 sm:p-5 lg:p-6 space-y-4`}
+      className={`w-full h-screen max-h-screen ${themeClasses} transition-colors duration-300 flex flex-col p-2.5 sm:p-3.5 space-y-2.5 overflow-hidden`}
     >
       {/* ================================================================ */}
-      {/* 1. TOP STAGE CONTROLS BAR: CLEAN & UNCLUTTERED                   */}
+      {/* 1. UNIFIED TOP BAR: PROGRESS BAR + ATTENDANCE + STAGE CONTROLS   */}
       {/* ================================================================ */}
       <header
-        className={`w-full rounded-2xl px-5 py-3.5 flex flex-wrap items-center justify-between gap-4 border ${cardThemeClasses}`}
+        className={`w-full rounded-2xl px-4 py-2 flex items-center justify-between gap-3 border ${cardThemeClasses} shrink-0`}
       >
-        {/* Left: Now Playing Status */}
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-red-600 text-white flex items-center justify-center shadow-md shrink-0">
-            <Tv className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="flex items-baseline gap-2">
-              <span className="font-display text-2xl font-bold lowercase tracking-tight leading-none">
-                {currentTrack.title}
-              </span>
-              <span className="font-sans-clean text-xs opacity-60">
-                — {currentTrack.artist}
-              </span>
-            </div>
-          </div>
-        </div>
+        {/* Left: Party Program Progress Bar (Replaces Red TV Emoji & Thriller) */}
+        <PartyProgressBar
+          schedule={partySchedule}
+          onOpenSettings={() => setIsScheduleModalOpen(true)}
+          simulatedTime={simulatedTime}
+          className="flex-1 min-w-0"
+        />
 
-        {/* Center: Live Attendance Counter */}
-        <div className="flex items-center gap-4">
-          <Users className="w-4 h-4 opacity-70" />
-          <div className="text-left">
-            <div className="flex items-baseline gap-1.5">
-              <span className="font-display text-2xl font-bold leading-none">
-                {stats.totalEntered}
-              </span>
-              <span className="font-sans-clean text-xs opacity-50">
-                / {stats.totalCapacity} inside
-              </span>
-            </div>
-            <div className="w-28 h-1.5 rounded-full bg-current/10 overflow-hidden mt-1">
-              <div
-                className="h-full bg-current rounded-full transition-all duration-500"
-                style={{ width: `${stats.fillPercentage}%` }}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Right: Stage Operator Controls */}
+        {/* Center / Right: Live Attendance Counter & Controls */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* Discrete Now Playing Badge */}
+          <div className="hidden lg:flex items-center gap-2 px-2.5 py-1 rounded-xl bg-white/[0.05] border border-white/10 text-xs text-white max-w-[200px]">
+            <Music2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span className="truncate">{currentTrack.title}</span>
+          </div>
+
+          {/* Live Attendance Counter */}
+          <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-white/[0.05] border border-white/10 text-white">
+            <Users className="w-3.5 h-3.5 opacity-70" />
+            <span className="font-display text-lg font-bold leading-none">
+              {stats.totalEntered}
+            </span>
+            <span className="font-sans-clean text-xs opacity-50">
+              / {stats.totalCapacity} inside
+            </span>
+          </div>
+
           {/* Split Ratio Selector */}
-          <div className="hidden xl:flex items-center gap-1 p-1 rounded-xl bg-current/5 border border-current/10 text-xs">
+          <div className="hidden xl:flex items-center gap-0.5 p-0.5 rounded-xl bg-white/[0.05] border border-white/10 text-xs">
             <button
               type="button"
               onClick={() => setSplitRatio('65_35')}
-              className={`px-2.5 py-1 rounded-lg font-mono text-[10px] font-bold transition-all cursor-pointer ${
-                splitRatio === '65_35' ? 'bg-current/15 font-black' : 'opacity-60 hover:opacity-100'
+              className={`px-2 py-0.5 rounded-lg font-mono text-[10px] font-bold transition-all cursor-pointer ${
+                splitRatio === '65_35' ? 'bg-white/20 font-black text-white' : 'opacity-60 hover:opacity-100 text-white'
               }`}
               title="65% Video / 35% Feed"
             >
@@ -529,8 +516,8 @@ export function ProjectorDisplay() {
             <button
               type="button"
               onClick={() => setSplitRatio('50_50')}
-              className={`px-2.5 py-1 rounded-lg font-mono text-[10px] font-bold transition-all cursor-pointer ${
-                splitRatio === '50_50' ? 'bg-current/15 font-black' : 'opacity-60 hover:opacity-100'
+              className={`px-2 py-0.5 rounded-lg font-mono text-[10px] font-bold transition-all cursor-pointer ${
+                splitRatio === '50_50' ? 'bg-white/20 font-black text-white' : 'opacity-60 hover:opacity-100 text-white'
               }`}
               title="50% Video / 50% Feed"
             >
@@ -539,8 +526,8 @@ export function ProjectorDisplay() {
             <button
               type="button"
               onClick={() => setSplitRatio('75_25')}
-              className={`px-2.5 py-1 rounded-lg font-mono text-[10px] font-bold transition-all cursor-pointer ${
-                splitRatio === '75_25' ? 'bg-current/15 font-black' : 'opacity-60 hover:opacity-100'
+              className={`px-2 py-0.5 rounded-lg font-mono text-[10px] font-bold transition-all cursor-pointer ${
+                splitRatio === '75_25' ? 'bg-white/20 font-black text-white' : 'opacity-60 hover:opacity-100 text-white'
               }`}
               title="75% Video / 25% Feed"
             >
@@ -552,108 +539,99 @@ export function ProjectorDisplay() {
           <button
             type="button"
             onClick={() => setPlayChimeOnArrival(prev => !prev)}
-            className={`p-2 rounded-xl border transition-colors cursor-pointer ${
+            className={`p-1.5 rounded-xl border transition-colors cursor-pointer ${
               playChimeOnArrival
                 ? 'border-emerald-500/40 text-emerald-500 bg-emerald-500/10'
-                : 'border-current/15 opacity-60 hover:opacity-100'
+                : 'border-white/10 text-white opacity-60 hover:opacity-100'
             }`}
             title={playChimeOnArrival ? 'Arrival Chime Enabled' : 'Arrival Chime Muted'}
           >
-            {playChimeOnArrival ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            {playChimeOnArrival ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
           </button>
 
           {/* Fullscreen Stage Mode */}
           <button
             type="button"
             onClick={toggleFullscreen}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-current/20 hover:bg-current/10 text-xs font-sans-clean font-bold tracking-wider lowercase transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/20 hover:bg-white/10 text-xs font-sans-clean font-bold tracking-wider lowercase transition-all cursor-pointer text-white"
             title="Expand to Fullscreen Projector Canvas"
           >
             {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-            <span className="hidden sm:inline">{isFullscreen ? 'exit stage' : 'stage fullscreen'}</span>
+            <span className="hidden sm:inline">{isFullscreen ? 'exit' : 'stage'}</span>
           </button>
         </div>
       </header>
 
       {/* ================================================================ */}
-      {/* 1.5 BIG CUSTOMISABLE PARTY PROGRAM PROGRESS BAR                  */}
-      {/* ================================================================ */}
-      <PartyProgressBar
-        schedule={partySchedule}
-        onOpenSettings={() => setIsScheduleModalOpen(true)}
-        simulatedTime={simulatedTime}
-      />
-
-      {/* ================================================================ */}
       {/* 2. DUAL SPLIT WORKSPACE: YOUTUBE MUSIC VIDEO + LIVE GUEST FEED    */}
       {/* ================================================================ */}
-      <div className="flex-1 flex flex-col lg:flex-row gap-4 lg:gap-6 min-h-[640px]">
+      <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-3 overflow-hidden">
         {/* ============================================================== */}
         {/* LEFT VIEW: YOUTUBE MUSIC VIDEO PLAYER + QUEUE WORKSPACE        */}
         {/* ============================================================== */}
-        <section className={`flex flex-col gap-3 ${splitClasses.video} transition-all duration-300`}>
+        <section className={`flex flex-col gap-2 h-full min-h-0 ${splitClasses.video} transition-all duration-300`}>
           {/* Music Video Canvas */}
           <div
-            className={`relative flex-1 min-h-[420px] lg:min-h-[500px] rounded-3xl overflow-hidden border ${cardThemeClasses} flex flex-col`}
+            className={`relative flex-1 min-h-0 rounded-2xl overflow-hidden border ${cardThemeClasses} flex flex-col`}
           >
             {/* Embedded YouTube Player */}
-            <div className="relative flex-1 w-full h-full bg-black flex items-center justify-center">
+            <div className="relative flex-1 w-full h-full bg-black flex items-center justify-center min-h-0">
               <iframe
                 ref={iframeRef}
                 title="YouTube Music Video Player"
                 src={activeEmbedUrl}
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 allowFullScreen
-                className="w-full h-full min-h-[380px] lg:min-h-[480px] border-none"
+                className="w-full h-full border-none"
               />
             </div>
 
             {/* Playback Controls & Action Ribbon */}
-            <div className="p-3.5 sm:p-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-3 bg-[#0a0a0a] shrink-0">
+            <div className="px-3.5 py-2 border-t border-white/10 flex items-center justify-between gap-3 bg-[#0a0a0a] shrink-0">
               {/* Transport Controls: Prev, Play/Pause, Next, Shuffle */}
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={handlePrevTrack}
-                  className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all cursor-pointer active:scale-95"
-                  title="Go Back (Previous Track)"
+                  className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all cursor-pointer active:scale-95"
+                  title="Previous Track"
                 >
-                  <SkipBack className="w-4 h-4 fill-white" />
+                  <SkipBack className="w-3.5 h-3.5 fill-white" />
                 </button>
 
                 <button
                   type="button"
                   onClick={handleTogglePlay}
-                  className="p-3 rounded-full bg-white text-black hover:bg-neutral-200 transition-all cursor-pointer active:scale-95 shadow-md"
+                  className="p-2.5 rounded-full bg-white text-black hover:bg-neutral-200 transition-all cursor-pointer active:scale-95 shadow-md"
                   title={isPlaying ? 'Pause' : 'Play'}
                 >
                   {isPlaying ? (
-                    <Pause className="w-5 h-5 fill-black" />
+                    <Pause className="w-4 h-4 fill-black" />
                   ) : (
-                    <Play className="w-5 h-5 fill-black ml-0.5" />
+                    <Play className="w-4 h-4 fill-black ml-0.5" />
                   )}
                 </button>
 
                 <button
                   type="button"
                   onClick={handleNextTrack}
-                  className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all cursor-pointer active:scale-95"
-                  title="Skip to Next Track"
+                  className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all cursor-pointer active:scale-95"
+                  title="Next Track"
                 >
-                  <SkipForward className="w-4 h-4 fill-white" />
+                  <SkipForward className="w-3.5 h-3.5 fill-white" />
                 </button>
 
                 <button
                   type="button"
                   onClick={handleToggleShuffle}
-                  className={`p-2.5 rounded-full transition-all cursor-pointer active:scale-95 ${
+                  className={`p-2 rounded-full transition-all cursor-pointer active:scale-95 ${
                     isShuffleOn
                       ? 'bg-amber-400 text-black font-bold shadow-md'
                       : 'bg-white/10 hover:bg-white/20 text-white opacity-70 hover:opacity-100'
                   }`}
-                  title={isShuffleOn ? 'Shuffle Mode On (Click to turn off)' : 'Shuffle Queue'}
+                  title={isShuffleOn ? 'Shuffle Mode On' : 'Shuffle Queue'}
                 >
-                  <Shuffle className="w-4 h-4" />
+                  <Shuffle className="w-3.5 h-3.5" />
                 </button>
               </div>
 
@@ -661,58 +639,58 @@ export function ProjectorDisplay() {
               <button
                 type="button"
                 onClick={() => setIsAddModalOpen(true)}
-                className="px-4 py-2 rounded-full font-sans-clean font-bold text-xs tracking-wider lowercase transition-all cursor-pointer active:scale-95 flex items-center gap-2 bg-white text-black hover:bg-neutral-200 border border-white shadow-lg"
+                className="px-3.5 py-1.5 rounded-full font-sans-clean font-bold text-xs tracking-wider lowercase transition-all cursor-pointer active:scale-95 flex items-center gap-1.5 bg-white text-black hover:bg-neutral-200 border border-white shadow-lg"
               >
-                <Plus className="w-4 h-4 stroke-[3]" />
+                <Plus className="w-3.5 h-3.5 stroke-[3]" />
                 <span>add video or playlist</span>
               </button>
             </div>
           </div>
 
-          {/* UP NEXT ON QUEUE BAR (Shows Real Playlist Queue) */}
-          <div className={`p-4 rounded-2xl border ${cardThemeClasses} shrink-0 space-y-2`}>
+          {/* UP NEXT ON QUEUE BAR */}
+          <div className={`p-2 px-3 rounded-xl border ${cardThemeClasses} shrink-0 space-y-1`}>
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <ListMusic className="w-4 h-4 text-amber-400" />
-                <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-white/90">
-                  UP NEXT ON QUEUE ({upcomingQueue.length})
+              <div className="flex items-center gap-2">
+                <ListMusic className="w-3.5 h-3.5 text-amber-400" />
+                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-white/90">
+                  UP NEXT ({upcomingQueue.length})
                 </span>
                 {upcomingQueue.length > 1 && (
                   <button
                     type="button"
                     onClick={handleShuffleUpcomingQueue}
-                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-300 hover:bg-amber-400/30 font-mono text-[10px] font-bold transition-all cursor-pointer"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 hover:bg-amber-400/30 font-mono text-[9px] font-bold transition-all cursor-pointer"
                     title="Randomly shuffle all upcoming songs in queue"
                   >
-                    <Shuffle className="w-3 h-3" />
-                    <span>shuffle queue</span>
+                    <Shuffle className="w-2.5 h-2.5" />
+                    <span>shuffle</span>
                   </button>
                 )}
               </div>
-              <span className="font-mono text-[11px] text-white/50">
+              <span className="font-mono text-[10px] text-white/50">
                 Track {currentTrackIndex + 1} of {queue.length}
               </span>
             </div>
 
             {/* Upcoming Track Strip */}
             {upcomingQueue.length === 0 ? (
-              <div className="py-2 text-xs text-white/40 font-sans-clean">
-                End of queue reached. Click &quot;+ Add Video or Playlist&quot; to queue more music videos.
+              <div className="py-1 text-xs text-white/40 font-sans-clean">
+                End of queue reached. Click &quot;+ Add Video or Playlist&quot; to queue more.
               </div>
             ) : (
-              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
                 {upcomingQueue.map((track, relativeIdx) => {
                   const absoluteIdx = currentTrackIndex + 1 + relativeIdx;
                   return (
                     <div
                       key={track.id}
-                      className="px-3.5 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 flex items-center gap-2.5 shrink-0 transition-all group"
+                      className="px-2.5 py-1.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 flex items-center gap-2 shrink-0 transition-all group"
                     >
                       <button
                         type="button"
                         onClick={() => handlePlayQueueItem(absoluteIdx)}
-                        className="text-left cursor-pointer max-w-[200px]"
-                        title="Play This Track Now"
+                        className="text-left cursor-pointer max-w-[160px]"
+                        title="Play Track Now"
                       >
                         <span className="font-sans-clean text-xs font-bold text-white block leading-tight group-hover:text-amber-300 truncate">
                           {track.title}
@@ -725,7 +703,7 @@ export function ProjectorDisplay() {
                       <button
                         type="button"
                         onClick={() => handleRemoveTrack(absoluteIdx)}
-                        className="p-1 rounded-md text-white/30 hover:text-red-400 hover:bg-white/10 transition-colors ml-1 cursor-pointer"
+                        className="p-1 rounded-md text-white/30 hover:text-red-400 hover:bg-white/10 transition-colors ml-0.5 cursor-pointer"
                         title="Remove from Queue"
                       >
                         <Trash2 className="w-3 h-3" />
@@ -917,12 +895,12 @@ export function ProjectorDisplay() {
                 )}
 
                 {/* Scrollable Guest Feed */}
-                <div className="flex-1 overflow-y-auto space-y-2 pr-1 my-2">
+                <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-1 my-1">
                   {enteredGuests.length === 0 ? (
-                    <div className="h-48 flex flex-col items-center justify-center text-center p-6 space-y-3 opacity-60">
-                      <DoorOpen className="w-8 h-8 opacity-40 text-white" />
-                      <p className="font-sans-clean text-xs lowercase max-w-xs text-white/70">
-                        No guest arrivals recorded yet. Scan wristbands at the Door Station to populate this live stream.
+                    <div className="h-40 flex flex-col items-center justify-center text-center p-4 space-y-2 opacity-60">
+                      <DoorOpen className="w-7 h-7 opacity-40 text-white" />
+                      <p className="font-sans-clean text-xs lowercase text-white/70">
+                        Waiting for first guest admission...
                       </p>
                     </div>
                   ) : (
@@ -934,7 +912,7 @@ export function ProjectorDisplay() {
                       return (
                         <div
                           key={guest.id}
-                          className={`p-3 rounded-xl border transition-all duration-300 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-3 ${
+                          className={`p-2.5 rounded-xl border transition-all duration-300 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-3 ${
                             isNewArrival
                               ? 'border-amber-400 bg-amber-400/10 shadow-md'
                               : idx === 0
@@ -942,12 +920,12 @@ export function ProjectorDisplay() {
                               : 'border-white/5 bg-white/[0.02] hover:bg-white/[0.05]'
                           }`}
                         >
-                          <div className="flex items-center gap-3 min-w-0">
+                          <div className="flex items-center gap-2.5 min-w-0">
                             <span className="font-mono text-xs font-bold text-white/70 w-12 text-left shrink-0">
                               {tagDisplay}
                             </span>
                             <div className="min-w-0">
-                              <span className="font-display text-xl font-bold lowercase leading-tight text-white block truncate">
+                              <span className="font-display text-lg font-bold lowercase leading-tight text-white block truncate">
                                 {guest.name || `Guest ${guest.tag_id}`}
                               </span>
                             </div>
@@ -972,17 +950,17 @@ export function ProjectorDisplay() {
                   <button
                     type="button"
                     onClick={() => setIsArrivalsCollapsed(true)}
-                    className="w-full mb-2 py-2 px-3 rounded-xl bg-amber-400/15 border border-amber-400/30 text-amber-300 text-xs font-sans-clean font-bold flex items-center justify-center gap-1.5 hover:bg-amber-400/25 transition-all cursor-pointer"
+                    className="w-full mb-1 py-1.5 px-3 rounded-xl bg-amber-400/15 border border-amber-400/30 text-amber-300 text-xs font-sans-clean font-bold flex items-center justify-center gap-1.5 hover:bg-amber-400/25 transition-all cursor-pointer shrink-0"
                   >
-                    <span>🎉 Everyone has arrived! Collapse feed to Poker Table & Live Stats</span>
+                    <span>Everyone arrived! Switch to Poker Table & Stats</span>
                     <ChevronRight className="w-3.5 h-3.5" />
                   </button>
                 )}
 
                 {/* Footer with Instant Test Check-in */}
-                <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs opacity-60 shrink-0">
-                  <span className="font-sans-clean text-[11px] lowercase text-white/70">
-                    0ms live synchronization with /door station
+                <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs opacity-60 shrink-0">
+                  <span className="font-sans-clean text-[11px] text-white/50">
+                    Live Arrivals Stream
                   </span>
                   <button
                     type="button"
@@ -998,7 +976,7 @@ export function ProjectorDisplay() {
               // ==============================================================
               // VIEW B: COLLAPSED SPACE REPLACED WITH POKER & PARTY LOUNGE
               // ==============================================================
-              <div className="flex-1 flex flex-col pt-3 min-h-[380px] animate-in fade-in duration-200">
+              <div className="flex-1 min-h-0 flex flex-col pt-2 overflow-y-auto animate-in fade-in duration-200">
                 {activeLoungeTab === 'poker' && (
                   <PokerWidget onExpandFeed={() => setIsArrivalsCollapsed(false)} />
                 )}

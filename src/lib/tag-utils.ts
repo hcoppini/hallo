@@ -160,9 +160,9 @@ export function isTagMatch(guest: Guest, searchTag: string): boolean {
   // 2. Hardware UID match (comparing stripped alphanumerics, ignoring legacy [UID:UID])
   let effectiveHardwareUid = guest.hardware_uid;
   if (!effectiveHardwareUid && guest.notes) {
-    const uidMatch = guest.notes.match(/\[UID:([A-Za-z0-9:]+)\]/i);
+    const uidMatch = guest.notes.match(/\[UID:([^\]]+)\]/i);
     if (uidMatch && uidMatch[1]) {
-      effectiveHardwareUid = uidMatch[1];
+      effectiveHardwareUid = uidMatch[1].trim();
     }
   }
 
@@ -174,6 +174,19 @@ export function isTagMatch(guest: Guest, searchTag: string): boolean {
   ) {
     const guestUidClean = effectiveHardwareUid.toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (guestUidClean.length >= 4 && guestUidClean === parsedSearch.cleanAlphanumeric) {
+      return true;
+    }
+  }
+
+  // Also check if notes contains the clean alphanumeric UID directly
+  if (
+    guest.notes &&
+    parsedSearch.cleanAlphanumeric &&
+    parsedSearch.cleanAlphanumeric.length >= 6 &&
+    !isUniversalOnboardingTag(parsedSearch.cleanAlphanumeric)
+  ) {
+    const notesClean = guest.notes.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (notesClean.includes(parsedSearch.cleanAlphanumeric)) {
       return true;
     }
   }

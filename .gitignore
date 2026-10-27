@@ -42,3 +42,9 @@ yarn-error.log*
 next-env.d.ts
 /dist
 *.spec
+
+# python & local bridge
+__pycache__/
+*.pyc
+*.log
+scratch/

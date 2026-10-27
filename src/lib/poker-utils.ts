@@ -1,6 +1,6 @@
 /**
  * Poker & Party Hub Utilities
- * Handles poker table settings, QR codes, and lounge presets.
+ * Configured for hcoppini/piker hosted on Vercel
  */
 
 export interface PokerSettings {
@@ -14,13 +14,13 @@ export interface PokerSettings {
 }
 
 export const DEFAULT_POKER_SETTINGS: PokerSettings = {
-  tableName: 'Midnight High-Stakes Poker',
-  qrUrl: 'https://pokernow.club/',
-  blinds: '25 / 50',
-  buyIn: '500 Chips',
-  blindInterval: '15 min levels',
+  tableName: 'Piker High-Stakes Tournament',
+  qrUrl: 'https://piker-toicupinis-projects.vercel.app',
+  blinds: '1 / 2 (Doubles every 7 min)',
+  buyIn: 'Rapid 11-Level Heats',
+  blindInterval: '7 min levels (30–40m game)',
   status: 'active',
-  notes: 'Scan to view live poker clock, table seating & tournament rules.',
+  notes: 'Scan to join table & view live synced poker clock & leaderboard from hcoppini/piker',
 };
 
 export const POKER_STORAGE_KEY = 'halloween_party_poker_v1';
@@ -57,10 +57,10 @@ export interface PartyCustomQr {
 export const DEFAULT_PARTY_QRS: PartyCustomQr[] = [
   {
     id: 'poker-main',
-    title: 'Poker Tournament Clock',
-    url: 'https://pokernow.club/',
+    title: 'Piker Tournament Clock',
+    url: 'https://piker-toicupinis-projects.vercel.app',
     icon: 'poker',
-    subtitle: 'Scan for live blinds, chip counts & seating',
+    subtitle: 'Scan for live blinds, chip counts & seating (hcoppini/piker)',
   },
   {
     id: 'song-requests',
@@ -74,7 +74,7 @@ export const DEFAULT_PARTY_QRS: PartyCustomQr[] = [
     title: 'Party Photo Drop',
     url: 'https://photos.google.com',
     icon: 'camera',
-    subtitle: 'Upload your party photos to the shared album',
+    subtitle: 'Upload party photos to the shared album',
   },
 ];
 

@@ -201,6 +201,26 @@ describe('Tag Utils Parsing & Matching', () => {
     expect(isTagMatch(mockGuestWithNotesUid, '04A23B5F817080')).toBe(false);
   });
 
+  it('matches physical card 538B8CFF130001 to guest with notes [UID:538B8CFF130001]', () => {
+    const hektorTest: Guest = {
+      id: 'GUEST-069',
+      tag_id: 'TAG-069',
+      name: 'Hektor test',
+      category: 'standard',
+      custom_drink_limit: null,
+      drinks_consumed: 2,
+      is_entered: true,
+      entered_at: '2026-10-27T15:51:48.449Z',
+      is_blocked: false,
+      notes: '[UID:538B8CFF130001]',
+    };
+
+    expect(isTagMatch(hektorTest, '538B8CFF130001')).toBe(true);
+    expect(isTagMatch(hektorTest, '53:8B:8C:FF:13:00:01')).toBe(true);
+    expect(isTagMatch(hektorTest, '538b8cff130001')).toBe(true);
+    expect(findGuestByTag([hektorTest], '538B8CFF130001')?.name).toBe('Hektor test');
+  });
+
   it('formats human-readable guest display names correctly', async () => {
     const { getGuestDisplayName } = await import('../lib/tag-utils');
 

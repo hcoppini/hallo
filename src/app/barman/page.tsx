@@ -155,18 +155,20 @@ export default function BarmanPage() {
     return [...activeMatches, ...otherMatches];
   }, [guests, dockFilter]);
 
-  // Serve drink handler: once served, IMMEDIATELY CLEAR THE BAR and set single-drink undo
+  // Serve drink handler: serves drink, keeps customer active on bar station, and sets single-drink undo
   const handleManualServe = useCallback(
     async (tagId: string, drinkType: DrinkType, guestOverride?: Guest) => {
       const currentTarget = guestOverride || activeGuest;
       const res = await serveDrink(tagId, drinkType);
       if (res.success) {
-        // Clear bar immediately as requested
-        setSelectedGuestId(null);
+        const guestId = currentTarget?.id || res.guest_id || res.guest?.id;
+        if (guestId) {
+          setSelectedGuestId(guestId);
+        }
         setDockFilter('');
         // Enable single-drink undo
         setLastServedDrink({
-          guestId: currentTarget?.id || res.guest_id || res.guest?.id || '',
+          guestId: guestId || '',
           guestName: currentTarget?.name || res.name || res.guest?.name || tagId,
           tagId: currentTarget?.tag_id || tagId,
           logId: res.log_id || '',
@@ -187,24 +189,45 @@ export default function BarmanPage() {
       if (!matched) {
         matched = (await fetchGuestByTag(targetTag)) || undefined;
       }
+      if (!matched) {
+        const parsed = parseTagId(targetTag);
+        if (parsed.tagNumber !== null) {
+          matched = guests.find(g => {
+            const p = parseTagId(g.tag_id);
+            const pid = parseTagId(g.id);
+            return p.tagNumber === parsed.tagNumber || pid.tagNumber === parsed.tagNumber;
+          });
+        }
+      }
+
       if (matched) {
         setUnassignedTagPrompt(null);
         setDockFilter('');
+        // Immediately select the guest so they appear directly on the bar station!
+        setSelectedGuestId(matched.id);
+
         if (quickServeMode) {
           const limit = calculateEffectiveLimit(matched, settings);
           const isAtLimit = matched.category !== 'vip' && (matched.drinks_consumed ?? 0) >= limit;
           const isDriver = matched.category === 'driver_minor' && selectedDrinkRef.current !== 'soft';
-          if (!isAtLimit && !isDriver) {
-            await handleManualServe(matched.tag_id, selectedDrinkRef.current, matched);
+          if (matched.is_blocked) {
+            soundSystem.playErrorSound();
             return;
           }
+          if (isDriver) {
+            soundSystem.playErrorSound();
+            return;
+          }
+          if (isAtLimit) {
+            soundSystem.playLimitSound();
+            return;
+          }
+          await handleManualServe(matched.tag_id, selectedDrinkRef.current, matched);
+        } else {
+          soundSystem.playApprovedSound();
         }
-        setSelectedGuestId(matched.id);
       } else {
-        setUnassignedTagPrompt(targetTag);
         soundSystem.playWarningSound();
-        setRelayFlash(`Physical card ${targetTag} tapped — select guest to link!`);
-        setTimeout(() => setRelayFlash(null), 4000);
       }
     },
     [guests, fetchGuestByTag, setSelectedGuestId, quickServeMode, settings, handleManualServe]
@@ -260,8 +283,8 @@ export default function BarmanPage() {
         setRelayFlash(`Relayed NFC tap: ${msg.result.guest?.name || msg.tagId}`);
         refresh();
         setTimeout(() => setRelayFlash(null), 3500);
-      } else if (msg.type === 'TAG_TAPPED' && msg.tagId) {
-        handleSelectTag(msg.tagId);
+      } else if (msg.type === 'TAG_TAPPED' && (msg.tagId || msg.rawId)) {
+        handleSelectTag(msg.tagId || msg.rawId || '', msg.rawId);
         if (msg.isAssigned === false) {
           setRelayFlash(`Unassigned wristband tapped: ${msg.tagId}`);
           setTimeout(() => setRelayFlash(null), 4000);
@@ -387,48 +410,6 @@ export default function BarmanPage() {
 
   return (
     <div className="w-full py-2 lg:py-3 space-y-2.5 sm:space-y-3 animate-in fade-in duration-150">
-      {relayFlash && (
-        <div className="p-2.5 rounded-2xl bg-emerald-600 text-white text-xs font-sans-clean font-bold text-center shadow-lg animate-in fade-in duration-150">
-          ⚡ {relayFlash}
-        </div>
-      )}
-
-      {/* Unassigned Physical Card Linking Banner */}
-      {unassignedTagPrompt && (
-        <div className="p-3 sm:p-4 rounded-2xl bg-amber-400 text-black shadow-lg flex flex-col sm:flex-row items-center justify-between gap-3 border border-amber-500/30 animate-in fade-in duration-150">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <span className="font-mono text-[11px] font-black px-2 py-0.5 rounded bg-black text-white shrink-0">
-              UID: {unassignedTagPrompt}
-            </span>
-            <span className="text-xs sm:text-sm font-sans-clean font-bold truncate">
-              {activeGuest
-                ? `Physical card tapped. Link this wristband to ${activeGuest.name}?`
-                : 'Physical card tapped. Search & select a guest below to link this wristband.'}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            {activeGuest && (
-              <button
-                type="button"
-                onClick={handleLinkUnassignedCard}
-                className="px-3.5 py-1.5 rounded-xl bg-black text-white hover:bg-black/85 font-sans-clean font-bold text-xs cursor-pointer shadow-md active:scale-95 transition-all"
-              >
-                Link to {activeGuest.name}
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setUnassignedTagPrompt(null)}
-              className="p-1 rounded-lg hover:bg-black/10 text-black/60 hover:text-black cursor-pointer"
-              title="Dismiss"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Undo Toast Notification (Displayed exclusively for the last served drink) */}
       {lastServedDrink && undoSeconds > 0 && (
         <div className="p-3 sm:p-3.5 rounded-2xl bg-stone-900 text-white shadow-xl flex items-center justify-between border border-stone-800 animate-in fade-in duration-150">

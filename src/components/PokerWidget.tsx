@@ -31,21 +31,19 @@ export function PokerWidget({ onExpandFeed }: PokerWidgetProps) {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editForm, setEditForm] = useState<PokerSettings>(DEFAULT_POKER_SETTINGS);
 
-  // Load saved settings on mount
   useEffect(() => {
     const loaded = loadPokerSettings();
     setPokerSettings(loaded);
     setEditForm(loaded);
   }, []);
 
-  // Generate QR Code data URL whenever qrUrl changes
   useEffect(() => {
     let active = true;
-    generateQrDataUrl(pokerSettings.qrUrl || 'https://pokernow.club/', {
-      width: 260,
+    generateQrDataUrl(pokerSettings.qrUrl || DEFAULT_POKER_SETTINGS.qrUrl, {
+      width: 280,
       margin: 1,
       color: {
-        dark: '#000000',
+        dark: '#060e0a',
         light: '#ffffff',
       },
     }).then(url => {
@@ -64,59 +62,71 @@ export function PokerWidget({ onExpandFeed }: PokerWidgetProps) {
   };
 
   return (
-    <div className="flex-1 flex flex-col justify-between space-y-4">
-      {/* Top Banner: Status & Edit */}
+    <div className="flex-1 flex flex-col justify-between space-y-3.5">
+      {/* Top Banner */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
           <span className="font-mono text-xs font-bold uppercase tracking-wider text-emerald-400">
-            {pokerSettings.status === 'active' ? 'TABLE ACTIVE • CARDS IN PLAY' : 'POKER TOURNAMENT'}
+            {pokerSettings.tableName}
           </span>
         </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            setEditForm(pokerSettings);
-            setIsEditModalOpen(true);
-          }}
-          className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-colors cursor-pointer"
-          title="Edit Poker Table Settings & QR Link"
-        >
-          <Settings className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-2">
+          <a
+            href={pokerSettings.qrUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white/[0.06] hover:bg-white/10 text-white text-xs font-sans-clean transition-colors"
+          >
+            <span>open app</span>
+            <ExternalLink className="w-3 h-3 text-white/60" />
+          </a>
+
+          <button
+            type="button"
+            onClick={() => {
+              setEditForm(pokerSettings);
+              setIsEditModalOpen(true);
+            }}
+            className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-colors cursor-pointer"
+            title="Edit Poker Link / Blinds"
+          >
+            <Settings className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
-      {/* Main Poker Canvas: Big QR Code + Details */}
-      <div className="flex flex-col sm:flex-row items-center gap-5 bg-gradient-to-br from-amber-500/10 via-neutral-900/60 to-black p-4 sm:p-5 rounded-2xl border border-amber-400/20 shadow-xl">
-        {/* Crisp QR Code Container */}
-        <div className="relative p-2.5 bg-white rounded-2xl shadow-2xl shrink-0 group transition-transform hover:scale-[1.02]">
+      {/* Main Poker Card: QR + Details */}
+      <div className="flex flex-col sm:flex-row items-center gap-4 bg-gradient-to-br from-emerald-950/40 via-neutral-900/60 to-black p-4 rounded-2xl border border-emerald-500/30 shadow-xl">
+        {/* Dedicated QR Code */}
+        <div className="relative p-2.5 bg-white rounded-2xl shadow-2xl shrink-0 border-2 border-emerald-400/40">
           {qrDataUrl ? (
             <img
               src={qrDataUrl}
-              alt="Scan Poker Table QR Code"
-              className="w-36 h-36 sm:w-44 sm:h-44 rounded-xl object-contain"
+              alt="Scan Piker Tournament QR"
+              className="w-32 h-32 sm:w-36 sm:h-36 rounded-xl object-contain"
             />
           ) : (
-            <div className="w-36 h-36 sm:w-44 sm:h-44 flex items-center justify-center bg-neutral-100 rounded-xl">
-              <QrCode className="w-12 h-12 text-black/40 animate-pulse" />
+            <div className="w-32 h-32 sm:w-36 sm:h-36 flex items-center justify-center bg-stone-100 rounded-xl">
+              <QrCode className="w-10 h-10 text-black/40 animate-pulse" />
             </div>
           )}
           <div className="absolute inset-x-2 -bottom-2 text-center">
-            <span className="px-2 py-0.5 rounded-full bg-amber-400 text-black font-mono text-[9px] font-extrabold uppercase shadow-md">
+            <span className="px-2 py-0.5 rounded-full bg-emerald-400 text-black font-mono text-[9px] font-extrabold uppercase shadow-md">
               SCAN TO JOIN
             </span>
           </div>
         </div>
 
-        {/* Tournament / Table Information */}
-        <div className="flex-1 space-y-3 text-center sm:text-left min-w-0">
+        {/* Tournament Information */}
+        <div className="flex-1 space-y-2 text-center sm:text-left min-w-0">
           <div>
-            <h3 className="font-display text-2xl sm:text-3xl font-bold lowercase text-white tracking-tight leading-tight">
-              {pokerSettings.tableName}
-            </h3>
-            <p className="font-sans-clean text-xs text-white/60 lowercase mt-0.5">
-              {pokerSettings.notes || 'scan with your phone to view live tournament clock & seat positions'}
+            <h4 className="font-display text-2xl font-bold lowercase text-white tracking-tight leading-tight">
+              tournament table
+            </h4>
+            <p className="font-sans-clean text-xs text-white/70 mt-0.5">
+              11-level rapid heats with 30–40 min turnover
             </p>
           </div>
 
@@ -124,61 +134,41 @@ export function PokerWidget({ onExpandFeed }: PokerWidgetProps) {
           <div className="grid grid-cols-2 gap-2 text-left">
             <div className="p-2 rounded-xl bg-white/[0.04] border border-white/10">
               <span className="font-mono text-[9px] uppercase font-bold text-white/50 block">
-                Current Blinds
+                Blinds
               </span>
-              <span className="font-mono text-xs sm:text-sm font-bold text-amber-300">
+              <span className="font-mono text-xs font-bold text-emerald-300 truncate block">
                 {pokerSettings.blinds}
               </span>
             </div>
 
             <div className="p-2 rounded-xl bg-white/[0.04] border border-white/10">
               <span className="font-mono text-[9px] uppercase font-bold text-white/50 block">
-                Starting Stack
+                Level Timer
               </span>
-              <span className="font-mono text-xs sm:text-sm font-bold text-white">
-                {pokerSettings.buyIn}
-              </span>
-            </div>
-
-            <div className="p-2 rounded-xl bg-white/[0.04] border border-white/10">
-              <span className="font-mono text-[9px] uppercase font-bold text-white/50 block">
-                Blind Level Clock
-              </span>
-              <span className="font-mono text-xs sm:text-sm font-bold text-white">
+              <span className="font-mono text-xs font-bold text-white truncate block">
                 {pokerSettings.blindInterval}
               </span>
             </div>
-
-            <div className="p-2 rounded-xl bg-white/[0.04] border border-white/10">
-              <span className="font-mono text-[9px] uppercase font-bold text-white/50 block">
-                Platform / App
-              </span>
-              <a
-                href={pokerSettings.qrUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="font-mono text-xs font-bold text-amber-400 hover:underline flex items-center gap-1 truncate"
-              >
-                <span>open link</span>
-                <ExternalLink className="w-2.5 h-2.5 shrink-0" />
-              </a>
-            </div>
           </div>
+
+          <p className="font-mono text-[10px] text-emerald-400/80 truncate">
+            {pokerSettings.qrUrl.replace(/^https?:\/\//, '')}
+          </p>
         </div>
       </div>
 
-      {/* Footer Helper */}
-      <div className="flex items-center justify-between text-[11px] text-white/50 pt-2 border-t border-white/10">
-        <span className="font-sans-clean lowercase">
-          Point phone camera at QR code to open poker lobby
+      {/* Footer */}
+      <div className="flex items-center justify-between text-xs text-white/50 pt-1 border-t border-white/10">
+        <span className="font-sans-clean">
+          Scan QR with phone to enter table & view live clock
         </span>
         {onExpandFeed && (
           <button
             type="button"
             onClick={onExpandFeed}
-            className="hover:text-white underline decoration-white/30 lowercase cursor-pointer"
+            className="hover:text-white underline decoration-white/30 cursor-pointer"
           >
-            show guest arrivals feed
+            show guest feed
           </button>
         )}
       </div>
@@ -216,14 +206,14 @@ export function PokerWidget({ onExpandFeed }: PokerWidgetProps) {
 
               <div>
                 <label className="font-mono text-[10px] uppercase font-bold text-white/60 block mb-1">
-                  QR Code URL / Link (PokerNow, Clock, Room URL)
+                  Piker Vercel URL
                 </label>
                 <input
                   type="text"
                   required
                   value={editForm.qrUrl}
                   onChange={e => setEditForm(prev => ({ ...prev, qrUrl: e.target.value }))}
-                  placeholder="https://pokernow.club/..."
+                  placeholder="https://piker-toicupinis-projects.vercel.app"
                   className="w-full px-3 py-2 rounded-xl bg-white/[0.05] border border-white/20 text-white text-xs font-mono focus:outline-none focus:border-amber-400"
                 />
               </div>
@@ -242,29 +232,17 @@ export function PokerWidget({ onExpandFeed }: PokerWidgetProps) {
                 </div>
                 <div>
                   <label className="font-mono text-[10px] uppercase font-bold text-white/60 block mb-1">
-                    Buy-In
+                    Blind Interval
                   </label>
                   <input
                     type="text"
-                    value={editForm.buyIn}
-                    onChange={e => setEditForm(prev => ({ ...prev, buyIn: e.target.value }))}
+                    value={editForm.blindInterval}
+                    onChange={e =>
+                      setEditForm(prev => ({ ...prev, blindInterval: e.target.value }))
+                    }
                     className="w-full px-3 py-2 rounded-xl bg-white/[0.05] border border-white/20 text-white text-xs font-mono"
                   />
                 </div>
-              </div>
-
-              <div>
-                <label className="font-mono text-[10px] uppercase font-bold text-white/60 block mb-1">
-                  Blind Level Interval
-                </label>
-                <input
-                  type="text"
-                  value={editForm.blindInterval}
-                  onChange={e =>
-                    setEditForm(prev => ({ ...prev, blindInterval: e.target.value }))
-                  }
-                  className="w-full px-3 py-2 rounded-xl bg-white/[0.05] border border-white/20 text-white text-xs font-sans-clean"
-                />
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-white/10">

@@ -160,12 +160,12 @@ export function PartyFunStatsWidget({ guests }: PartyFunStatsWidgetProps) {
 
       {/* Footer Milestone */}
       <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-white/50">
-        <span className="flex items-center gap-1.5 lowercase">
-          <Sparkles className="w-3 h-3 text-amber-400" />
-          <span>Realtime data synced with Barman Station</span>
+        <span className="flex items-center gap-1.5">
+          <Trophy className="w-3 h-3 text-amber-400" />
+          <span>Party Champions</span>
         </span>
         <span className="font-mono text-[10px]">
-          {entered.length === totalCapacity ? '🎉 100% full house' : `${totalCapacity - entered.length} remaining`}
+          {entered.length === totalCapacity ? '🎉 100% full house' : `${entered.length} / ${totalCapacity} inside`}
         </span>
       </div>
     </div>

@@ -122,7 +122,7 @@ function connectLocalNfcBridge() {
     localWs.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data && (data.tagId || data.tag || data.uid)) {
+        if (data && (data.type === 'TAG_TAPPED' || !data.type) && (data.tagId || data.tag || data.uid)) {
           const incomingTag = data.tagId || data.tag || data.uid;
           notifyListeners({
             type: 'TAG_TAPPED',

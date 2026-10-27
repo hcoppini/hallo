@@ -457,7 +457,7 @@ export function usePartyStore() {
 
     // 1. Check in-memory first
     const memoryMatch = findGuestByTag(globalGuests, tagSearch);
-    if (memoryMatch && memoryMatch.name && memoryMatch.is_entered) {
+    if (memoryMatch) {
       return memoryMatch;
     }
 
@@ -499,6 +499,7 @@ export function usePartyStore() {
             globalGuests = [guest, ...globalGuests];
           }
           persistLocalState();
+          notifySubscribers();
           return guest;
         }
       } catch (err) {
