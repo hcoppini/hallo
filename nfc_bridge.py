@@ -21,6 +21,10 @@ from smartcard.util import toHexString
 
 WS_HOST = "127.0.0.1"
 WS_PORT = 4567
+SUPABASE_WS_URL = (
+    "wss://awhegcdhdbamraikvvmy.supabase.co/realtime/v1/websocket"
+    "?apikey=sb_publishable_39K-_qrXWri8iWBg4nzuBQ_GCcUxT4q&vsn=1.0.0"
+)
 DEBOUNCE_SECONDS = 0.8  # quick debounce between identical taps
 LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "nfc_bridge.log")
 
@@ -149,6 +153,7 @@ class Clients:
 
 clients = Clients()
 ws_loop: asyncio.AbstractEventLoop | None = None
+supabase_ws = None
 active_reader = {"name": None}
 emitter_lock = threading.Lock()
 last_tap = {"uid": None, "time": 0.0}
@@ -157,16 +162,81 @@ last_tap = {"uid": None, "time": 0.0}
 def broadcast(payload: dict) -> None:
     if not ws_loop:
         return
+    # 1. Local WebSocket broadcast
     msg = json.dumps(payload)
     for ws in clients.sockets():
         asyncio.run_coroutine_threadsafe(_safe_send(ws, msg), ws_loop)
 
+    # 2. Supabase Cloud Realtime broadcast (for Vercel HTTPS / mobile / cross-device)
+    if payload.get("type") == "TAG_TAPPED" and supabase_ws:
+        sb_payload = json.dumps({
+            "topic": "realtime:party_nfc_relay",
+            "event": "broadcast",
+            "payload": {
+                "type": "broadcast",
+                "event": "nfc_tap_relay",
+                "payload": {
+                    "type": "TAG_TAPPED",
+                    "tabId": "acr122u_bridge",
+                    "timestamp": payload.get("detectedAt", int(time.time() * 1000)),
+                    "tagId": payload.get("tagId"),
+                    "rawId": payload.get("hardwareUid"),
+                }
+            },
+            "ref": uuid.uuid4().hex[:6]
+        })
+        asyncio.run_coroutine_threadsafe(_safe_send(supabase_ws, sb_payload), ws_loop)
+
 
 async def _safe_send(ws, msg):
+    if not ws:
+        return
     try:
         await ws.send(msg)
     except Exception:
         pass
+
+
+async def supabase_realtime_loop():
+    global supabase_ws
+    while True:
+        try:
+            async with websockets.connect(SUPABASE_WS_URL) as ws:
+                supabase_ws = ws
+                log("connected to Supabase Realtime cloud relay")
+                await ws.send(json.dumps({
+                    "topic": "realtime:party_nfc_relay",
+                    "event": "phx_join",
+                    "payload": {"config": {"broadcast": {"ack": False, "self": False}, "presence": {"key": ""}}},
+                    "ref": "1"
+                }))
+                ref_num = 2
+                while True:
+                    await asyncio.sleep(25)
+                    ref_num += 1
+                    await ws.send(json.dumps({
+                        "topic": "phoenix",
+                        "event": "heartbeat",
+                        "payload": {},
+                        "ref": str(ref_num)
+                    }))
+        except Exception as e:
+            supabase_ws = None
+            log(f"Supabase Realtime disconnected ({e}), reconnecting in 3s...")
+            await asyncio.sleep(3)
+
+
+def run_ws_server():
+    global ws_loop
+    ws_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(ws_loop)
+
+    async def main():
+        asyncio.create_task(supabase_realtime_loop())
+        async with websockets.serve(ws_handler, WS_HOST, WS_PORT):
+            await asyncio.Future()
+
+    ws_loop.run_until_complete(main())
 
 
 def emit_tap(tag_id: str, hardware_uid: str, source: str, detected_at: float, read_ms: float, ndef: str | None = None) -> str | None:
@@ -218,18 +288,6 @@ async def ws_handler(ws):
     finally:
         clients.remove(ws)
         log(f"browser disconnected id={cid} (total {len(clients.sockets())})")
-
-
-def run_ws_server():
-    global ws_loop
-    ws_loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(ws_loop)
-
-    async def main():
-        async with websockets.serve(ws_handler, WS_HOST, WS_PORT):
-            await asyncio.Future()
-
-    ws_loop.run_until_complete(main())
 
 
 # ----------------------------------------------------------------------------
