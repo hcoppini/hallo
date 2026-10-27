@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { usePartyStore } from '@/lib/store';
-import { Guest } from '@/lib/types';
+import { Guest, ImportedGuest } from '@/lib/types';
 import {
   CheckCircle2,
   Copy,
@@ -14,6 +14,7 @@ import {
   X,
   Smartphone,
   Link2,
+  Users,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -31,9 +32,11 @@ import { NfcWriterModal } from '@/components/NfcWriterModal';
 
 export default function DoorCheckInPage() {
   const router = useRouter();
-  const { guests, checkIn, settings } = usePartyStore();
+  const { guests, checkIn, settings, importedGuests } = usePartyStore();
   const { isAuthenticated } = useStaffAuth();
   const [isBatchEncoderOpen, setIsBatchEncoderOpen] = useState(false);
+  const [selectedRosterGuest, setSelectedRosterGuest] = useState<ImportedGuest | null>(null);
+  const [rosterSearchQuery, setRosterSearchQuery] = useState('');
 
   const nextFreeTag = useMemo(() => getNextFreeTagId(guests), [guests]);
   const [selectedTagId, setSelectedTagId] = useState<string>(() => {
@@ -111,6 +114,18 @@ export default function DoorCheckInPage() {
     );
   }, [admittedGuests, searchQuery]);
 
+  const pendingExpectedGuests = useMemo(() => {
+    return (importedGuests || []).filter(g => !g.is_checked_in);
+  }, [importedGuests]);
+
+  const filteredPendingExpectedGuests = useMemo(() => {
+    const q = rosterSearchQuery.trim().toLowerCase();
+    if (!q) return pendingExpectedGuests;
+    return pendingExpectedGuests.filter(
+      g => g.name.toLowerCase().includes(q) || (g.notes || '').toLowerCase().includes(q)
+    );
+  }, [pendingExpectedGuests, rosterSearchQuery]);
+
   const handleCopyText = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
     soundSystem.playApprovedSound();
@@ -127,6 +142,7 @@ export default function DoorCheckInPage() {
 
     setLastAdmittedGuest(admittedGuest);
     setSelectedTagId('');
+    setSelectedRosterGuest(null);
   };
 
   if (!isAuthenticated) {
@@ -215,8 +231,8 @@ export default function DoorCheckInPage() {
 
       {/* Main Responsive Layout: Check-In Console + Admitted Guests Roster */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 lg:gap-6 items-start">
-        {/* Left Column (6 cols): Streamlined No-Scroll Registration Console */}
-        <div className="lg:col-span-6 space-y-3">
+        {/* Left Column (6 cols): Streamlined Registration Console + Expected Guests Directory */}
+        <div className="lg:col-span-6 space-y-3 sm:space-y-4">
           <GuestOnboardingCard
             targetTagId={effectiveTargetTag}
             isUniversalLink={false}
@@ -225,7 +241,121 @@ export default function DoorCheckInPage() {
             onTargetTagChange={newTag => setSelectedTagId(newTag)}
             onCheckIn={checkIn}
             onComplete={handleOnboardingComplete}
+            selectedRosterGuest={selectedRosterGuest}
           />
+
+          {/* Expected Guests Roster Card (Balances the page and eliminates empty void!) */}
+          {importedGuests.length > 0 && (
+            <div className="glass-card p-4 sm:p-5 border border-black/12 shadow-md space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4 text-black/60" />
+                  <h3 className="font-display text-xl font-bold lowercase text-black leading-none">
+                    expected guests
+                  </h3>
+                </div>
+                <span className="font-mono text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                  {pendingExpectedGuests.length} awaiting arrival
+                </span>
+              </div>
+
+              {/* Simple Search Filter for Expected Guests */}
+              {pendingExpectedGuests.length > 0 && (
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-black/40 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="Search expected guests..."
+                    value={rosterSearchQuery}
+                    onChange={e => setRosterSearchQuery(e.target.value)}
+                    className="w-full pl-8 pr-7 py-2 bg-black/[0.035] border border-black/12 rounded-xl font-sans-clean text-xs text-black placeholder:text-black/35 outline-none focus:bg-white focus:border-black transition-colors"
+                  />
+                  {rosterSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setRosterSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-black/40 hover:text-black cursor-pointer"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Expected List */}
+              <div className="space-y-1.5 max-h-72 sm:max-h-80 lg:max-h-[380px] overflow-y-auto pr-1 no-scrollbar">
+                {filteredPendingExpectedGuests.length === 0 ? (
+                  <div className="text-center py-8 text-xs font-sans-clean text-black/45 lowercase">
+                    {pendingExpectedGuests.length === 0
+                      ? '🎉 all expected guests have arrived!'
+                      : 'no expected guests match the search'}
+                  </div>
+                ) : (
+                  filteredPendingExpectedGuests.map(guest => {
+                    const isSelected = selectedRosterGuest?.id === guest.id;
+                    return (
+                      <div
+                        key={guest.id}
+                        onClick={() => {
+                          soundSystem.vibrate(10);
+                          setSelectedRosterGuest(guest);
+                        }}
+                        className={`p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                          isSelected
+                            ? 'bg-black text-white border-black shadow-xs'
+                            : 'bg-white hover:bg-black/[0.02] border-black/8 text-black'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-sans-clean text-xs font-bold truncate">
+                              {guest.name}
+                            </span>
+                            <span
+                              className={`font-mono text-[9px] font-bold px-1.5 py-0.2 rounded uppercase shrink-0 ${
+                                guest.category === 'vip'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : guest.category === 'driver_minor'
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : 'bg-black/6 text-black/60'
+                              }`}
+                            >
+                              {guest.category === 'vip'
+                                ? 'VIP'
+                                : guest.category === 'driver_minor'
+                                ? 'Driver'
+                                : 'Standard'}
+                            </span>
+                          </div>
+                          {guest.notes && (
+                            <p
+                              className={`text-[10px] font-sans-clean truncate mt-0.5 ${
+                                isSelected ? 'text-white/70' : 'text-black/50'
+                              }`}
+                            >
+                              {guest.notes}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span
+                            className={`py-1 px-2.5 rounded-lg text-xs font-sans-clean font-semibold flex items-center gap-1 transition-all ${
+                              isSelected
+                                ? 'bg-white text-black font-bold'
+                                : 'bg-black/5 text-black/75'
+                            }`}
+                          >
+                            <span>{isSelected ? 'ready' : 'select'}</span>
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Right Column (6 cols): Admitted Guests Registry (No categories/tags clutter) */}

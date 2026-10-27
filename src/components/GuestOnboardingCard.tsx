@@ -36,6 +36,7 @@ interface GuestOnboardingCardProps {
   onTargetTagChange?: (newTagId: string) => void;
   onCheckIn: (input: DoorCheckInInput) => Promise<Guest>;
   onComplete?: (guest: Guest, wroteNfc: boolean) => void;
+  selectedRosterGuest?: ImportedGuest | null;
 }
 
 export function GuestOnboardingCard({
@@ -46,6 +47,7 @@ export function GuestOnboardingCard({
   onTargetTagChange,
   onCheckIn,
   onComplete,
+  selectedRosterGuest,
 }: GuestOnboardingCardProps) {
   const nameInputRef = useRef<HTMLInputElement>(null);
   const nextFreeTag = useMemo(() => getNextFreeTagId(guests), [guests]);
@@ -169,6 +171,23 @@ export function GuestOnboardingCard({
       setNotes(stripUidFromNotes(existingGuestForSlot.notes));
     }
   }, [existingGuestForSlot, settings.default_drink_limit]);
+
+  // Pre-populate if a guest was selected from the expected roster
+  useEffect(() => {
+    if (selectedRosterGuest) {
+      setName(selectedRosterGuest.name);
+      setCategory(selectedRosterGuest.category || 'standard');
+      if (selectedRosterGuest.notes) {
+        setNotes(selectedRosterGuest.notes);
+        setShowAdvanced(true);
+      }
+      setIsDropdownOpen(false);
+      setHighlightedIndex(-1);
+      setTimeout(() => {
+        nameInputRef.current?.focus();
+      }, 50);
+    }
+  }, [selectedRosterGuest]);
 
   const executeOnboarding = async (shouldWriteNfc: boolean) => {
     setErrorMsg(null);
@@ -297,23 +316,14 @@ export function GuestOnboardingCard({
               <Users className="w-3.5 h-3.5 text-black/45" />
               <span>{pendingRosterCount} expected guest{pendingRosterCount === 1 ? '' : 's'} on roster</span>
             </span>
-            <button
-              type="button"
-              onClick={() => {
-                setIsDropdownOpen(prev => !prev);
-                nameInputRef.current?.focus();
-              }}
-              className="text-black/60 hover:text-black underline cursor-pointer font-medium"
-            >
-              {isDropdownOpen ? 'hide roster' : 'browse roster'}
-            </button>
+            <span className="text-[10px] text-black/45 lowercase">type to autofill or select below</span>
           </div>
         )}
 
         {/* Responsive Name & Category Dropdown */}
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
-          {/* Guest Name Input with Live Autofill */}
-          <div ref={dropdownRef} className="sm:col-span-8 relative">
+          {/* Guest Name Input */}
+          <div className="sm:col-span-8 relative">
             <input
               ref={nameInputRef}
               type="text"
@@ -327,7 +337,7 @@ export function GuestOnboardingCard({
                 setHighlightedIndex(-1);
               }}
               onFocus={() => {
-                if (importedGuests.length > 0) {
+                if (importedGuests.length > 0 && name.trim()) {
                   setIsDropdownOpen(true);
                 }
               }}
@@ -349,90 +359,6 @@ export function GuestOnboardingCard({
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
-
-            {/* Autocomplete Suggestions Popover */}
-            {isDropdownOpen && importedGuests.length > 0 && (
-              <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white rounded-2xl shadow-2xl border border-black/15 overflow-hidden animate-in fade-in zoom-in-95 duration-100 max-h-60 overflow-y-auto">
-                {suggestions.length > 0 ? (
-                  <div className="p-1 divide-y divide-black/5">
-                    <div className="px-3 py-1.5 text-[10px] font-sans-clean font-bold uppercase tracking-wider text-black/45 flex items-center justify-between bg-black/[0.02]">
-                      <span>matching guests ({suggestions.length})</span>
-                      <span className="font-normal lowercase">arrow keys or click to autofill</span>
-                    </div>
-                    {suggestions.map((suggestion, index) => {
-                      const isHighlighted = highlightedIndex === index;
-                      return (
-                        <button
-                          key={suggestion.id}
-                          type="button"
-                          onMouseEnter={() => setHighlightedIndex(index)}
-                          onClick={() => selectRosterGuest(suggestion)}
-                          className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center justify-between gap-2 transition-colors cursor-pointer ${
-                            isHighlighted ? 'bg-black text-white' : 'hover:bg-black/5 text-black'
-                          }`}
-                        >
-                          <div className="min-w-0">
-                            <span className="font-sans-clean text-xs sm:text-sm font-bold block truncate">
-                              {suggestion.name}
-                            </span>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              {suggestion.category === 'vip' && (
-                                <span className={`text-[9px] font-sans-clean px-1.5 py-0.2 rounded font-bold uppercase ${
-                                  isHighlighted ? 'bg-amber-400 text-black' : 'bg-amber-100 text-amber-900'
-                                }`}>
-                                  VIP
-                                </span>
-                              )}
-                              {suggestion.category === 'driver_minor' && (
-                                <span className={`text-[9px] font-sans-clean px-1.5 py-0.2 rounded font-bold uppercase ${
-                                  isHighlighted ? 'bg-blue-300 text-black' : 'bg-blue-100 text-blue-900'
-                                }`}>
-                                  Driver
-                                </span>
-                              )}
-                              {suggestion.notes && (
-                                <span className={`text-[11px] truncate max-w-[120px] ${
-                                  isHighlighted ? 'text-white/70' : 'text-black/40'
-                                }`}>
-                                  {suggestion.notes}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="shrink-0 flex items-center gap-1.5">
-                            {suggestion.is_checked_in ? (
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
-                                isHighlighted ? 'bg-white/20 text-white' : 'bg-black/5 text-black/50'
-                              }`}>
-                                {suggestion.checked_in_tag_id || 'Checked in'}
-                              </span>
-                            ) : (
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-sans-clean font-semibold flex items-center gap-1 ${
-                                isHighlighted ? 'bg-emerald-400 text-black' : 'bg-emerald-50 text-emerald-800'
-                              }`}>
-                                <Check className="w-2.5 h-2.5" />
-                                <span>autofill</span>
-                              </span>
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  /* If no name in roster matches */
-                  <div className="p-3 text-center bg-black/[0.01]">
-                    <span className="text-xs font-sans-clean text-black/60 block font-semibold">
-                      &ldquo;{name}&rdquo; is not on the imported roster
-                    </span>
-                    <span className="text-[11px] font-sans-clean text-black/40 block mt-0.5">
-                      Press Enter or click Register to enter them automatically.
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
 
           {/* Category Dropdown (Standard pre-selected, VIP, Driver) */}
@@ -453,6 +379,103 @@ export function GuestOnboardingCard({
             <ChevronDown className="w-4 h-4 text-black/50 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
         </div>
+
+        {/* IN-FLOW Autocomplete Suggestions: smoothly expands between input and button. NEVER COVERS THE BUTTON! */}
+        {isDropdownOpen && importedGuests.length > 0 && name.trim().length > 0 && (
+          <div
+            ref={dropdownRef}
+            className="rounded-2xl border border-black/15 bg-white overflow-hidden shadow-xs animate-in fade-in duration-100 max-h-48 overflow-y-auto"
+          >
+            {suggestions.length > 0 ? (
+              <div className="p-1 divide-y divide-black/5">
+                <div className="px-3 py-1.5 text-[10px] font-sans-clean font-bold uppercase tracking-wider text-black/45 flex items-center justify-between bg-black/[0.02]">
+                  <span>matching guests ({suggestions.length})</span>
+                  <span className="font-normal lowercase">click or press Enter to autofill</span>
+                </div>
+                {suggestions.map((suggestion, index) => {
+                  const isHighlighted = highlightedIndex === index;
+                  return (
+                    <button
+                      key={suggestion.id}
+                      type="button"
+                      onMouseEnter={() => setHighlightedIndex(index)}
+                      onClick={() => selectRosterGuest(suggestion)}
+                      className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                        isHighlighted ? 'bg-black text-white' : 'hover:bg-black/5 text-black'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <span className="font-sans-clean text-xs sm:text-sm font-bold block truncate">
+                          {suggestion.name}
+                        </span>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          {suggestion.category === 'vip' && (
+                            <span
+                              className={`text-[9px] font-sans-clean px-1.5 py-0.2 rounded font-bold uppercase ${
+                                isHighlighted ? 'bg-amber-400 text-black' : 'bg-amber-100 text-amber-900'
+                              }`}
+                            >
+                              VIP
+                            </span>
+                          )}
+                          {suggestion.category === 'driver_minor' && (
+                            <span
+                              className={`text-[9px] font-sans-clean px-1.5 py-0.2 rounded font-bold uppercase ${
+                                isHighlighted ? 'bg-blue-300 text-black' : 'bg-blue-100 text-blue-900'
+                              }`}
+                            >
+                              Driver
+                            </span>
+                          )}
+                          {suggestion.notes && (
+                            <span
+                              className={`text-[11px] truncate max-w-[120px] ${
+                                isHighlighted ? 'text-white/70' : 'text-black/40'
+                              }`}
+                            >
+                              {suggestion.notes}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="shrink-0 flex items-center gap-1.5">
+                        {suggestion.is_checked_in ? (
+                          <span
+                            className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
+                              isHighlighted ? 'bg-white/20 text-white' : 'bg-black/5 text-black/50'
+                            }`}
+                          >
+                            {suggestion.checked_in_tag_id || 'Checked in'}
+                          </span>
+                        ) : (
+                          <span
+                            className={`text-[10px] px-2 py-0.5 rounded-full font-sans-clean font-semibold flex items-center gap-1 ${
+                              isHighlighted ? 'bg-emerald-400 text-black' : 'bg-emerald-50 text-emerald-800'
+                            }`}
+                          >
+                            <Check className="w-2.5 h-2.5" />
+                            <span>autofill</span>
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              /* If no name in roster matches */
+              <div className="p-2.5 text-center bg-black/[0.01]">
+                <span className="text-xs font-sans-clean text-black/60 block font-semibold">
+                  &ldquo;{name}&rdquo; is not on the imported roster
+                </span>
+                <span className="text-[11px] font-sans-clean text-black/40 block mt-0.5">
+                  Click &quot;register guest&quot; below to add them as a walk-in attendee.
+                </span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Primary Action Button (Zero scroll, visible immediately) */}
         <button
