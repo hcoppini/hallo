@@ -128,16 +128,16 @@ export function BarmanDisplay({
   };
 
   return (
-    <div className="w-full space-y-6 lg:space-y-8 glass-card p-6 sm:p-8 lg:p-9 border border-black/12 shadow-lg">
+    <div className="w-full space-y-4 lg:space-y-5 glass-card p-4 sm:p-6 lg:p-7 border border-black/12 shadow-lg">
       {/* ================================================================ */}
       {/* 1. CUSTOMER IDENTITY & PROGRESS SECTION                          */}
       {/* ================================================================ */}
-      <section className="space-y-4">
+      <section className="space-y-3">
         {activeGuest ? (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-black/10">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-black/10">
               <div className="flex items-center gap-2">
-                <span className="font-mono text-xs font-bold px-2.5 py-1 rounded-lg bg-black text-white shadow-xs">
+                <span className="font-mono text-xs font-bold px-2.5 py-0.5 rounded-lg bg-black text-white shadow-xs">
                   #{slotNumber}
                 </span>
                 <span className="font-sans-clean text-xs font-semibold text-black/60">
@@ -160,10 +160,10 @@ export function BarmanDisplay({
                   <button
                     type="button"
                     onClick={onClearCustomer}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl hover:bg-black/5 text-black/60 hover:text-black transition-colors font-sans-clean text-xs font-semibold cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl hover:bg-black/5 text-black/60 hover:text-black transition-colors font-sans-clean text-xs font-semibold cursor-pointer"
                     title="Clear customer (Esc)"
                   >
-                    <X className="w-4 h-4" />
+                    <X className="w-3.5 h-3.5" />
                     <span>clear bar (esc)</span>
                   </button>
                 )}
@@ -176,12 +176,12 @@ export function BarmanDisplay({
                 <h2
                   onClick={onOpenSearch}
                   title="Click to search or switch customer"
-                  className="font-display text-4xl sm:text-5xl lg:text-6xl font-bold lowercase text-black leading-none tracking-tight truncate cursor-pointer hover:opacity-75 transition-opacity"
+                  className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold lowercase text-black leading-none tracking-tight truncate cursor-pointer hover:opacity-75 transition-opacity"
                 >
                   {customerName}
                 </h2>
                 {cleanNotes && (
-                  <p className="mt-1.5 text-xs font-sans-clean text-black/60">
+                  <p className="mt-1 text-xs font-sans-clean text-black/60 truncate">
                     {cleanNotes}
                   </p>
                 )}
@@ -189,17 +189,17 @@ export function BarmanDisplay({
 
               <div className="text-right shrink-0">
                 <div
-                  className={`font-display text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-none ${
+                  className={`font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight leading-none ${
                     isLimitReached ? 'text-red-600' : 'text-black'
                   }`}
                 >
                   {drinksConsumed}
-                  <span className="text-2xl sm:text-3xl text-black/25 font-normal">
+                  <span className="text-xl sm:text-2xl text-black/25 font-normal">
                     /{isVip ? '∞' : effectiveLimit}
                   </span>
                 </div>
                 <span
-                  className={`font-sans-clean text-xs font-semibold tracking-wider lowercase block mt-1.5 ${
+                  className={`font-sans-clean text-[11px] font-semibold tracking-wider lowercase block mt-1 ${
                     isLimitReached ? 'text-red-600 font-bold' : 'text-black/50'
                   }`}
                 >
@@ -213,7 +213,7 @@ export function BarmanDisplay({
             </div>
 
             {/* High-Contrast Progress Bar */}
-            <div className="w-full h-3 rounded-full bg-black/[0.05] border border-black/15 p-0.5 overflow-hidden">
+            <div className="w-full h-2.5 rounded-full bg-black/[0.05] border border-black/15 p-0.5 overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all duration-300 ${
                   isLimitReached ? 'bg-red-600' : 'bg-black'
@@ -224,15 +224,15 @@ export function BarmanDisplay({
           </>
         ) : (
           /* Clean Empty / Idle State */
-          <div className="py-8 sm:py-10 text-center space-y-2 border border-dashed border-black/15 rounded-2xl bg-black/[0.02]">
-            <div className="w-12 h-12 rounded-2xl bg-black/5 border border-black/10 flex items-center justify-center mx-auto text-black/50 mb-2">
-              <GlassWater className="w-6 h-6" />
+          <div className="py-5 sm:py-6 text-center space-y-1.5 border border-dashed border-black/15 rounded-2xl bg-black/[0.02]">
+            <div className="w-10 h-10 rounded-xl bg-black/5 border border-black/10 flex items-center justify-center mx-auto text-black/50 mb-1.5">
+              <GlassWater className="w-5 h-5" />
             </div>
-            <h3 className="font-display text-2xl sm:text-3xl font-bold lowercase text-black">
+            <h3 className="font-display text-xl sm:text-2xl font-bold lowercase text-black">
               bar station ready.
             </h3>
-            <p className="font-sans-clean text-xs sm:text-sm text-black/50 lowercase max-w-sm mx-auto">
-              no customer active. search by name or wristband # above, or tap an nfc band.
+            <p className="font-sans-clean text-xs text-black/50 lowercase max-w-sm mx-auto">
+              no customer active. select a guest on the right, or tap an nfc band.
             </p>
           </div>
         )}
@@ -241,8 +241,8 @@ export function BarmanDisplay({
       {/* ================================================================ */}
       {/* 2. TACTILE POS DRINK ACTION WORKSPACE                            */}
       {/* ================================================================ */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between pb-2 border-b border-black/10">
+      <section className="space-y-3">
+        <div className="flex items-center justify-between pb-1.5 border-b border-black/10">
           <h3 className="font-sans-clean text-xs font-semibold lowercase tracking-widest text-black/50">
             select drink &amp; pour:
           </h3>
@@ -251,8 +251,8 @@ export function BarmanDisplay({
           </span>
         </div>
 
-        {/* Responsive POS Drink Grid (Dynamic drinks from party menu with shortcut indicators) */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-2.5 sm:gap-3">
+        {/* Responsive POS Drink Grid (Dynamic drinks from party menu with large prominent numbers) */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-2 sm:gap-2.5">
           {availableDrinks.map(({ type, name, category }, idx) => {
             const Icon = categoryIcons[category] || GlassWater;
             const isSelected = selectedDrinkType === type;
@@ -263,24 +263,26 @@ export function BarmanDisplay({
                 key={type}
                 type="button"
                 onClick={() => onDrinkTypeChange(type as DrinkType)}
-                className={`p-3.5 sm:p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between text-left group active:scale-[0.98] ${
+                className={`p-3 sm:p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between text-left group active:scale-[0.98] ${
                   isSelected
                     ? 'bg-black text-white border-black shadow-md'
                     : 'bg-white hover:bg-black/[0.04] text-black border-black/12 hover:border-black/30'
                 }`}
               >
-                <div className="flex items-center justify-between mb-2">
-                  <Icon
-                    className={`w-5 h-5 ${
-                      isSelected ? 'text-white' : 'text-black/60 group-hover:text-black'
-                    }`}
-                  />
+                <div className="flex items-start justify-between gap-1 mb-2">
+                  <div className="pt-0.5">
+                    <Icon
+                      className={`w-4 h-4 sm:w-5 sm:h-5 ${
+                        isSelected ? 'text-white' : 'text-black/60 group-hover:text-black'
+                      }`}
+                    />
+                  </div>
                   {shortcutNum <= 9 && (
                     <span
-                      className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                      className={`font-mono font-black text-xl sm:text-2xl leading-none px-2 py-0.5 rounded-lg tracking-tight select-none ${
                         isSelected
-                          ? 'bg-white/20 text-white'
-                          : 'bg-black/6 text-black/50 group-hover:text-black'
+                          ? 'bg-white/20 text-white ring-1 ring-white/30'
+                          : 'bg-black text-white shadow-xs'
                       }`}
                     >
                       #{shortcutNum}
@@ -305,32 +307,32 @@ export function BarmanDisplay({
         </div>
 
         {/* Large Tactile POS Primary Action Button */}
-        <div className="pt-2">
+        <div className="pt-1">
           {!activeGuest ? (
             <button
               type="button"
               onClick={onOpenSearch}
-              className="btn-premium-primary w-full py-4 sm:py-5 text-sm sm:text-base gap-2.5 cursor-pointer shadow-md"
+              className="btn-premium-primary w-full py-3.5 sm:py-4 text-xs sm:text-sm gap-2.5 cursor-pointer shadow-md"
             >
-              <Search className="w-5 h-5" />
+              <Search className="w-4 h-4" />
               <span>select guest to serve {selectedDrinkType}</span>
             </button>
           ) : isLimitReached ? (
-            <div className="flex flex-col sm:flex-row items-center gap-3 w-full">
+            <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full">
               <button
                 type="button"
                 disabled
-                className="flex-1 py-4 sm:py-5 px-6 rounded-2xl bg-red-50 text-red-700 border border-red-200 font-sans-clean text-sm font-bold tracking-wider lowercase flex items-center justify-center gap-2 cursor-not-allowed"
+                className="flex-1 py-3.5 sm:py-4 px-5 rounded-2xl bg-red-50 text-red-700 border border-red-200 font-sans-clean text-xs sm:text-sm font-bold tracking-wider lowercase flex items-center justify-center gap-2 cursor-not-allowed"
               >
-                <Ban className="w-5 h-5" />
+                <Ban className="w-4 h-4" />
                 <span>drink limit reached ({drinksConsumed}/{effectiveLimit})</span>
               </button>
               <button
                 type="button"
                 onClick={() => setIsPinModalOpen(true)}
-                className="w-full sm:w-auto py-4 sm:py-5 px-6 rounded-2xl bg-white text-black/80 hover:text-black border border-black/20 font-sans-clean text-xs font-bold tracking-wider lowercase flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs"
+                className="w-full sm:w-auto py-3.5 sm:py-4 px-5 rounded-2xl bg-white text-black/80 hover:text-black border border-black/20 font-sans-clean text-xs font-bold tracking-wider lowercase flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs"
               >
-                <Lock className="w-4 h-4" />
+                <Lock className="w-3.5 h-3.5" />
                 <span>supervisor override (+1)</span>
               </button>
             </div>
@@ -338,10 +340,10 @@ export function BarmanDisplay({
             <button
               type="button"
               onClick={() => onManualServe(activeGuest.tag_id, selectedDrinkType)}
-              className="btn-premium-primary w-full py-4 sm:py-5 text-sm sm:text-base gap-3 cursor-pointer shadow-md justify-between px-6 sm:px-8 group"
+              className="btn-premium-primary w-full py-3.5 sm:py-4 text-xs sm:text-sm gap-2.5 cursor-pointer shadow-md justify-between px-5 sm:px-7 group"
             >
               <div className="flex items-center gap-2.5">
-                <CheckCircle2 className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition-transform" />
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform" />
                 <span>
                   {drinksConsumed > 0
                     ? `serve another ${selectedDrinkType} to ${customerName}`

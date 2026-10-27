@@ -90,6 +90,61 @@ function initRelay() {
         .subscribe();
     } catch {}
   }
+
+  // 4. Local ACR122U Hardware Bridge (WebSocket on 127.0.0.1:4567)
+  connectLocalNfcBridge();
+
+  // 5. Native Desktop Window Tap Hook
+  (window as any).__onNfcTap = (tagId: string, hardwareUid?: string) => {
+    if (!tagId) return;
+    notifyListeners({
+      type: 'TAG_TAPPED',
+      tagId,
+      rawId: hardwareUid || tagId,
+      timestamp: Date.now(),
+      tabId: 'desktop_window_direct',
+    });
+  };
+}
+
+let localWs: WebSocket | null = null;
+let wsReconnectTimeout: any = null;
+
+function connectLocalNfcBridge() {
+  if (typeof window === 'undefined') return;
+  try {
+    localWs = new WebSocket('ws://127.0.0.1:4567');
+    localWs.onopen = () => {
+      // connected to local ACR122U hardware bridge
+    };
+    localWs.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data && (data.tagId || data.tag || data.uid)) {
+          const incomingTag = data.tagId || data.tag || data.uid;
+          notifyListeners({
+            type: 'TAG_TAPPED',
+            tagId: incomingTag,
+            rawId: data.hardwareUid || data.uid || incomingTag,
+            timestamp: Date.now(),
+            tabId: 'acr122u_local_bridge',
+          });
+        }
+      } catch {}
+    };
+    localWs.onclose = () => {
+      localWs = null;
+      if (!wsReconnectTimeout) {
+        wsReconnectTimeout = setTimeout(() => {
+          wsReconnectTimeout = null;
+          connectLocalNfcBridge();
+        }, 3000);
+      }
+    };
+    localWs.onerror = () => {
+      localWs?.close();
+    };
+  } catch {}
 }
 
 function notifyListeners(msg: TagRelayMessage) {

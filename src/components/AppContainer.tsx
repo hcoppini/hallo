@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 export function AppContainer({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isProjector = pathname === '/projector';
+  const isCompactView = pathname === '/barman' || pathname === '/door';
 
   if (isProjector) {
     return (
@@ -16,7 +17,11 @@ export function AppContainer({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <main className="flex-1 pb-12 mx-auto w-full max-w-xl md:max-w-4xl lg:max-w-6xl xl:max-w-7xl 2xl:max-w-[1440px] px-4 sm:px-6 lg:px-8 transition-[max-width,padding] duration-200">
+    <main
+      className={`flex-1 mx-auto w-full max-w-xl md:max-w-4xl lg:max-w-6xl xl:max-w-7xl 2xl:max-w-[1440px] px-3 sm:px-6 lg:px-8 transition-[max-width,padding] duration-200 ${
+        isCompactView ? 'pb-3 sm:pb-4 lg:pb-5' : 'pb-12'
+      }`}
+    >
       {children}
     </main>
   );

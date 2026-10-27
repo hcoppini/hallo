@@ -3,26 +3,17 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { usePartyStore } from '@/lib/store';
-import { Guest, GuestCategory } from '@/lib/types';
+import { Guest } from '@/lib/types';
 import {
-  UserCheck,
   CheckCircle2,
-  LogOut,
-  ShieldCheck,
-  Wifi,
   Copy,
   Check,
   ExternalLink,
   Search,
-  Sparkles,
-  Tag,
-  Link2,
   Edit3,
-  Smartphone,
-  AlertTriangle,
-  LayoutGrid,
-  List,
   X,
+  Smartphone,
+  Link2,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -37,14 +28,11 @@ import { subscribeToTagRelay, sendTagRelayMessage } from '@/lib/tag-relay';
 import { StationLockScreen } from '@/components/StationLockScreen';
 import { GuestOnboardingCard } from '@/components/GuestOnboardingCard';
 import { NfcWriterModal } from '@/components/NfcWriterModal';
-import { calculateEffectiveLimit } from '@/lib/party-engine';
-
-type DoorCategoryFilter = 'all' | GuestCategory;
 
 export default function DoorCheckInPage() {
   const router = useRouter();
   const { guests, checkIn, settings } = usePartyStore();
-  const { isAuthenticated, logout } = useStaffAuth();
+  const { isAuthenticated } = useStaffAuth();
   const [isBatchEncoderOpen, setIsBatchEncoderOpen] = useState(false);
 
   const nextFreeTag = useMemo(() => getNextFreeTagId(guests), [guests]);
@@ -62,10 +50,6 @@ export default function DoorCheckInPage() {
   const [lastAdmittedGuest, setLastAdmittedGuest] = useState<Guest | null>(null);
   const [relayedTagNotice, setRelayedTagNotice] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState<DoorCategoryFilter>('all');
-  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
-
-  // Clipboard copy feedback states
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const effectiveTargetTag = useMemo(() => {
@@ -74,10 +58,6 @@ export default function DoorCheckInPage() {
     }
     return selectedTagId;
   }, [selectedTagId, nextFreeTag]);
-
-  const effectiveSlotNumber = useMemo(() => {
-    return parseTagId(effectiveTargetTag).tagNumber ?? 1;
-  }, [effectiveTargetTag]);
 
   // Mark staff phone in 'door' station mode
   useEffect(() => {
@@ -122,37 +102,14 @@ export default function DoorCheckInPage() {
 
   const filteredAdmittedGuests = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    let list = admittedGuests;
-
-    if (categoryFilter !== 'all') {
-      list = list.filter(g => g.category === categoryFilter);
-    }
-
-    if (!q) return list;
-    return list.filter(
+    if (!q) return admittedGuests;
+    return admittedGuests.filter(
       g =>
         (g.name || '').toLowerCase().includes(q) ||
         g.tag_id.toLowerCase().includes(q) ||
         (g.notes || '').toLowerCase().includes(q)
     );
-  }, [admittedGuests, searchQuery, categoryFilter]);
-
-  const driverCount = useMemo(
-    () => admittedGuests.filter(g => g.category === 'driver_minor').length,
-    [admittedGuests]
-  );
-  const vipCount = useMemo(
-    () => admittedGuests.filter(g => g.category === 'vip').length,
-    [admittedGuests]
-  );
-  const standardCount = useMemo(
-    () => admittedGuests.filter(g => g.category === 'standard').length,
-    [admittedGuests]
-  );
-  const freeSlotsCount = useMemo(
-    () => guests.filter(g => !g.is_entered && !g.name).length,
-    [guests]
-  );
+  }, [admittedGuests, searchQuery]);
 
   const handleCopyText = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -163,16 +120,15 @@ export default function DoorCheckInPage() {
 
   const handleOnboardingComplete = (admittedGuest: Guest) => {
     confetti({
-      particleCount: 55,
-      spread: 65,
-      origin: { y: 0.7 },
+      particleCount: 45,
+      spread: 60,
+      origin: { y: 0.65 },
     });
 
     setLastAdmittedGuest(admittedGuest);
     setSelectedTagId('');
   };
 
-  // If not authenticated, show professional StationLockScreen with immediate keyboard typing
   if (!isAuthenticated) {
     return (
       <StationLockScreen
@@ -184,106 +140,83 @@ export default function DoorCheckInPage() {
   }
 
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  const currentShortUrl = `${origin}/t/${effectiveSlotNumber}`;
   const lastAdmittedSlotNum = lastAdmittedGuest
     ? parseTagId(lastAdmittedGuest.tag_id).tagNumber ?? lastAdmittedGuest.tag_id
     : null;
 
   return (
-    <div className="w-full py-2 sm:py-4 lg:py-6 space-y-4 lg:space-y-6 animate-in fade-in duration-150">
-      {/* Live Relay Notice (Only appears when wristband tapped remotely) */}
+    <div className="w-full py-2 sm:py-3 lg:py-4 space-y-3 sm:space-y-4 animate-in fade-in duration-150">
+      {/* Live Relay Notice */}
       {relayedTagNotice && (
-        <div className="p-3 rounded-2xl bg-emerald-600 text-white text-xs font-sans-clean font-bold text-center shadow-lg animate-in fade-in duration-150">
+        <div className="p-2.5 rounded-2xl bg-emerald-600 text-white text-xs font-sans-clean font-bold text-center shadow-lg animate-in fade-in duration-150">
           ⚡ {relayedTagNotice}
         </div>
       )}
 
-      {/* Main 2-Column Onboarding & Registry Workspace */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-8 items-start">
-        {/* Left Column (7 cols): Primary Wristband Onboarding Console */}
-        <div className="lg:col-span-7 xl:col-span-7 space-y-4">
-          {/* Celebratory Last Admitted Banner (Dismissible) */}
-          {lastAdmittedGuest && (
-            <div className="p-4 sm:p-5 rounded-3xl bg-emerald-600 text-white shadow-xl space-y-3 animate-in fade-in zoom-in-95 duration-200">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-5 h-5 text-white shrink-0" />
-                  <span className="font-mono text-[10px] font-bold uppercase tracking-widest bg-white/20 px-2.5 py-0.5 rounded-full">
-                    ONBOARDED • #{lastAdmittedSlotNum} ({lastAdmittedGuest.tag_id})
-                  </span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-[11px] text-white/80 hidden sm:inline">
-                    next up: {nextFreeTag}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setLastAdmittedGuest(null)}
-                    className="p-1 rounded-full text-white/70 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-                    title="Dismiss"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
+      {/* Slim Non-Disruptive Check-In Confirmation Toast */}
+      {lastAdmittedGuest && (
+        <div className="p-3 rounded-2xl bg-emerald-600 text-white shadow-lg flex items-center justify-between gap-3 animate-in fade-in zoom-in-95 duration-150">
+          <div className="flex items-center gap-2 min-w-0">
+            <CheckCircle2 className="w-4 h-4 text-white shrink-0" />
+            <span className="font-sans-clean text-xs font-bold truncate">
+              {lastAdmittedGuest.name} registered
+            </span>
+            <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-white/20 uppercase font-bold shrink-0">
+              {lastAdmittedGuest.category === 'vip'
+                ? 'VIP'
+                : lastAdmittedGuest.category === 'driver_minor'
+                ? 'Driver'
+                : 'Standard'}
+            </span>
+          </div>
 
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <h3 className="font-display text-2xl font-bold lowercase leading-tight">
-                    {lastAdmittedGuest.name}
-                  </h3>
-                  <p className="font-sans-clean text-xs text-white/90">
-                    Sticker URL: <strong className="font-mono">/t/{lastAdmittedSlotNum}</strong> •{' '}
-                    {lastAdmittedGuest.category === 'vip'
-                      ? 'VIP Host'
-                      : lastAdmittedGuest.category === 'driver_minor'
-                      ? '0 Alc Driver'
-                      : `${calculateEffectiveLimit(lastAdmittedGuest, settings)} drinks limit`}
-                  </p>
-                </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() =>
+                handleCopyText(
+                  `${origin}/t/${lastAdmittedSlotNum}`,
+                  `last-${lastAdmittedGuest.tag_id}`
+                )
+              }
+              className="py-1 px-2.5 rounded-lg bg-white/20 hover:bg-white/30 text-white font-sans-clean font-bold text-xs flex items-center gap-1 transition-all cursor-pointer"
+              title="Copy guest pass link"
+            >
+              {copiedKey === `last-${lastAdmittedGuest.tag_id}` ? (
+                <Check className="w-3.5 h-3.5" />
+              ) : (
+                <Copy className="w-3.5 h-3.5" />
+              )}
+              <span className="hidden sm:inline">Pass Link</span>
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                router.push(
+                  `/t/${encodeURIComponent(lastAdmittedGuest.tag_id)}?onboarded=1`
+                )
+              }
+              className="py-1 px-2.5 rounded-lg bg-white text-black hover:bg-white/90 font-sans-clean font-bold text-xs flex items-center gap-1 transition-all cursor-pointer"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Open</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setLastAdmittedGuest(null)}
+              className="p-1 rounded-lg text-white/70 hover:text-white cursor-pointer"
+              title="Dismiss"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleCopyText(
-                        `${origin}/t/${lastAdmittedSlotNum}`,
-                        `last-${lastAdmittedGuest.tag_id}`
-                      )
-                    }
-                    className="py-2 px-3 rounded-xl bg-white/20 hover:bg-white/30 text-white font-sans-clean font-bold text-xs flex items-center gap-1.5 border border-white/25 transition-all cursor-pointer"
-                  >
-                    {copiedKey === `last-${lastAdmittedGuest.tag_id}` ? (
-                      <>
-                        <Check className="w-3.5 h-3.5" />
-                        <span>Copied!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>Copy Link</span>
-                      </>
-                    )}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      router.push(
-                        `/t/${encodeURIComponent(lastAdmittedGuest.tag_id)}?onboarded=1`
-                      )
-                    }
-                    className="py-2 px-3 rounded-xl bg-white text-black hover:bg-white/90 font-sans-clean font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Open Pass</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* 1. PRIMARY HERO: Unified Guest Onboarding Card */}
+      {/* Main Responsive Layout: Check-In Console + Admitted Guests Roster */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 lg:gap-6 items-start">
+        {/* Left Column (6 cols): Streamlined No-Scroll Registration Console */}
+        <div className="lg:col-span-6 space-y-3">
           <GuestOnboardingCard
             targetTagId={effectiveTargetTag}
             isUniversalLink={false}
@@ -293,370 +226,111 @@ export default function DoorCheckInPage() {
             onCheckIn={checkIn}
             onComplete={handleOnboardingComplete}
           />
-
-          {/* 2. MOVED DOWN: Door Telemetry Stats Strip */}
-          <div className="space-y-2 pt-2">
-            <div className="flex items-center justify-between px-1">
-              <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-black/45">
-                door capacity & stats
-              </span>
-              <span className="text-[11px] font-sans-clean text-black/50 lowercase">
-                {freeSlotsCount} wristbands free
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
-              <div className="glass-card p-3.5 sm:p-4 border border-black/10">
-                <div className="flex items-center justify-between mb-0.5">
-                  <span className="font-sans-clean text-[10px] font-bold uppercase tracking-wider text-black/45">
-                    admitted
-                  </span>
-                  <UserCheck className="w-3.5 h-3.5 text-black/40" />
-                </div>
-                <div className="font-display text-2xl sm:text-3xl font-bold text-black leading-none">
-                  {admittedGuests.length}
-                  <span className="text-xs sm:text-sm text-black/35 font-normal">/{guests.length}</span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setSelectedTagId(nextFreeTag)}
-                className="glass-card p-3.5 sm:p-4 border border-black/10 hover:border-black/30 text-left transition-all cursor-pointer"
-                title="Click to reset target slot to next free wristband"
-              >
-                <div className="flex items-center justify-between mb-0.5">
-                  <span className="font-sans-clean text-[10px] font-bold uppercase tracking-wider text-black/45">
-                    next free
-                  </span>
-                  <Tag className="w-3.5 h-3.5 text-emerald-600" />
-                </div>
-                <div className="font-mono text-lg sm:text-xl font-bold text-black leading-none">
-                  #{parseTagId(nextFreeTag).tagNumber ?? nextFreeTag}
-                </div>
-              </button>
-
-              <div className="glass-card p-3.5 sm:p-4 border border-black/10">
-                <div className="flex items-center justify-between mb-0.5">
-                  <span className="font-sans-clean text-[10px] font-bold uppercase tracking-wider text-black/45">
-                    vip hosts
-                  </span>
-                  <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                </div>
-                <div className="font-display text-2xl sm:text-3xl font-bold text-black leading-none">
-                  {vipCount}
-                </div>
-              </div>
-
-              <div className="glass-card p-3.5 sm:p-4 border border-black/10">
-                <div className="flex items-center justify-between mb-0.5">
-                  <span className="font-sans-clean text-[10px] font-bold uppercase tracking-wider text-black/45">
-                    drivers
-                  </span>
-                  <span className="font-mono text-[10px] font-bold text-blue-700">0 ALC</span>
-                </div>
-                <div className="font-display text-2xl sm:text-3xl font-bold text-black leading-none">
-                  {driverCount}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* 3. MOVED DOWN: Rare NFC Sticker Copy & Backup Helper */}
-          <div className="glass-card p-4 sm:p-5 border border-black/10 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Link2 className="w-3.5 h-3.5 text-black/60 shrink-0" />
-                <span className="font-sans-clean text-xs font-bold text-black lowercase">
-                  nfc sticker link lookup
-                </span>
-              </div>
-              <span className="text-[10px] font-mono text-black/40 lowercase">
-                rare / backup
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <code className="flex-1 px-3 py-2 rounded-xl bg-black/[0.03] border border-black/8 font-mono text-xs font-bold text-black truncate select-all">
-                {currentShortUrl}
-              </code>
-              <button
-                type="button"
-                onClick={() => handleCopyText(currentShortUrl, 'slot')}
-                className="btn-premium-primary py-2 px-3 text-xs gap-1.5 shrink-0 cursor-pointer"
-              >
-                {copiedKey === 'slot' ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>copied</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>copy</span>
-                  </>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsBatchEncoderOpen(true)}
-                className="btn-premium py-2 px-3 text-xs gap-1.5 shrink-0 cursor-pointer"
-                title="Open sequential NFC sticker copier (/t/1..100)"
-              >
-                <Smartphone className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">batch copier</span>
-              </button>
-            </div>
-          </div>
         </div>
 
-        {/* Right Column (5 cols): Admitted Guests Registry */}
-        <div className="lg:col-span-5 xl:col-span-5 space-y-4">
-          <div className="glass-card p-5 sm:p-6 border border-black/12 shadow-md space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        {/* Right Column (6 cols): Admitted Guests Registry (No categories/tags clutter) */}
+        <div className="lg:col-span-6 space-y-3">
+          <div className="glass-card p-4 sm:p-5 border border-black/12 shadow-md space-y-3">
+            <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-display text-2xl font-bold lowercase text-black leading-none">
+                <h3 className="font-display text-xl font-bold lowercase text-black leading-none">
                   admitted guests
                 </h3>
-                <p className="font-sans-clean text-[11px] text-black/50 lowercase mt-0.5">
-                  click guest to edit profile or load pass
-                </p>
               </div>
-
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-xs font-bold px-2.5 py-1 rounded-full bg-black/6 text-black/75">
-                  {filteredAdmittedGuests.length}
-                </span>
-
-                {/* View Mode Switcher */}
-                <div className="hidden sm:inline-flex items-center p-0.5 rounded-lg bg-black/[0.04] border border-black/8">
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('cards')}
-                    className={`p-1 rounded-md transition-colors ${
-                      viewMode === 'cards'
-                        ? 'bg-white text-black shadow-xs'
-                        : 'text-black/45 hover:text-black'
-                    }`}
-                    title="Cards View"
-                  >
-                    <LayoutGrid className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('table')}
-                    className={`p-1 rounded-md transition-colors ${
-                      viewMode === 'table'
-                        ? 'bg-white text-black shadow-xs'
-                        : 'text-black/45 hover:text-black'
-                    }`}
-                    title="Compact Table View"
-                  >
-                    <List className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
+              <span className="font-mono text-xs font-bold px-2.5 py-0.5 rounded-full bg-black/6 text-black/75">
+                {admittedGuests.length} admitted
+              </span>
             </div>
 
-            {/* Category Filter Pills */}
-            <div className="flex flex-wrap items-center gap-1.5">
-              {(
-                [
-                  { id: 'all', label: 'all', count: admittedGuests.length },
-                  { id: 'vip', label: 'vip', count: vipCount },
-                  { id: 'driver_minor', label: 'driver', count: driverCount },
-                  { id: 'standard', label: 'standard', count: standardCount },
-                ] as const
-              ).map(tab => {
-                const isActive = categoryFilter === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setCategoryFilter(tab.id)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-sans-clean font-semibold lowercase transition-all cursor-pointer ${
-                      isActive
-                        ? 'bg-black text-white shadow-xs'
-                        : 'bg-black/[0.03] hover:bg-black/[0.06] text-black/65'
-                    }`}
-                  >
-                    <span>{tab.label}</span>
-                    <span className="ml-1 font-mono text-[10px] opacity-75">
-                      ({tab.count})
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Search Filter */}
+            {/* Simple Search Filter */}
             {admittedGuests.length > 0 && (
               <div className="relative">
-                <Search className="w-3.5 h-3.5 text-black/40 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <Search className="w-3.5 h-3.5 text-black/40 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
-                  placeholder="Filter admitted guests by name or #..."
+                  placeholder="Filter admitted guests..."
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 bg-black/[0.035] border border-black/12 rounded-xl font-sans-clean text-xs text-black placeholder:text-black/35 outline-none focus:bg-white focus:border-black transition-colors"
+                  className="w-full pl-8 pr-7 py-2 bg-black/[0.035] border border-black/12 rounded-xl font-sans-clean text-xs text-black placeholder:text-black/35 outline-none focus:bg-white focus:border-black transition-colors"
                 />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-black/40 hover:text-black cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
               </div>
             )}
 
-            {/* Admitted List (Cards or Table) */}
-            <div className="space-y-2 max-h-96 lg:max-h-[500px] overflow-y-auto pr-1 no-scrollbar">
+            {/* Admitted List */}
+            <div className="space-y-1.5 max-h-72 sm:max-h-80 lg:max-h-[380px] overflow-y-auto pr-1 no-scrollbar">
               {filteredAdmittedGuests.length === 0 ? (
-                <div className="text-center py-10 text-xs font-sans-clean text-black/45 lowercase">
+                <div className="text-center py-8 text-xs font-sans-clean text-black/45 lowercase">
                   {admittedGuests.length === 0
-                    ? 'no guests admitted yet — onboard your first guest on the left!'
-                    : 'no admitted guests match the selected filter'}
-                </div>
-              ) : viewMode === 'table' ? (
-                /* Compact Table View on Desktop */
-                <div className="divide-y divide-black/[0.06] border border-black/10 rounded-xl overflow-hidden bg-white">
-                  {filteredAdmittedGuests.map(guest => {
-                    const effLimit = calculateEffectiveLimit(guest, settings);
-                    const slotNum = parseTagId(guest.tag_id).tagNumber ?? guest.tag_id;
-                    const isEditingThis = effectiveTargetTag === guest.tag_id;
-
-                    return (
-                      <div
-                        key={guest.id}
-                        className={`p-2.5 flex items-center justify-between gap-2 text-xs transition-colors ${
-                          isEditingThis ? 'bg-black/5 font-bold' : 'hover:bg-black/[0.02]'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="font-mono text-[11px] font-bold px-1.5 py-0.5 rounded bg-black/5">
-                            #{slotNum}
-                          </span>
-                          <span className="font-sans-clean font-bold text-black truncate">
-                            {guest.name}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="font-mono text-[11px] text-black/60">
-                            {guest.drinks_consumed}/{guest.category === 'vip' ? '∞' : effLimit}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedTagId(guest.tag_id)}
-                            className="p-1 rounded hover:bg-black/10 text-black/50 hover:text-black"
-                            title="Edit guest"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+                    ? 'no guests admitted yet — register your first guest on the left!'
+                    : 'no admitted guests match the search'}
                 </div>
               ) : (
-                /* Cards View */
                 filteredAdmittedGuests.map(guest => {
-                  const effLimit = calculateEffectiveLimit(guest, settings);
                   const cleanNote = stripUidFromNotes(guest.notes);
                   const isEditingThis = effectiveTargetTag === guest.tag_id;
-                  const slotNum = parseTagId(guest.tag_id).tagNumber ?? guest.tag_id;
 
                   return (
                     <div
                       key={guest.id}
-                      className={`p-3 rounded-2xl border transition-all flex items-center justify-between gap-2 ${
+                      className={`p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 ${
                         isEditingThis
-                          ? 'bg-black text-white border-black shadow-sm'
+                          ? 'bg-black text-white border-black shadow-xs'
                           : 'bg-white hover:bg-black/[0.02] border-black/8 text-black'
                       }`}
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <span
-                            className={`font-mono text-[10px] font-bold px-2 py-0.5 rounded-md shrink-0 ${
-                              isEditingThis
-                                ? 'bg-white/20 text-white'
-                                : 'bg-black/6 text-black/75'
-                            }`}
-                          >
-                            #{slotNum}
-                          </span>
                           <span className="font-sans-clean text-xs font-bold truncate">
                             {guest.name}
                           </span>
-                        </div>
-
-                        <div
-                          className={`flex flex-wrap items-center gap-2 mt-1 text-[10px] font-sans-clean ${
-                            isEditingThis ? 'text-white/70' : 'text-black/50'
-                          }`}
-                        >
-                          <span>
+                          <span
+                            className={`font-mono text-[9px] font-bold px-1.5 py-0.2 rounded uppercase shrink-0 ${
+                              guest.category === 'vip'
+                                ? 'bg-amber-100 text-amber-800'
+                                : guest.category === 'driver_minor'
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-black/6 text-black/60'
+                            }`}
+                          >
                             {guest.category === 'vip'
-                              ? '✨ VIP (∞)'
+                              ? 'VIP'
                               : guest.category === 'driver_minor'
-                              ? '🚗 Driver (0 alc)'
-                              : `🍺 ${guest.drinks_consumed}/${effLimit} drinks`}
+                              ? 'Driver'
+                              : 'Standard'}
                           </span>
-                          {guest.entered_at && (
-                            <span>
-                              •{' '}
-                              {new Date(guest.entered_at).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                hour12: false,
-                              })}
-                            </span>
-                          )}
-                          {cleanNote && <span className="truncate">• {cleanNote}</span>}
                         </div>
+                        {cleanNote && (
+                          <p
+                            className={`text-[10px] font-sans-clean truncate mt-0.5 ${
+                              isEditingThis ? 'text-white/70' : 'text-black/50'
+                            }`}
+                          >
+                            {cleanNote}
+                          </p>
+                        )}
                       </div>
 
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleCopyText(`${origin}/t/${slotNum}`, guest.id)
-                          }
-                          title={`Copy /t/${slotNum} sticker link`}
-                          className={`p-2 rounded-xl transition-colors cursor-pointer ${
-                            isEditingThis
-                              ? 'hover:bg-white/15 text-white/80'
-                              : 'hover:bg-black/5 text-black/55 hover:text-black'
-                          }`}
-                        >
-                          {copiedKey === guest.id ? (
-                            <Check className="w-3.5 h-3.5 text-emerald-500" />
-                          ) : (
-                            <Copy className="w-3.5 h-3.5" />
-                          )}
-                        </button>
-
+                      <div className="flex items-center gap-1.5 shrink-0">
                         <button
                           type="button"
                           onClick={() => setSelectedTagId(guest.tag_id)}
-                          title="Load guest into onboarding form to edit"
-                          className={`p-2 rounded-xl transition-colors cursor-pointer ${
+                          className={`p-1 rounded-lg transition-colors cursor-pointer ${
                             isEditingThis
-                              ? 'bg-white/20 text-white'
-                              : 'hover:bg-black/5 text-black/55 hover:text-black'
+                              ? 'text-white hover:bg-white/20'
+                              : 'text-black/45 hover:text-black hover:bg-black/5'
                           }`}
+                          title="Edit guest profile"
                         >
                           <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            router.push(`/t/${encodeURIComponent(String(slotNum))}?mode=view`)
-                          }
-                          title={`Open guest pass (/t/${slotNum})`}
-                          className={`p-2 rounded-xl transition-colors cursor-pointer ${
-                            isEditingThis
-                              ? 'hover:bg-white/15 text-white/80'
-                              : 'hover:bg-black/5 text-black/55 hover:text-black'
-                          }`}
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
@@ -665,14 +339,26 @@ export default function DoorCheckInPage() {
               )}
             </div>
           </div>
+
+          {/* Backup NFC Encoder link */}
+          <div className="text-right pr-1">
+            <button
+              type="button"
+              onClick={() => setIsBatchEncoderOpen(true)}
+              className="text-[11px] font-sans-clean text-black/40 hover:text-black transition-colors inline-flex items-center gap-1 cursor-pointer"
+            >
+              <Smartphone className="w-3 h-3" />
+              <span>batch nfc encoder</span>
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* iPhone Sequential NFC Sticker Encoder Modal */}
+      {/* Batch Encoder Modal (Optional backup tool) */}
       <NfcWriterModal
         isOpen={isBatchEncoderOpen}
         onClose={() => setIsBatchEncoderOpen(false)}
-        initialTagNumber={effectiveSlotNumber}
+        initialTagNumber={1}
       />
     </div>
   );

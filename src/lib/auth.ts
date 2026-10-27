@@ -146,9 +146,9 @@ export function setStaffStationMode(mode: StaffStationMode): void {
  * Hook to reactively track staff authentication status and station preferences across any component or tab
  */
 export function useStaffAuth() {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => isStaffAuthenticated());
-  const [stationMode, setStationModeState] = useState<StaffStationMode>(() => getStaffStationMode());
-  const [activeDrinkType, setActiveDrinkTypeState] = useState<string>(() => getStaffActiveDrinkType());
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [stationMode, setStationModeState] = useState<StaffStationMode>('barman');
+  const [activeDrinkType, setActiveDrinkTypeState] = useState<string>('beer');
 
   useEffect(() => {
     const handleAuthChange = () => {

@@ -17,7 +17,7 @@ import {
   setStaffStationMode,
 } from '@/lib/auth';
 import { subscribeToTagRelay, sendTagRelayMessage } from '@/lib/tag-relay';
-import { Search, Users, X, Keyboard, RotateCcw, CheckCircle2 } from 'lucide-react';
+import { Search, Users, X, Keyboard, RotateCcw, CheckCircle2, Zap } from 'lucide-react';
 
 const DRINK_KEY_MAP: Record<string, DrinkType> = {
   '1': 'beer',
@@ -51,25 +51,49 @@ export default function BarmanPage() {
     serveDrink,
     revertLastDrink,
     fetchGuestByTag,
+    updateGuest,
     refresh,
   } = usePartyStore();
   const { isAuthenticated } = useStaffAuth();
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [relayFlash, setRelayFlash] = useState<string | null>(null);
+  const [unassignedTagPrompt, setUnassignedTagPrompt] = useState<string | null>(null);
   const [dockFilter, setDockFilter] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement>(null);
+  const dockSearchInputRef = useRef<HTMLInputElement>(null);
 
   // Single-drink undo state: holds ONLY the very last drink served
   const [lastServedDrink, setLastServedDrink] = useState<LastServedDrink | null>(null);
   const [undoSeconds, setUndoSeconds] = useState(0);
 
-  const [selectedDrinkType, setSelectedDrinkType] = useState<DrinkType>(() => {
+  // Quick serve on tap: automatically serves the active drink upon tapping NFC wristband
+  const [quickServeMode, setQuickServeMode] = useState<boolean>(false);
+
+  const toggleQuickServe = useCallback(() => {
+    setQuickServeMode(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('bar_quick_serve', String(next));
+      } catch {}
+      return next;
+    });
+  }, []);
+
+  const [selectedDrinkType, setSelectedDrinkType] = useState<DrinkType>('beer');
+
+  // Load client-only preferences after mount to prevent hydration mismatch
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('bar_quick_serve') === 'true') {
+        setQuickServeMode(true);
+      }
+    } catch {}
+
     const saved = getStaffActiveDrinkType();
     const isValidSpecific = BAR_DRINKS.some(d => d.type === saved) || saved === 'soft';
-    return isValidSpecific ? (saved as DrinkType) : 'beer';
-  });
+    if (isValidSpecific) {
+      setSelectedDrinkType(saved as DrinkType);
+    }
+  }, []);
 
   const selectedDrinkRef = useRef<DrinkType>(selectedDrinkType);
   useEffect(() => {
@@ -98,23 +122,7 @@ export default function BarmanPage() {
     return guests.find(g => g.id === selectedGuestId) || null;
   }, [selectedGuestId, guests]);
 
-  // Search results for the Big Search Bar
-  const searchResults = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return [];
-
-    return guests
-      .filter(g => {
-        const nameMatch = (g.name || '').toLowerCase().includes(q);
-        const tagMatch = g.tag_id.toLowerCase().includes(q);
-        const slotNum = String(parseTagId(g.tag_id).tagNumber ?? '');
-        const slotMatch = slotNum === q || slotNum.startsWith(q);
-        return nameMatch || tagMatch || slotMatch;
-      })
-      .slice(0, 8);
-  }, [guests, searchQuery]);
-
-  // Checked-in guests for the Desktop Right Dock quick-switcher
+  // Checked-in guests & unified search for the Right Dock quick-switcher
   const checkedInGuests = useMemo(() => {
     const q = dockFilter.trim().toLowerCase();
     const activeList = guests
@@ -126,13 +134,48 @@ export default function BarmanPage() {
       });
 
     if (!q) return activeList;
-    return activeList.filter(
+
+    const activeMatches = activeList.filter(
       g =>
         (g.name || '').toLowerCase().includes(q) ||
         g.tag_id.toLowerCase().includes(q) ||
         String(parseTagId(g.tag_id).tagNumber ?? '').includes(q)
     );
+
+    const activeIds = new Set(activeList.map(g => g.id));
+    const otherMatches = guests.filter(
+      g =>
+        !activeIds.has(g.id) &&
+        ((g.name || '').toLowerCase().includes(q) ||
+          g.tag_id.toLowerCase().includes(q) ||
+          String(parseTagId(g.tag_id).tagNumber ?? '').includes(q))
+    );
+
+    return [...activeMatches, ...otherMatches];
   }, [guests, dockFilter]);
+
+  // Serve drink handler: once served, IMMEDIATELY CLEAR THE BAR and set single-drink undo
+  const handleManualServe = useCallback(
+    async (tagId: string, drinkType: DrinkType, guestOverride?: Guest) => {
+      const currentTarget = guestOverride || activeGuest;
+      const res = await serveDrink(tagId, drinkType);
+      if (res.success) {
+        // Clear bar immediately as requested
+        setSelectedGuestId(null);
+        setDockFilter('');
+        // Enable single-drink undo
+        setLastServedDrink({
+          guestId: currentTarget?.id || res.guest_id || res.guest?.id || '',
+          guestName: currentTarget?.name || res.name || res.guest?.name || tagId,
+          tagId: currentTarget?.tag_id || tagId,
+          logId: res.log_id || '',
+          drinkType,
+        });
+        setUndoSeconds(10);
+      }
+    },
+    [activeGuest, serveDrink, setSelectedGuestId]
+  );
 
   const handleSelectTag = useCallback(
     async (tagId: string, hardwareUid?: string) => {
@@ -144,12 +187,41 @@ export default function BarmanPage() {
         matched = (await fetchGuestByTag(targetTag)) || undefined;
       }
       if (matched) {
+        setUnassignedTagPrompt(null);
+        setDockFilter('');
+        if (quickServeMode) {
+          const limit = calculateEffectiveLimit(matched, settings);
+          const isAtLimit = matched.category !== 'vip' && (matched.drinks_consumed ?? 0) >= limit;
+          const isDriver = matched.category === 'driver_minor' && selectedDrinkRef.current !== 'soft';
+          if (!isAtLimit && !isDriver) {
+            await handleManualServe(matched.tag_id, selectedDrinkRef.current, matched);
+            return;
+          }
+        }
         setSelectedGuestId(matched.id);
-        setSearchQuery('');
+      } else {
+        setUnassignedTagPrompt(targetTag);
+        soundSystem.playWarningSound();
+        setRelayFlash(`Physical card ${targetTag} tapped — select guest to link!`);
+        setTimeout(() => setRelayFlash(null), 4000);
       }
     },
-    [guests, fetchGuestByTag, setSelectedGuestId]
+    [guests, fetchGuestByTag, setSelectedGuestId, quickServeMode, settings, handleManualServe]
   );
+
+  const handleLinkUnassignedCard = async () => {
+    if (!unassignedTagPrompt || !activeGuest) return;
+    const tagToLink = unassignedTagPrompt;
+    await updateGuest({
+      id: activeGuest.id,
+      notes: `[UID:${tagToLink}]`,
+      hardware_uid: tagToLink,
+    });
+    setUnassignedTagPrompt(null);
+    setRelayFlash(`Linked physical card ${tagToLink} to ${activeGuest.name}!`);
+    refresh();
+    soundSystem.playApprovedSound();
+  };
 
   // Auto-acquire wake lock and background NFC listener on barman desk
   useEffect(() => {
@@ -204,28 +276,6 @@ export default function BarmanPage() {
     setStaffActiveDrinkType(type);
   }, []);
 
-  // Serve drink handler: once served, IMMEDIATELY CLEAR THE BAR and set single-drink undo
-  const handleManualServe = useCallback(
-    async (tagId: string, drinkType: DrinkType) => {
-      const currentTarget = activeGuest;
-      const res = await serveDrink(tagId, drinkType);
-      if (res.success) {
-        // Clear bar immediately as requested
-        setSelectedGuestId(null);
-        setSearchQuery('');
-        // Enable single-drink undo
-        setLastServedDrink({
-          guestId: currentTarget?.id || res.guest_id || res.guest?.id || '',
-          guestName: currentTarget?.name || res.name || res.guest?.name || tagId,
-          tagId: currentTarget?.tag_id || tagId,
-          logId: res.log_id || '',
-          drinkType,
-        });
-        setUndoSeconds(10);
-      }
-    },
-    [activeGuest, serveDrink, setSelectedGuestId]
-  );
 
   // Undo Last Drink handler
   const handleUndoLastDrink = useCallback(async () => {
@@ -258,20 +308,20 @@ export default function BarmanPage() {
       if (isInputFocused) {
         if (e.key === 'Escape') {
           target.blur();
-          setSearchQuery('');
+          setDockFilter('');
         }
         return;
       }
 
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        searchInputRef.current?.focus();
+        dockSearchInputRef.current?.focus();
       } else if (e.key === '/') {
         e.preventDefault();
-        searchInputRef.current?.focus();
+        dockSearchInputRef.current?.focus();
       } else if (e.key === 'Escape') {
         setSelectedGuestId(null);
-        setSearchQuery('');
+        setDockFilter('');
       } else if (/^[1-9]$/.test(e.key)) {
         const keyIdx = parseInt(e.key, 10) - 1;
         const available = menu.filter(m => m.is_available);
@@ -321,8 +371,7 @@ export default function BarmanPage() {
 
   const handleSelectFromSearch = (guest: Guest) => {
     setSelectedGuestId(guest.id);
-    setSearchQuery('');
-    setIsSearchFocused(false);
+    setDockFilter('');
   };
 
   if (!isAuthenticated) {
@@ -336,16 +385,52 @@ export default function BarmanPage() {
   }
 
   return (
-    <div className="w-full py-3 lg:py-6 space-y-4 lg:space-y-5 animate-in fade-in duration-150">
+    <div className="w-full py-2 lg:py-3 space-y-2.5 sm:space-y-3 animate-in fade-in duration-150">
       {relayFlash && (
-        <div className="p-3 rounded-2xl bg-emerald-600 text-white text-xs font-sans-clean font-bold text-center shadow-lg animate-in fade-in duration-150">
+        <div className="p-2.5 rounded-2xl bg-emerald-600 text-white text-xs font-sans-clean font-bold text-center shadow-lg animate-in fade-in duration-150">
           ⚡ {relayFlash}
+        </div>
+      )}
+
+      {/* Unassigned Physical Card Linking Banner */}
+      {unassignedTagPrompt && (
+        <div className="p-3 sm:p-4 rounded-2xl bg-amber-400 text-black shadow-lg flex flex-col sm:flex-row items-center justify-between gap-3 border border-amber-500/30 animate-in fade-in duration-150">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="font-mono text-[11px] font-black px-2 py-0.5 rounded bg-black text-white shrink-0">
+              UID: {unassignedTagPrompt}
+            </span>
+            <span className="text-xs sm:text-sm font-sans-clean font-bold truncate">
+              {activeGuest
+                ? `Physical card tapped. Link this wristband to ${activeGuest.name}?`
+                : 'Physical card tapped. Search & select a guest below to link this wristband.'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {activeGuest && (
+              <button
+                type="button"
+                onClick={handleLinkUnassignedCard}
+                className="px-3.5 py-1.5 rounded-xl bg-black text-white hover:bg-black/85 font-sans-clean font-bold text-xs cursor-pointer shadow-md active:scale-95 transition-all"
+              >
+                Link to {activeGuest.name}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setUnassignedTagPrompt(null)}
+              className="p-1 rounded-lg hover:bg-black/10 text-black/60 hover:text-black cursor-pointer"
+              title="Dismiss"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
 
       {/* Undo Toast Notification (Displayed exclusively for the last served drink) */}
       {lastServedDrink && undoSeconds > 0 && (
-        <div className="p-3.5 sm:p-4 rounded-2xl bg-stone-900 text-white shadow-xl flex items-center justify-between border border-stone-800 animate-in fade-in duration-150">
+        <div className="p-3 sm:p-3.5 rounded-2xl bg-stone-900 text-white shadow-xl flex items-center justify-between border border-stone-800 animate-in fade-in duration-150">
           <div className="flex items-center gap-2.5 min-w-0">
             <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
             <div className="text-xs sm:text-sm font-sans-clean truncate">
@@ -378,110 +463,55 @@ export default function BarmanPage() {
         </div>
       )}
 
-      {/* ================================================================ */}
-      {/* BIG INTEGRATED SEARCH BAR (Unified across desktop & mobile)      */}
-      {/* ================================================================ */}
-      <div className="relative">
-        <div className="relative flex items-center">
-          <Search className="w-5 h-5 text-black/40 absolute left-4 pointer-events-none" />
-          <input
-            ref={searchInputRef}
-            type="text"
-            placeholder="Search guest by name or wristband # (e.g. 42 or Kasia)... [ / ]"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            onFocus={() => setIsSearchFocused(true)}
-            className="w-full pl-12 pr-10 py-3.5 sm:py-4 bg-white border border-black/15 rounded-2xl font-sans-clean text-sm sm:text-base text-black placeholder:text-black/40 outline-none focus:border-black focus:ring-2 focus:ring-black/10 transition-all shadow-sm"
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3.5 p-1 rounded-lg hover:bg-black/5 text-black/40 hover:text-black"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
+      {/* Terminal Hardware & Mode Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="font-mono text-[11px] font-semibold text-black/60 uppercase tracking-wider">
+            ACR122U NFC Reader: Ready
+          </span>
         </div>
 
-        {/* Live Search Results Dropdown */}
-        {searchQuery.trim() && isSearchFocused && (
-          <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 bg-white border border-black/15 rounded-2xl shadow-2xl overflow-hidden divide-y divide-black/8 animate-in fade-in duration-100">
-            {searchResults.length === 0 ? (
-              <div className="p-4 text-center text-xs font-sans-clean text-black/40">
-                No matching guests found for &ldquo;{searchQuery}&rdquo;
-              </div>
-            ) : (
-              searchResults.map(guest => {
-                const limit = calculateEffectiveLimit(guest, settings);
-                const isAtLimit = guest.category !== 'vip' && guest.drinks_consumed >= limit;
-                const slotNum = parseTagId(guest.tag_id).tagNumber ?? guest.tag_id;
-
-                return (
-                  <button
-                    key={guest.id}
-                    type="button"
-                    onClick={() => handleSelectFromSearch(guest)}
-                    className="w-full p-3 sm:p-3.5 text-left hover:bg-black/[0.03] transition-colors flex items-center justify-between gap-3 cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-black text-white shrink-0">
-                        #{slotNum}
-                      </span>
-                      <span className="font-sans-clean text-sm font-bold text-black truncate">
-                        {guest.name || guest.tag_id}
-                      </span>
-                      {guest.category === 'vip' && (
-                        <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                          VIP
-                        </span>
-                      )}
-                      {guest.category === 'driver_minor' && (
-                        <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
-                          0 Alc
-                        </span>
-                      )}
-                    </div>
-
-                    <span
-                      className={`font-mono text-xs font-bold shrink-0 ${
-                        isAtLimit ? 'text-red-600' : 'text-black/60'
-                      }`}
-                    >
-                      {guest.drinks_consumed}/{guest.category === 'vip' ? '∞' : limit}
-                    </span>
-                  </button>
-                );
-              })
-            )}
-          </div>
-        )}
+        <button
+          type="button"
+          onClick={toggleQuickServe}
+          suppressHydrationWarning
+          className={`px-3 py-1.5 rounded-xl font-sans-clean text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer select-none active:scale-95 ${
+            quickServeMode
+              ? 'bg-amber-400 text-black shadow-md border border-amber-500/30'
+              : 'bg-black/5 hover:bg-black/10 text-black/60 border border-black/10'
+          }`}
+          title="When ON, tapping a wristband on the reader instantly pours the active drink unless the guest is at limit"
+        >
+          <Zap className={`w-3.5 h-3.5 ${quickServeMode ? 'text-black fill-black' : 'text-black/40'}`} />
+          <span suppressHydrationWarning>{quickServeMode ? '⚡ Tap-to-Serve: ON' : '⚡ Tap-to-Serve: OFF'}</span>
+        </button>
       </div>
 
       {/* Responsive POS Layout: 8-Col Primary Desk + 4-Col Checked-in Roster on Desktop */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-8 items-start">
-        {/* Left / Primary POS Workspace (SpeedKeypad completely removed) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 lg:gap-6 items-start">
+        {/* Left / Primary POS Workspace (No-scroll optimized) */}
         <div className="lg:col-span-8">
           <BarmanDisplay
             activeGuest={activeGuest}
             selectedDrinkType={selectedDrinkType}
             onDrinkTypeChange={handleDrinkTypeChange}
             onManualServe={handleManualServe}
-            onOpenSearch={() => searchInputRef.current?.focus()}
+            onOpenSearch={() => dockSearchInputRef.current?.focus()}
             onClearCustomer={() => {
               setSelectedGuestId(null);
-              setSearchQuery('');
+              setDockFilter('');
             }}
           />
         </div>
 
-        {/* Right / Persistent Checked-In Guests Roster (lg+) */}
-        <aside className="space-y-4 lg:col-span-4 lg:sticky lg:top-24">
-          <div className="glass-card p-5 border border-black/12 shadow-md space-y-3.5">
+        {/* Right / Persistent Checked-In Guests Roster (with unified searchbar) */}
+        <aside className="space-y-3 lg:col-span-4 lg:sticky lg:top-20">
+          <div className="glass-card p-4 border border-black/12 shadow-md space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Users className="w-4 h-4 text-black/60" />
-                <h3 className="font-display text-xl font-bold lowercase text-black leading-none">
+                <h3 className="font-display text-lg font-bold lowercase text-black leading-none">
                   checked-in guests
                 </h3>
               </div>
@@ -490,11 +520,13 @@ export default function BarmanPage() {
               </span>
             </div>
 
+            {/* Single Compact Searchbar */}
             <div className="relative">
               <Search className="w-3.5 h-3.5 text-black/40 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
+                ref={dockSearchInputRef}
                 type="text"
-                placeholder="Filter roster..."
+                placeholder="Search or filter guests... [ / ]"
                 value={dockFilter}
                 onChange={e => setDockFilter(e.target.value)}
                 className="w-full pl-8 pr-7 py-2 bg-black/[0.035] border border-black/12 rounded-xl font-sans-clean text-xs text-black placeholder:text-black/35 outline-none focus:bg-white focus:border-black transition-colors"
@@ -503,17 +535,17 @@ export default function BarmanPage() {
                 <button
                   type="button"
                   onClick={() => setDockFilter('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-black/40 hover:text-black"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-black/40 hover:text-black cursor-pointer"
                 >
                   <X className="w-3 h-3" />
                 </button>
               )}
             </div>
 
-            <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1 no-scrollbar">
+            <div className="space-y-1.5 max-h-56 sm:max-h-64 lg:max-h-[300px] overflow-y-auto pr-1 no-scrollbar">
               {checkedInGuests.length === 0 ? (
                 <p className="text-center py-6 text-xs font-sans-clean text-black/40 lowercase">
-                  no matching checked-in guests
+                  no matching guests found
                 </p>
               ) : (
                 checkedInGuests.map(guest => {
@@ -527,7 +559,7 @@ export default function BarmanPage() {
                       key={guest.id}
                       type="button"
                       onClick={() => handleSelectFromSearch(guest)}
-                      className={`w-full p-2.5 rounded-xl border text-left transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                      className={`w-full p-2 rounded-xl border text-left transition-all flex items-center justify-between gap-2 cursor-pointer ${
                         isCurrent
                           ? 'bg-black text-white border-black shadow-xs'
                           : 'bg-white hover:bg-black/[0.03] text-black border-black/8 hover:border-black/25'
@@ -565,7 +597,7 @@ export default function BarmanPage() {
           </div>
 
           {/* Desktop POS Keyboard Shortcuts Cheatsheet */}
-          <div className="hidden lg:block p-4 rounded-2xl bg-black/[0.03] border border-black/10 text-xs font-sans-clean space-y-2">
+          <div className="hidden lg:block p-3.5 rounded-2xl bg-black/[0.03] border border-black/10 text-xs font-sans-clean space-y-1.5">
             <div className="flex items-center gap-1.5 font-bold text-black text-[11px] uppercase tracking-wider">
               <Keyboard className="w-3.5 h-3.5 text-black/60" />
               <span>POS Hotkeys</span>
@@ -573,7 +605,7 @@ export default function BarmanPage() {
             <div className="grid grid-cols-2 gap-1.5 text-[11px] text-black/65 font-mono">
               <div className="flex justify-between">
                 <span>[/]</span>
-                <span className="text-black font-sans-clean font-semibold">big search</span>
+                <span className="text-black font-sans-clean font-semibold">search roster</span>
               </div>
               <div className="flex justify-between">
                 <span>[1-7]</span>
