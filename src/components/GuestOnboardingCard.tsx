@@ -290,10 +290,30 @@ export function GuestOnboardingCard({
       )}
 
       <form onSubmit={handleSubmit} className="space-y-3">
+        {/* Roster Telemetry Banner when imported guests exist */}
+        {importedGuests.length > 0 && (
+          <div className="flex items-center justify-between text-[11px] font-sans-clean text-black/55 px-1">
+            <span className="flex items-center gap-1.5 font-semibold text-black/70">
+              <Users className="w-3.5 h-3.5 text-black/45" />
+              <span>{pendingRosterCount} expected guest{pendingRosterCount === 1 ? '' : 's'} on roster</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setIsDropdownOpen(prev => !prev);
+                nameInputRef.current?.focus();
+              }}
+              className="text-black/60 hover:text-black underline cursor-pointer font-medium"
+            >
+              {isDropdownOpen ? 'hide roster' : 'browse roster'}
+            </button>
+          </div>
+        )}
+
         {/* Responsive Name & Category Dropdown */}
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
-          {/* Guest Name Input */}
-          <div className="sm:col-span-8 relative">
+          {/* Guest Name Input with Live Autofill */}
+          <div ref={dropdownRef} className="sm:col-span-8 relative">
             <input
               ref={nameInputRef}
               type="text"
@@ -301,7 +321,17 @@ export function GuestOnboardingCard({
               autoFocus
               placeholder="Guest name or nickname..."
               value={name}
-              onChange={e => setName(e.target.value)}
+              onChange={e => {
+                setName(e.target.value);
+                setIsDropdownOpen(true);
+                setHighlightedIndex(-1);
+              }}
+              onFocus={() => {
+                if (importedGuests.length > 0) {
+                  setIsDropdownOpen(true);
+                }
+              }}
+              onKeyDown={handleKeyDown}
               className="w-full px-3.5 py-3 pr-9 bg-black/[0.035] border border-black/15 rounded-xl font-sans-clean text-sm sm:text-base font-semibold text-black placeholder:text-black/35 placeholder:font-normal outline-none focus:bg-white focus:border-black transition-all"
             />
             {name && (
@@ -309,6 +339,8 @@ export function GuestOnboardingCard({
                 type="button"
                 onClick={() => {
                   setName('');
+                  setIsDropdownOpen(false);
+                  setHighlightedIndex(-1);
                   nameInputRef.current?.focus();
                 }}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-black/35 hover:text-black hover:bg-black/5"
@@ -316,6 +348,90 @@ export function GuestOnboardingCard({
               >
                 <X className="w-3.5 h-3.5" />
               </button>
+            )}
+
+            {/* Autocomplete Suggestions Popover */}
+            {isDropdownOpen && importedGuests.length > 0 && (
+              <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white rounded-2xl shadow-2xl border border-black/15 overflow-hidden animate-in fade-in zoom-in-95 duration-100 max-h-60 overflow-y-auto">
+                {suggestions.length > 0 ? (
+                  <div className="p-1 divide-y divide-black/5">
+                    <div className="px-3 py-1.5 text-[10px] font-sans-clean font-bold uppercase tracking-wider text-black/45 flex items-center justify-between bg-black/[0.02]">
+                      <span>matching guests ({suggestions.length})</span>
+                      <span className="font-normal lowercase">arrow keys or click to autofill</span>
+                    </div>
+                    {suggestions.map((suggestion, index) => {
+                      const isHighlighted = highlightedIndex === index;
+                      return (
+                        <button
+                          key={suggestion.id}
+                          type="button"
+                          onMouseEnter={() => setHighlightedIndex(index)}
+                          onClick={() => selectRosterGuest(suggestion)}
+                          className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                            isHighlighted ? 'bg-black text-white' : 'hover:bg-black/5 text-black'
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <span className="font-sans-clean text-xs sm:text-sm font-bold block truncate">
+                              {suggestion.name}
+                            </span>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              {suggestion.category === 'vip' && (
+                                <span className={`text-[9px] font-sans-clean px-1.5 py-0.2 rounded font-bold uppercase ${
+                                  isHighlighted ? 'bg-amber-400 text-black' : 'bg-amber-100 text-amber-900'
+                                }`}>
+                                  VIP
+                                </span>
+                              )}
+                              {suggestion.category === 'driver_minor' && (
+                                <span className={`text-[9px] font-sans-clean px-1.5 py-0.2 rounded font-bold uppercase ${
+                                  isHighlighted ? 'bg-blue-300 text-black' : 'bg-blue-100 text-blue-900'
+                                }`}>
+                                  Driver
+                                </span>
+                              )}
+                              {suggestion.notes && (
+                                <span className={`text-[11px] truncate max-w-[120px] ${
+                                  isHighlighted ? 'text-white/70' : 'text-black/40'
+                                }`}>
+                                  {suggestion.notes}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="shrink-0 flex items-center gap-1.5">
+                            {suggestion.is_checked_in ? (
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
+                                isHighlighted ? 'bg-white/20 text-white' : 'bg-black/5 text-black/50'
+                              }`}>
+                                {suggestion.checked_in_tag_id || 'Checked in'}
+                              </span>
+                            ) : (
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-sans-clean font-semibold flex items-center gap-1 ${
+                                isHighlighted ? 'bg-emerald-400 text-black' : 'bg-emerald-50 text-emerald-800'
+                              }`}>
+                                <Check className="w-2.5 h-2.5" />
+                                <span>autofill</span>
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  /* If no name in roster matches */
+                  <div className="p-3 text-center bg-black/[0.01]">
+                    <span className="text-xs font-sans-clean text-black/60 block font-semibold">
+                      &ldquo;{name}&rdquo; is not on the imported roster
+                    </span>
+                    <span className="text-[11px] font-sans-clean text-black/40 block mt-0.5">
+                      Press Enter or click Register to enter them automatically.
+                    </span>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 

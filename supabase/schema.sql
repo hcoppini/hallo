@@ -249,6 +249,26 @@ BEGIN
 END;
 $$;
 
+-- 4. Create Optional Imported Guest Roster Table
+CREATE TABLE IF NOT EXISTS imported_guests (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'standard',
+  notes TEXT,
+  is_checked_in BOOLEAN NOT NULL DEFAULT false,
+  checked_in_tag_id TEXT,
+  imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_imported_guests_name ON imported_guests(name);
+CREATE INDEX IF NOT EXISTS idx_imported_guests_checked_in ON imported_guests(is_checked_in);
+
+ALTER TABLE imported_guests ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read on imported_guests" ON imported_guests FOR SELECT USING (true);
+CREATE POLICY "Allow public insert on imported_guests" ON imported_guests FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update on imported_guests" ON imported_guests FOR UPDATE USING (true);
+CREATE POLICY "Allow public delete on imported_guests" ON imported_guests FOR DELETE USING (true);
+
 -- Helper Function: Seed 100 Wristband Slots
 CREATE OR REPLACE FUNCTION seed_100_wristbands()
 RETURNS VOID

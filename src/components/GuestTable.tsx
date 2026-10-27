@@ -16,6 +16,7 @@ import {
   Users,
   LayoutGrid,
   Table2,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { Guest } from '@/lib/types';
 import { usePartyStore } from '@/lib/store';
@@ -29,6 +30,7 @@ import {
   isGuestActiveOrAssigned,
 } from '@/lib/admin-utils';
 import { GuestEditModal } from './GuestEditModal';
+import { GuestListImportModal } from './GuestListImportModal';
 
 interface GuestTableProps {
   activeFilter?: AdminGuestFilter;
@@ -38,11 +40,12 @@ interface GuestTableProps {
 const INITIAL_VISIBLE_COUNT = 30;
 
 export function GuestTable({ activeFilter, onFilterChange }: GuestTableProps) {
-  const { guests, logs, settings } = usePartyStore();
+  const { guests, logs, settings, importedGuests } = usePartyStore();
   const [search, setSearch] = useState('');
   const [internalFilter, setInternalFilter] = useState<AdminGuestFilter>('active');
   const [sortBy, setSortBy] = useState<AdminGuestSort>('tag_asc');
   const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [showAllRows, setShowAllRows] = useState(false);
   const [desktopViewMode, setDesktopViewMode] = useState<'cards' | 'table'>('cards');
 
@@ -188,6 +191,22 @@ export function GuestTable({ activeFilter, onFilterChange }: GuestTableProps) {
               <span className="hidden lg:inline">table</span>
             </button>
           </div>
+
+          {/* Guest List CSV Importer Button */}
+          <button
+            type="button"
+            onClick={() => setIsImportModalOpen(true)}
+            className="btn-premium py-2.5 px-3.5 text-xs gap-1.5 shrink-0"
+            title="Import or manage expected guest roster"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">guest list</span>
+            {importedGuests.length > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full bg-black/8 text-[10px] font-mono font-bold">
+                {importedGuests.filter(g => g.is_checked_in).length}/{importedGuests.length}
+              </span>
+            )}
+          </button>
 
           {nextUnassignedGuest && (
             <button
@@ -672,6 +691,12 @@ export function GuestTable({ activeFilter, onFilterChange }: GuestTableProps) {
         guest={liveEditingGuest}
         isOpen={Boolean(liveEditingGuest)}
         onClose={() => setEditingGuest(null)}
+      />
+
+      {/* Guest List CSV Importer & Roster Modal */}
+      <GuestListImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
       />
     </div>
   );

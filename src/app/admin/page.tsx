@@ -6,6 +6,7 @@ import { DrinkHistoryList } from '@/components/DrinkHistoryList';
 import { NfcWriterModal } from '@/components/NfcWriterModal';
 import { AdminPinModal } from '@/components/AdminPinModal';
 import { StationLockScreen } from '@/components/StationLockScreen';
+import { GuestListImportModal } from '@/components/GuestListImportModal';
 import { usePartyStore } from '@/lib/store';
 import { useStaffAuth } from '@/lib/auth';
 import {
@@ -39,6 +40,7 @@ import {
   CupSoda,
   Trash2,
   Edit3,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { soundSystem } from '@/lib/audio';
 import { AdminGuestFilter, computeAdminKpis } from '@/lib/admin-utils';
@@ -60,6 +62,7 @@ export default function AdminPage() {
     guests,
     logs,
     menu,
+    importedGuests,
     isSyncing,
     isSupabaseConnected,
     updateSettings,
@@ -108,6 +111,7 @@ export default function AdminPage() {
   const [isWriterOpen, setIsWriterOpen] = useState(false);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   useEffect(() => {
     setDefaultLimit(settings.default_drink_limit);
@@ -397,61 +401,82 @@ export default function AdminPage() {
         </button>
       </section>
 
-      {/* 3. Segmented Tab Bar */}
-      <div className="segmented-control p-1.5 bg-black/[0.06] rounded-2xl border border-black/8 max-w-xl">
-        {(
-          [
-            {
-              id: 'guests',
-              label: 'guests',
-              icon: Users,
-              badge: kpis.activeCount,
-            },
-            {
-              id: 'activity',
-              label: 'activity feed',
-              icon: Activity,
-              badge: kpis.totalActiveLogs,
-            },
-            {
-              id: 'settings',
-              label: 'settings & tools',
-              icon: Sliders,
-            },
-          ] as const
-        ).map(tab => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => {
-                soundSystem.vibrate(15);
-                setActiveTab(tab.id);
-              }}
-              className={`segmented-item flex items-center justify-center gap-2 py-2.5 px-3 text-xs font-sans-clean lowercase ${
-                isActive
-                  ? 'segmented-item-active font-bold text-black'
-                  : 'text-black/55 hover:text-black'
-              }`}
-            >
-              <Icon className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">{tab.label}</span>
-              {'badge' in tab && tab.badge !== undefined && (
-                <span
-                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
-                    isActive
-                      ? 'bg-black text-white'
-                      : 'bg-black/8 text-black/60'
-                  }`}
-                >
-                  {tab.badge}
-                </span>
-              )}
-            </button>
-          );
-        })}
+      {/* 3. Segmented Tab Bar & Quick Import Action */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="segmented-control p-1.5 bg-black/[0.06] rounded-2xl border border-black/8 max-w-xl">
+          {(
+            [
+              {
+                id: 'guests',
+                label: 'guests',
+                icon: Users,
+                badge: kpis.activeCount,
+              },
+              {
+                id: 'activity',
+                label: 'activity feed',
+                icon: Activity,
+                badge: kpis.totalActiveLogs,
+              },
+              {
+                id: 'settings',
+                label: 'settings & tools',
+                icon: Sliders,
+              },
+            ] as const
+          ).map(tab => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => {
+                  soundSystem.vibrate(15);
+                  setActiveTab(tab.id);
+                }}
+                className={`segmented-item flex items-center justify-center gap-2 py-2.5 px-3 text-xs font-sans-clean lowercase ${
+                  isActive
+                    ? 'segmented-item-active font-bold text-black'
+                    : 'text-black/55 hover:text-black'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">{tab.label}</span>
+                {'badge' in tab && tab.badge !== undefined && (
+                  <span
+                    className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
+                      isActive
+                        ? 'bg-black text-white'
+                        : 'bg-black/8 text-black/60'
+                    }`}
+                  >
+                    {tab.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Guest Roster / CSV Import Trigger Button */}
+        <button
+          type="button"
+          onClick={() => {
+            soundSystem.vibrate(15);
+            setIsImportModalOpen(true);
+          }}
+          className="btn-premium py-2 px-3.5 text-xs gap-2 self-start sm:self-auto cursor-pointer"
+          title="Import or manage expected guest list from CSV or text"
+        >
+          <FileSpreadsheet className="w-3.5 h-3.5 text-black" />
+          <span>guest list import</span>
+          {importedGuests.length > 0 && (
+            <span className="px-1.5 py-0.2 rounded-full bg-black/10 text-[10px] font-mono font-bold text-black/80">
+              {importedGuests.filter(g => g.is_checked_in).length}/{importedGuests.length}
+            </span>
+          )}
+        </button>
       </div>
 
       {/* 4. Active Tab Content */}
@@ -773,6 +798,31 @@ export default function AdminPage() {
                     </span>
                   </button>
                 </div>
+
+                {/* Tool 4: Guest Roster & CSV Import */}
+                <div className="p-4 rounded-2xl bg-black/[0.025] border border-black/8 flex flex-col justify-between gap-3">
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="font-sans-clean text-xs font-bold text-black lowercase">
+                        guest roster & csv import
+                      </span>
+                      <FileSpreadsheet className="w-4 h-4 text-black/50" />
+                    </div>
+                    <p className="font-sans-clean text-[11px] text-black/55 lowercase leading-relaxed">
+                      import comma-separated names ([Janek Smagiel, Ania Beta, ]) or upload csv for door check-in autofill.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsImportModalOpen(true)}
+                    className="btn-premium w-full py-2.5 text-xs gap-2"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <span>
+                      manage guest list ({importedGuests.length > 0 ? `${importedGuests.length} imported` : 'empty'})
+                    </span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1074,6 +1124,12 @@ export default function AdminPage() {
         subtitle="enter supervisor pin to erase all check-ins and reset 100 wristbands"
         onSuccess={handleResetExecute}
         onClose={() => setIsResetConfirmOpen(false)}
+      />
+
+      {/* Guest List CSV Importer & Roster Modal */}
+      <GuestListImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
       />
     </div>
   );
