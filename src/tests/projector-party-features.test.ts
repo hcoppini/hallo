@@ -140,3 +140,34 @@ describe('Party Fun Stats Calculation', () => {
     expect(total).toBe(10);
   });
 });
+
+describe('Poker Live Clock & Blind Level Extraction', () => {
+  it('correctly extracts minutes from blind interval strings', () => {
+    const intervals = [
+      { input: '7 min levels (30–40m game)', expectedMins: 7 },
+      { input: '15 min levels', expectedMins: 15 },
+      { input: '10 min', expectedMins: 10 },
+      { input: 'turbo 5mins', expectedMins: 5 },
+    ];
+
+    intervals.forEach(({ input, expectedMins }) => {
+      const match = input.match(/(\d+)\s*min/i);
+      const mins = match ? parseInt(match[1], 10) : 7;
+      expect(mins).toBe(expectedMins);
+    });
+  });
+
+  it('formats level timer seconds into MM:SS correctly', () => {
+    const formatTimer = (totalSec: number) => {
+      const m = Math.floor(totalSec / 60);
+      const s = totalSec % 60;
+      return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    };
+
+    expect(formatTimer(420)).toBe('07:00');
+    expect(formatTimer(385)).toBe('06:25');
+    expect(formatTimer(59)).toBe('00:59');
+    expect(formatTimer(5)).toBe('00:05');
+    expect(formatTimer(0)).toBe('00:00');
+  });
+});

@@ -22,6 +22,7 @@ import {
   getNextFreeTagId,
   isUniversalOnboardingTag,
   stripUidFromNotes,
+  findRegisteredGuestByTag,
 } from '@/lib/tag-utils';
 import { soundSystem } from '@/lib/audio';
 import { useStaffAuth, setStaffStationMode } from '@/lib/auth';
@@ -51,7 +52,21 @@ export default function DoorCheckInPage() {
     return '';
   });
   const [lastAdmittedGuest, setLastAdmittedGuest] = useState<Guest | null>(null);
-  const [relayedTagNotice, setRelayedTagNotice] = useState<string | null>(null);
+  const [relayedTagNotice, setRelayedTagNotice] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const urlTag = params.get('tag');
+      const isUnregistered = params.get('unregistered') === '1';
+      if (urlTag) {
+        const parsed = parseTagId(urlTag);
+        const slotText = parsed.tagNumber !== null ? `#${parsed.tagNumber}` : parsed.canonicalTag;
+        return isUnregistered
+          ? `⚡ Wristband ${slotText} is unregistered — enter guest name to create new guest!`
+          : `Wristband ${slotText} selected for check-in`;
+      }
+    }
+    return null;
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -62,6 +77,28 @@ export default function DoorCheckInPage() {
     return selectedTagId;
   }, [selectedTagId, nextFreeTag]);
 
+  // Sync selected tag if URL query parameters change (e.g. redirected from /barman or global NFC tap)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const syncFromUrl = () => {
+      const params = new URLSearchParams(window.location.search);
+      const urlTag = params.get('tag');
+      const isUnreg = params.get('unregistered') === '1';
+      if (urlTag && !isUniversalOnboardingTag(urlTag)) {
+        const parsed = parseTagId(urlTag);
+        const canonical = parsed.canonicalTag || decodeURIComponent(urlTag).toUpperCase();
+        setSelectedTagId(canonical);
+        const slotText = parsed.tagNumber !== null ? `#${parsed.tagNumber}` : canonical;
+        setRelayedTagNotice(
+          isUnreg
+            ? `⚡ Wristband ${slotText} is unregistered — enter guest name to create new guest!`
+            : `Wristband ${slotText} selected for check-in`
+        );
+      }
+    };
+    syncFromUrl();
+  }, []);
+
   // Mark staff phone in 'door' station mode
   useEffect(() => {
     if (isAuthenticated) {
@@ -69,7 +106,7 @@ export default function DoorCheckInPage() {
     }
   }, [isAuthenticated]);
 
-  // Listen for NFC taps relayed from /t/[id] tabs
+  // Listen for NFC taps relayed from /t/[id] tabs or local ACR122U bridge
   useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -79,18 +116,31 @@ export default function DoorCheckInPage() {
           type: 'STATION_ACK',
           station: 'door',
         });
-      } else if (msg.type === 'TAG_TAPPED' && msg.tagId) {
-        if (!isUniversalOnboardingTag(msg.tagId)) {
-          setSelectedTagId(msg.tagId);
+      } else if (msg.type === 'TAG_TAPPED' && (msg.tagId || msg.rawId)) {
+        const rawTag = msg.tagId || msg.rawId || '';
+        if (isUniversalOnboardingTag(rawTag)) return;
+
+        const parsed = parseTagId(rawTag);
+        const canonical = parsed.canonicalTag || rawTag.toUpperCase();
+        const slotText = parsed.tagNumber !== null ? `#${parsed.tagNumber}` : canonical;
+
+        const registered = findRegisteredGuestByTag(guests, canonical);
+        if (registered) {
+          soundSystem.playApprovedSound();
+          setLastAdmittedGuest(registered);
+          setRelayedTagNotice(`Wristband ${slotText} is already registered to ${registered.name}!`);
+          setTimeout(() => setRelayedTagNotice(null), 5000);
+        } else {
+          setSelectedTagId(canonical);
+          soundSystem.playApprovedSound();
+          setRelayedTagNotice(`⚡ Wristband ${slotText} tapped — enter guest name to create new guest!`);
+          setTimeout(() => setRelayedTagNotice(null), 6000);
         }
-        soundSystem.playApprovedSound();
-        setRelayedTagNotice(`Wristband tapped: ${msg.tagId}`);
-        setTimeout(() => setRelayedTagNotice(null), 4000);
       }
     });
 
     return () => unsubscribe();
-  }, [isAuthenticated]);
+  }, [isAuthenticated, guests]);
 
   const admittedGuests = useMemo(
     () =>

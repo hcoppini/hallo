@@ -2,21 +2,18 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  Sparkles,
-  QrCode,
-  Settings,
   ExternalLink,
+  Play,
+  Pause,
+  RotateCcw,
+  QrCode,
   Shield,
-  Layers,
   Clock,
-  Coins,
-  Check,
-  X,
+  Sparkles,
 } from 'lucide-react';
 import {
   PokerSettings,
   loadPokerSettings,
-  savePokerSettings,
   DEFAULT_POKER_SETTINGS,
 } from '@/lib/poker-utils';
 import { generateQrDataUrl } from '@/lib/qr-utils';
@@ -28,22 +25,47 @@ interface PokerWidgetProps {
 export function PokerWidget({ onExpandFeed }: PokerWidgetProps) {
   const [pokerSettings, setPokerSettings] = useState<PokerSettings>(DEFAULT_POKER_SETTINGS);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [editForm, setEditForm] = useState<PokerSettings>(DEFAULT_POKER_SETTINGS);
+
+  // Minimal Live Blind Countdown Timer
+  const [levelMinutes, setLevelMinutes] = useState(7);
+  const [secondsRemaining, setSecondsRemaining] = useState(7 * 60);
+  const [isTimerRunning, setIsTimerRunning] = useState(true);
+  const [currentLevel, setCurrentLevel] = useState(1);
 
   useEffect(() => {
     const loaded = loadPokerSettings();
     setPokerSettings(loaded);
-    setEditForm(loaded);
+
+    // Extract minutes from blindInterval if available (e.g. "7 min levels")
+    const match = loaded.blindInterval?.match(/(\d+)\s*min/i);
+    const mins = match ? parseInt(match[1], 10) : 7;
+    setLevelMinutes(mins);
+    setSecondsRemaining(mins * 60);
   }, []);
+
+  // Ticking countdown effect
+  useEffect(() => {
+    if (!isTimerRunning) return;
+    const interval = setInterval(() => {
+      setSecondsRemaining(prev => {
+        if (prev <= 1) {
+          // Advance to next level!
+          setCurrentLevel(lvl => lvl + 1);
+          return levelMinutes * 60;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isTimerRunning, levelMinutes]);
 
   useEffect(() => {
     let active = true;
     generateQrDataUrl(pokerSettings.qrUrl || DEFAULT_POKER_SETTINGS.qrUrl, {
-      width: 280,
+      width: 260,
       margin: 1,
       color: {
-        dark: '#060e0a',
+        dark: '#0a0a0a',
         light: '#ffffff',
       },
     }).then(url => {
@@ -54,216 +76,152 @@ export function PokerWidget({ onExpandFeed }: PokerWidgetProps) {
     };
   }, [pokerSettings.qrUrl]);
 
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    setPokerSettings(editForm);
-    savePokerSettings(editForm);
-    setIsEditModalOpen(false);
+  const formatTimer = (totalSec: number) => {
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  const timerProgress = ((levelMinutes * 60 - secondsRemaining) / (levelMinutes * 60)) * 100;
+
   return (
-    <div className="flex-1 flex flex-col justify-between space-y-3.5">
-      {/* Top Banner */}
-      <div className="flex items-center justify-between">
+    <div className="h-full flex flex-col justify-between space-y-4">
+      {/* 1. Header with Title & ONE Single Action Button */}
+      <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
-          <span className="font-mono text-xs font-bold uppercase tracking-wider text-emerald-400">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
+          <h3 className="font-display text-xl font-bold lowercase text-white tracking-wide">
             {pokerSettings.tableName}
+          </h3>
+        </div>
+
+        {/* The SINGLE button requested */}
+        <a
+          href={pokerSettings.qrUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-white text-xs font-sans-clean transition-all cursor-pointer hover:border-white/30"
+        >
+          <span>open live clock</span>
+          <ExternalLink className="w-3 h-3 text-white/60" />
+        </a>
+      </div>
+
+      {/* 2. Main Content Card filling the screen seamlessly */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-12 gap-4 items-center bg-white/[0.03] border border-white/10 rounded-2xl p-4 sm:p-5">
+        {/* Left: Generous, crisp QR Code */}
+        <div className="md:col-span-5 flex flex-col items-center justify-center space-y-2">
+          <div className="p-2.5 bg-white rounded-2xl shadow-2xl border-2 border-white/20">
+            {qrDataUrl ? (
+              <img
+                src={qrDataUrl}
+                alt="Poker Tournament QR"
+                className="w-36 h-36 sm:w-44 sm:h-44 rounded-xl object-contain"
+              />
+            ) : (
+              <div className="w-36 h-36 sm:w-44 sm:h-44 flex items-center justify-center bg-stone-100 rounded-xl">
+                <QrCode className="w-12 h-12 text-black/40 animate-pulse" />
+              </div>
+            )}
+          </div>
+          <span className="font-mono text-[10px] uppercase font-bold tracking-wider text-white/50">
+            scan to join table
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
-          <a
-            href={pokerSettings.qrUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white/[0.06] hover:bg-white/10 text-white text-xs font-sans-clean transition-colors"
-          >
-            <span>open app</span>
-            <ExternalLink className="w-3 h-3 text-white/60" />
-          </a>
-
-          <button
-            type="button"
-            onClick={() => {
-              setEditForm(pokerSettings);
-              setIsEditModalOpen(true);
-            }}
-            className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-colors cursor-pointer"
-            title="Edit Poker Link / Blinds"
-          >
-            <Settings className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-
-      {/* Main Poker Card: QR + Details */}
-      <div className="flex flex-col sm:flex-row items-center gap-4 bg-gradient-to-br from-emerald-950/40 via-neutral-900/60 to-black p-4 rounded-2xl border border-emerald-500/30 shadow-xl">
-        {/* Dedicated QR Code */}
-        <div className="relative p-2.5 bg-white rounded-2xl shadow-2xl shrink-0 border-2 border-emerald-400/40">
-          {qrDataUrl ? (
-            <img
-              src={qrDataUrl}
-              alt="Scan Piker Tournament QR"
-              className="w-32 h-32 sm:w-36 sm:h-36 rounded-xl object-contain"
-            />
-          ) : (
-            <div className="w-32 h-32 sm:w-36 sm:h-36 flex items-center justify-center bg-stone-100 rounded-xl">
-              <QrCode className="w-10 h-10 text-black/40 animate-pulse" />
-            </div>
-          )}
-          <div className="absolute inset-x-2 -bottom-2 text-center">
-            <span className="px-2 py-0.5 rounded-full bg-emerald-400 text-black font-mono text-[9px] font-extrabold uppercase shadow-md">
-              SCAN TO JOIN
-            </span>
-          </div>
-        </div>
-
-        {/* Tournament Information */}
-        <div className="flex-1 space-y-2 text-center sm:text-left min-w-0">
-          <div>
-            <h4 className="font-display text-2xl font-bold lowercase text-white tracking-tight leading-tight">
-              tournament table
-            </h4>
-            <p className="font-sans-clean text-xs text-white/70 mt-0.5">
-              11-level rapid heats with 30–40 min turnover
-            </p>
-          </div>
-
-          {/* Quick Info Grid */}
-          <div className="grid grid-cols-2 gap-2 text-left">
-            <div className="p-2 rounded-xl bg-white/[0.04] border border-white/10">
-              <span className="font-mono text-[9px] uppercase font-bold text-white/50 block">
-                Blinds
+        {/* Right: Live Minimal Poker Timer + Essential Facts */}
+        <div className="md:col-span-7 flex flex-col justify-between space-y-3.5 min-w-0">
+          {/* Live Minimal Round Timer */}
+          <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-mono text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5" />
+                <span>Level {currentLevel} Timer</span>
               </span>
-              <span className="font-mono text-xs font-bold text-emerald-300 truncate block">
+              <button
+                type="button"
+                onClick={() => setIsTimerRunning(prev => !prev)}
+                className="font-mono text-[10px] text-white/50 hover:text-white transition-colors cursor-pointer"
+              >
+                {isTimerRunning ? 'pause' : 'resume'}
+              </button>
+            </div>
+
+            {/* Big Minimal Countdown */}
+            <div className="flex items-baseline justify-between">
+              <span className="font-mono text-3xl sm:text-4xl font-bold tracking-tight text-white">
+                {formatTimer(secondsRemaining)}
+              </span>
+              <span className="font-mono text-xs text-white/40">
+                / {levelMinutes}:00
+              </span>
+            </div>
+
+            {/* Level Progress Line */}
+            <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-emerald-400 transition-all duration-1000 ease-linear shadow-[0_0_8px_#34d399]"
+                style={{ width: `${timerProgress}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Essential Facts Grid */}
+          <div className="grid grid-cols-2 gap-2 text-left">
+            <div className="p-2.5 rounded-xl bg-white/[0.04] border border-white/10">
+              <span className="font-mono text-[9px] uppercase font-bold text-white/40 block">
+                Current Blinds
+              </span>
+              <span className="font-mono text-sm font-bold text-emerald-300 block truncate">
                 {pokerSettings.blinds}
               </span>
             </div>
 
-            <div className="p-2 rounded-xl bg-white/[0.04] border border-white/10">
-              <span className="font-mono text-[9px] uppercase font-bold text-white/50 block">
-                Level Timer
+            <div className="p-2.5 rounded-xl bg-white/[0.04] border border-white/10">
+              <span className="font-mono text-[9px] uppercase font-bold text-white/40 block">
+                Structure
               </span>
-              <span className="font-mono text-xs font-bold text-white truncate block">
+              <span className="font-mono text-sm font-bold text-white/80 block truncate">
                 {pokerSettings.blindInterval}
               </span>
             </div>
-          </div>
 
-          <p className="font-mono text-[10px] text-emerald-400/80 truncate">
-            {pokerSettings.qrUrl.replace(/^https?:\/\//, '')}
-          </p>
+            <div className="p-2.5 rounded-xl bg-white/[0.04] border border-white/10">
+              <span className="font-mono text-[9px] uppercase font-bold text-white/40 block">
+                Buy-In / Format
+              </span>
+              <span className="font-sans-clean text-xs font-semibold text-white/80 block truncate">
+                {pokerSettings.buyIn}
+              </span>
+            </div>
+
+            <div className="p-2.5 rounded-xl bg-white/[0.04] border border-white/10">
+              <span className="font-mono text-[9px] uppercase font-bold text-white/40 block">
+                Sync Status
+              </span>
+              <span className="font-mono text-xs font-bold text-emerald-400 block truncate">
+                Live & Synced
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Footer */}
-      <div className="flex items-center justify-between text-xs text-white/50 pt-1 border-t border-white/10">
-        <span className="font-sans-clean">
-          Scan QR with phone to enter table & view live clock
+      {/* 3. Subtle Footer */}
+      <div className="flex items-center justify-between text-xs text-white/40 shrink-0 pt-1 border-t border-white/10">
+        <span className="font-sans-clean text-[11px]">
+          Live poker clock automatically updates with each blind level
         </span>
         {onExpandFeed && (
           <button
             type="button"
             onClick={onExpandFeed}
-            className="hover:text-white underline decoration-white/30 cursor-pointer"
+            className="hover:text-white underline decoration-white/30 text-[11px] cursor-pointer"
           >
-            show guest feed
+            view live arrivals
           </button>
         )}
       </div>
-
-      {/* Edit Poker Table Modal */}
-      {isEditModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="w-full max-w-md bg-[#161616] border border-white/20 rounded-3xl p-5 shadow-2xl space-y-4 text-white">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <h4 className="font-display text-2xl font-bold lowercase">
-                customize poker table
-              </h4>
-              <button
-                type="button"
-                onClick={() => setIsEditModalOpen(false)}
-                className="p-1 rounded-lg text-white/50 hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSave} className="space-y-3">
-              <div>
-                <label className="font-mono text-[10px] uppercase font-bold text-white/60 block mb-1">
-                  Table Name
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editForm.tableName}
-                  onChange={e => setEditForm(prev => ({ ...prev, tableName: e.target.value }))}
-                  className="w-full px-3 py-2 rounded-xl bg-white/[0.05] border border-white/20 text-white text-xs font-sans-clean focus:outline-none focus:border-amber-400"
-                />
-              </div>
-
-              <div>
-                <label className="font-mono text-[10px] uppercase font-bold text-white/60 block mb-1">
-                  Piker Vercel URL
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editForm.qrUrl}
-                  onChange={e => setEditForm(prev => ({ ...prev, qrUrl: e.target.value }))}
-                  placeholder="https://piker-toicupinis-projects.vercel.app"
-                  className="w-full px-3 py-2 rounded-xl bg-white/[0.05] border border-white/20 text-white text-xs font-mono focus:outline-none focus:border-amber-400"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="font-mono text-[10px] uppercase font-bold text-white/60 block mb-1">
-                    Blinds
-                  </label>
-                  <input
-                    type="text"
-                    value={editForm.blinds}
-                    onChange={e => setEditForm(prev => ({ ...prev, blinds: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-xl bg-white/[0.05] border border-white/20 text-white text-xs font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="font-mono text-[10px] uppercase font-bold text-white/60 block mb-1">
-                    Blind Interval
-                  </label>
-                  <input
-                    type="text"
-                    value={editForm.blindInterval}
-                    onChange={e =>
-                      setEditForm(prev => ({ ...prev, blindInterval: e.target.value }))
-                    }
-                    className="w-full px-3 py-2 rounded-xl bg-white/[0.05] border border-white/20 text-white text-xs font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-white/10">
-                <button
-                  type="button"
-                  onClick={() => setIsEditModalOpen(false)}
-                  className="px-4 py-1.5 rounded-full text-xs font-sans-clean text-white/60 hover:text-white"
-                >
-                  cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-1.5 rounded-full bg-amber-400 text-black font-sans-clean font-bold text-xs hover:bg-amber-300 transition-all cursor-pointer shadow-md"
-                >
-                  save changes
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

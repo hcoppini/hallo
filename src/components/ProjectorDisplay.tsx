@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import {
-  Tv,
   Maximize2,
   Minimize2,
   Users,
@@ -23,18 +22,11 @@ import {
   Music2,
   X,
   Loader2,
-  RotateCcw,
-  ChevronDown,
-  ChevronUp,
-  ChevronRight,
   Trophy,
   QrCode,
-  Clock,
-  Layers,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { usePartyStore } from '@/lib/store';
-import { Guest } from '@/lib/types';
 import { parseTagId } from '@/lib/tag-utils';
 import { soundSystem } from '@/lib/audio';
 import {
@@ -50,15 +42,16 @@ import {
   formatRelativeTime,
 } from '@/lib/projector-utils';
 import { PartyProgressBar } from './PartyProgressBar';
-import { PartyScheduleModal } from './PartyScheduleModal';
 import { PokerWidget } from './PokerWidget';
 import { PartyFunStatsWidget } from './PartyFunStatsWidget';
 import { PartyQrHubWidget } from './PartyQrHubWidget';
 import {
   PartyProgramSchedule,
   loadPartySchedule,
-  savePartySchedule,
+  PARTY_SCHEDULE_STORAGE_KEY,
 } from '@/lib/party-schedule-utils';
+
+export type SidebarTab = 'arrivals' | 'poker' | 'stats' | 'qrs';
 
 export function ProjectorDisplay() {
   const { guests, checkIn, refresh } = usePartyStore();
@@ -71,8 +64,8 @@ export function ProjectorDisplay() {
   const [forcePcMode, setForcePcMode] = useState(false);
 
   // Projector Stage State
-  const [isCinemaMode, setIsCinemaMode] = useState(true);
-  const [splitRatio, setSplitRatio] = useState<'65_35' | '50_50' | '75_25'>('65_35');
+  const [isCinemaMode] = useState(true);
+  const [splitRatio] = useState<'65_35' | '50_50' | '75_25'>('65_35');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [playChimeOnArrival, setPlayChimeOnArrival] = useState(false);
 
@@ -93,17 +86,31 @@ export function ProjectorDisplay() {
   // Guest Feed State
   const [lastAnnouncedGuestId, setLastAnnouncedGuestId] = useState<string | null>(null);
   const [newArrivalHighlightId, setNewArrivalHighlightId] = useState<string | null>(null);
-  const [spotlightGuest, setSpotlightGuest] = useState<Guest | null>(null);
 
   // Party Program Progress Bar State
   const [partySchedule, setPartySchedule] = useState<PartyProgramSchedule>(() => loadPartySchedule());
-  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
-  const [simulatedTime, setSimulatedTime] = useState<string | null>(null);
+  const [simulatedTime] = useState<string | null>(null);
 
-  // Arrivals Feed & Lounge Widget State
-  const [isArrivalsCollapsed, setIsArrivalsCollapsed] = useState(false);
-  const [activeLoungeTab, setActiveLoungeTab] = useState<'poker' | 'stats' | 'qrs'>('poker');
+  // Arrivals Feed & Lounge Widget Unified Tab State
+  const [activeSidebarTab, setActiveSidebarTab] = useState<SidebarTab>('arrivals');
   const [collapsedArrivalToast, setCollapsedArrivalToast] = useState<string | null>(null);
+
+  // Sync party schedule across admin changes
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === PARTY_SCHEDULE_STORAGE_KEY) {
+        setPartySchedule(loadPartySchedule());
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    const interval = setInterval(() => {
+      setPartySchedule(loadPartySchedule());
+    }, 3000);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      clearInterval(interval);
+    };
+  }, []);
 
   const currentTrack: QueueItem = queue[currentTrackIndex] || queue[0] || DEFAULT_PARTY_QUEUE[0];
   const upcomingQueue = useMemo(() => {
@@ -344,7 +351,6 @@ export function ProjectorDisplay() {
 
     if (lastAnnouncedGuestId && latestGuest.id !== lastAnnouncedGuestId) {
       // NEW GUEST ARRIVED!
-      setSpotlightGuest(latestGuest);
       setNewArrivalHighlightId(latestGuest.id);
 
       // Fire celebratory confetti on projector wall!
@@ -361,7 +367,7 @@ export function ProjectorDisplay() {
         soundSystem.playCelebrationSound();
       }
 
-      if (isArrivalsCollapsed) {
+      if (activeSidebarTab !== 'arrivals') {
         setCollapsedArrivalToast(`${latestGuest.name || `Guest ${latestGuest.tag_id}`} just arrived!`);
         setTimeout(() => setCollapsedArrivalToast(null), 8000);
       }
@@ -372,9 +378,8 @@ export function ProjectorDisplay() {
       return () => clearTimeout(timer);
     }
 
-    setSpotlightGuest(latestGuest);
     setLastAnnouncedGuestId(latestGuest.id);
-  }, [latestGuest, lastAnnouncedGuestId, playChimeOnArrival]);
+  }, [latestGuest, lastAnnouncedGuestId, playChimeOnArrival, activeSidebarTab]);
 
   // Fullscreen Stage toggle
   const toggleFullscreen = async () => {
@@ -472,89 +477,37 @@ export function ProjectorDisplay() {
       {/* 1. UNIFIED TOP BAR: PROGRESS BAR + ATTENDANCE + STAGE CONTROLS   */}
       {/* ================================================================ */}
       <header
-        className={`w-full rounded-2xl px-4 py-2 flex items-center justify-between gap-3 border ${cardThemeClasses} shrink-0`}
+        className={`w-full rounded-2xl px-4 py-2 flex items-center justify-between gap-4 border ${cardThemeClasses} shrink-0`}
       >
-        {/* Left: Party Program Progress Bar (Replaces Red TV Emoji & Thriller) */}
+        {/* Left: Party Program Progress Bar */}
         <PartyProgressBar
           schedule={partySchedule}
-          onOpenSettings={() => setIsScheduleModalOpen(true)}
           simulatedTime={simulatedTime}
           className="flex-1 min-w-0"
         />
 
-        {/* Center / Right: Live Attendance Counter & Controls */}
+        {/* Right: Ambient Venue Controls */}
         <div className="flex items-center gap-2 shrink-0">
-          {/* Discrete Now Playing Badge */}
-          <div className="hidden lg:flex items-center gap-2 px-2.5 py-1 rounded-xl bg-white/[0.05] border border-white/10 text-xs text-white max-w-[200px]">
-            <Music2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            <span className="truncate">{currentTrack.title}</span>
-          </div>
-
-          {/* Live Attendance Counter */}
-          <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-white/[0.05] border border-white/10 text-white">
-            <Users className="w-3.5 h-3.5 opacity-70" />
-            <span className="font-display text-lg font-bold leading-none">
-              {stats.totalEntered}
-            </span>
-            <span className="font-sans-clean text-xs opacity-50">
-              / {stats.totalCapacity} inside
-            </span>
-          </div>
-
-          {/* Split Ratio Selector */}
-          <div className="hidden xl:flex items-center gap-0.5 p-0.5 rounded-xl bg-white/[0.05] border border-white/10 text-xs">
-            <button
-              type="button"
-              onClick={() => setSplitRatio('65_35')}
-              className={`px-2 py-0.5 rounded-lg font-mono text-[10px] font-bold transition-all cursor-pointer ${
-                splitRatio === '65_35' ? 'bg-white/20 font-black text-white' : 'opacity-60 hover:opacity-100 text-white'
-              }`}
-              title="65% Video / 35% Feed"
-            >
-              65:35
-            </button>
-            <button
-              type="button"
-              onClick={() => setSplitRatio('50_50')}
-              className={`px-2 py-0.5 rounded-lg font-mono text-[10px] font-bold transition-all cursor-pointer ${
-                splitRatio === '50_50' ? 'bg-white/20 font-black text-white' : 'opacity-60 hover:opacity-100 text-white'
-              }`}
-              title="50% Video / 50% Feed"
-            >
-              50:50
-            </button>
-            <button
-              type="button"
-              onClick={() => setSplitRatio('75_25')}
-              className={`px-2 py-0.5 rounded-lg font-mono text-[10px] font-bold transition-all cursor-pointer ${
-                splitRatio === '75_25' ? 'bg-white/20 font-black text-white' : 'opacity-60 hover:opacity-100 text-white'
-              }`}
-              title="75% Video / 25% Feed"
-            >
-              75:25
-            </button>
-          </div>
-
           {/* Door Entry Sound Chime */}
           <button
             type="button"
             onClick={() => setPlayChimeOnArrival(prev => !prev)}
-            className={`p-1.5 rounded-xl border transition-colors cursor-pointer ${
+            className={`p-2 rounded-xl border transition-colors cursor-pointer ${
               playChimeOnArrival
-                ? 'border-emerald-500/40 text-emerald-500 bg-emerald-500/10'
-                : 'border-white/10 text-white opacity-60 hover:opacity-100'
+                ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10'
+                : 'border-white/10 text-white/50 hover:text-white hover:bg-white/[0.05]'
             }`}
             title={playChimeOnArrival ? 'Arrival Chime Enabled' : 'Arrival Chime Muted'}
           >
-            {playChimeOnArrival ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+            {playChimeOnArrival ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
           </button>
 
           {/* Fullscreen Stage Mode */}
           <button
             type="button"
             onClick={toggleFullscreen}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/20 hover:bg-white/10 text-xs font-sans-clean font-bold tracking-wider lowercase transition-all cursor-pointer text-white"
-            title="Expand to Fullscreen Projector Canvas"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/15 hover:bg-white/10 text-xs font-sans-clean font-medium tracking-wider lowercase transition-all cursor-pointer text-white/90 hover:text-white"
+            title="Toggle Fullscreen Projector Canvas"
           >
             {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
             <span className="hidden sm:inline">{isFullscreen ? 'exit' : 'stage'}</span>
@@ -717,81 +670,54 @@ export function ProjectorDisplay() {
         </section>
 
         {/* ============================================================== */}
-        {/* RIGHT VIEW: LIVE FEED & LOUNGE DROPDOWN WIDGET                */}
+        {/* RIGHT VIEW: LIVE GUEST ARRIVALS & PARTY HUB LOUNGE            */}
         {/* ============================================================== */}
         <section className={`flex flex-col gap-4 ${splitClasses.feed} transition-all duration-300`}>
           <div className={`flex-1 rounded-3xl border ${cardThemeClasses} p-5 flex flex-col overflow-hidden`}>
-            {/* 1. Interactive Dropdown Widget Header */}
-            <div className="pb-3 border-b border-white/10 shrink-0 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <h2 className="font-display text-2xl sm:text-3xl font-bold lowercase tracking-tight leading-none text-white truncate">
-                    {isArrivalsCollapsed ? 'party lounge & games' : 'live guest arrivals'}
-                  </h2>
-                  {stats.totalEntered >= stats.totalCapacity && stats.totalCapacity > 0 && (
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-mono text-[10px] font-bold shrink-0">
-                      🎉 all here
-                    </span>
-                  )}
-                </div>
+            {/* 1. Sleek Header: Dynamic View Title + ONE Low-Key Attendance Counter */}
+            <div className="pb-3.5 border-b border-white/10 shrink-0 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="font-display text-2xl sm:text-3xl font-bold lowercase tracking-tight leading-none text-white truncate">
+                  {activeSidebarTab === 'arrivals' && 'live guest arrivals'}
+                  {activeSidebarTab === 'poker' && 'poker table'}
+                  {activeSidebarTab === 'stats' && 'party leaderboard'}
+                  {activeSidebarTab === 'qrs' && 'guest qr station'}
+                </h2>
 
-                <div className="flex items-center gap-2 shrink-0">
-                  <div className="text-right">
-                    <span className="font-display text-xl sm:text-2xl font-bold leading-none text-white">
-                      {stats.totalEntered}
-                    </span>
-                    <span className="font-sans-clean text-[10px] opacity-60 lowercase block">
-                      / {stats.totalCapacity} inside
-                    </span>
-                  </div>
-
-                  {/* Dropdown Toggle Button */}
-                  <button
-                    type="button"
-                    onClick={() => setIsArrivalsCollapsed(prev => !prev)}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-sans-clean font-bold transition-all cursor-pointer hover:border-amber-400/50"
-                    title={isArrivalsCollapsed ? 'Expand live arrivals stream' : 'Collapse feed to show poker table & party stats'}
-                  >
-                    {isArrivalsCollapsed ? (
-                      <>
-                        <ChevronDown className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">feed</span>
-                      </>
-                    ) : (
-                      <>
-                        <ChevronUp className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">collapse</span>
-                      </>
-                    )}
-                  </button>
+                {/* The ONE Low-Key Attendance Counter */}
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.05] border border-white/10 shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="font-mono text-xs font-semibold text-white/90">
+                    {stats.totalEntered}
+                  </span>
+                  <span className="font-sans-clean text-[11px] text-white/40 lowercase">
+                    / {stats.totalCapacity} inside
+                  </span>
                 </div>
               </div>
 
-              {/* Mode & Tab Switcher Ribbon */}
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1">
+              {/* Segmented View Switcher Ribbon (Replaces broken dropdown) */}
+              <div className="flex items-center p-1 rounded-2xl bg-white/[0.04] border border-white/10 gap-1">
                 <button
                   type="button"
-                  onClick={() => setIsArrivalsCollapsed(false)}
-                  className={`px-3 py-1 rounded-xl text-xs font-sans-clean font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                    !isArrivalsCollapsed
-                      ? 'bg-white text-black shadow-sm'
-                      : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10'
+                  onClick={() => setActiveSidebarTab('arrivals')}
+                  className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-sans-clean font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    activeSidebarTab === 'arrivals'
+                      ? 'bg-white text-black shadow-sm font-bold'
+                      : 'text-white/60 hover:text-white hover:bg-white/[0.06]'
                   }`}
                 >
                   <Users className="w-3.5 h-3.5" />
-                  <span>arrivals feed</span>
+                  <span>arrivals</span>
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsArrivalsCollapsed(true);
-                    setActiveLoungeTab('poker');
-                  }}
-                  className={`px-3 py-1 rounded-xl text-xs font-sans-clean font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                    isArrivalsCollapsed && activeLoungeTab === 'poker'
-                      ? 'bg-amber-400 text-black shadow-sm font-extrabold'
-                      : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10'
+                  onClick={() => setActiveSidebarTab('poker')}
+                  className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-sans-clean font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    activeSidebarTab === 'poker'
+                      ? 'bg-white text-black shadow-sm font-bold'
+                      : 'text-white/60 hover:text-white hover:bg-white/[0.06]'
                   }`}
                 >
                   <Sparkles className="w-3.5 h-3.5" />
@@ -800,14 +726,11 @@ export function ProjectorDisplay() {
 
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsArrivalsCollapsed(true);
-                    setActiveLoungeTab('stats');
-                  }}
-                  className={`px-3 py-1 rounded-xl text-xs font-sans-clean font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                    isArrivalsCollapsed && activeLoungeTab === 'stats'
-                      ? 'bg-amber-400 text-black shadow-sm font-extrabold'
-                      : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10'
+                  onClick={() => setActiveSidebarTab('stats')}
+                  className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-sans-clean font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    activeSidebarTab === 'stats'
+                      ? 'bg-white text-black shadow-sm font-bold'
+                      : 'text-white/60 hover:text-white hover:bg-white/[0.06]'
                   }`}
                 >
                   <Trophy className="w-3.5 h-3.5" />
@@ -816,14 +739,11 @@ export function ProjectorDisplay() {
 
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsArrivalsCollapsed(true);
-                    setActiveLoungeTab('qrs');
-                  }}
-                  className={`px-3 py-1 rounded-xl text-xs font-sans-clean font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                    isArrivalsCollapsed && activeLoungeTab === 'qrs'
-                      ? 'bg-amber-400 text-black shadow-sm font-extrabold'
-                      : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10'
+                  onClick={() => setActiveSidebarTab('qrs')}
+                  className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-sans-clean font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    activeSidebarTab === 'qrs'
+                      ? 'bg-white text-black shadow-sm font-bold'
+                      : 'text-white/60 hover:text-white hover:bg-white/[0.06]'
                   }`}
                 >
                   <QrCode className="w-3.5 h-3.5" />
@@ -831,73 +751,31 @@ export function ProjectorDisplay() {
                 </button>
               </div>
 
-              {/* Collapsed Arrival Toast / Notification banner if new arrival occurs while collapsed */}
-              {isArrivalsCollapsed && collapsedArrivalToast && (
-                <div
-                  onClick={() => setIsArrivalsCollapsed(false)}
-                  className="p-2.5 rounded-xl bg-amber-400/20 border border-amber-400/50 text-amber-300 text-xs font-sans-clean flex items-center justify-between cursor-pointer animate-in fade-in slide-in-from-top-1"
+              {/* Discrete New Arrival Banner if active tab is NOT arrivals */}
+              {activeSidebarTab !== 'arrivals' && collapsedArrivalToast && (
+                <button
+                  type="button"
+                  onClick={() => setActiveSidebarTab('arrivals')}
+                  className="w-full p-2.5 rounded-xl bg-white/10 border border-white/20 text-white text-xs font-sans-clean flex items-center justify-between cursor-pointer hover:bg-white/15 transition-all animate-in fade-in slide-in-from-top-1"
                 >
-                  <span className="flex items-center gap-1.5 truncate">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-spin shrink-0" />
+                  <span className="flex items-center gap-2 truncate">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-300 shrink-0" />
                     <span className="truncate">{collapsedArrivalToast}</span>
                   </span>
-                  <span className="text-[10px] font-mono underline shrink-0 ml-2">view feed ➔</span>
-                </div>
+                  <span className="text-[11px] font-mono text-white/60 underline shrink-0 ml-2">
+                    view feed ➔
+                  </span>
+                </button>
               )}
             </div>
 
-            {!isArrivalsCollapsed ? (
-              // ==============================================================
-              // VIEW A: EXPANDED LIVE GUEST ARRIVALS FEED
-              // ==============================================================
+            {/* TAB CONTENT */}
+            {activeSidebarTab === 'arrivals' && (
               <>
-                {/* Spotlight Banner: Most Recent Guest Arrival with Entrance Animation */}
-                {spotlightGuest && (
-                  <div
-                    className={`my-3 p-4 rounded-2xl border transition-all duration-300 shrink-0 animate-in fade-in zoom-in-95 ${
-                      newArrivalHighlightId === spotlightGuest.id
-                        ? 'border-amber-400 bg-amber-400/15 ring-2 ring-amber-400/30 scale-[1.02]'
-                        : 'border-white/15 bg-white/[0.04]'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between text-[11px] font-mono font-bold uppercase tracking-wider text-amber-400 mb-1.5">
-                      <span className="flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5 animate-pulse" />
-                        <span>JUST ARRIVED</span>
-                      </span>
-                      <span className="text-white/60">
-                        {formatRelativeTime(spotlightGuest.entered_at)}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-11 h-11 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center font-mono text-sm font-bold text-white shadow-xs">
-                          {parseTagId(spotlightGuest.tag_id).tagNumber
-                            ? `#${parseTagId(spotlightGuest.tag_id).tagNumber}`
-                            : spotlightGuest.tag_id}
-                        </div>
-                        <div>
-                          <h4 className="font-display text-2xl sm:text-3xl font-bold lowercase leading-tight text-white">
-                            {spotlightGuest.name || `Guest ${spotlightGuest.tag_id}`}
-                          </h4>
-                          <p className="font-sans-clean text-xs text-white/60 lowercase">
-                            admitted at {formatWallClockTime(spotlightGuest.entered_at)}
-                          </p>
-                        </div>
-                      </div>
-
-                      <span className="font-mono text-xs font-bold px-3 py-1 rounded-full bg-white/10 border border-white/20 text-white shrink-0">
-                        INSIDE
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Scrollable Guest Feed */}
-                <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-1 my-1">
+                {/* Scrollable Guest Feed with Sleek Custom Scrollbar (No redundant spotlight card) */}
+                <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar space-y-2 pr-1.5 my-1">
                   {enteredGuests.length === 0 ? (
-                    <div className="h-40 flex flex-col items-center justify-center text-center p-4 space-y-2 opacity-60">
+                    <div className="h-44 flex flex-col items-center justify-center text-center p-4 space-y-2 opacity-50">
                       <DoorOpen className="w-7 h-7 opacity-40 text-white" />
                       <p className="font-sans-clean text-xs lowercase text-white/70">
                         Waiting for first guest admission...
@@ -912,27 +790,27 @@ export function ProjectorDisplay() {
                       return (
                         <div
                           key={guest.id}
-                          className={`p-2.5 rounded-xl border transition-all duration-300 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-3 ${
+                          className={`p-3 rounded-2xl border transition-all duration-300 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 ${
                             isNewArrival
-                              ? 'border-amber-400 bg-amber-400/10 shadow-md'
+                              ? 'border-amber-300/60 bg-amber-400/10 shadow-[0_0_15px_rgba(251,191,36,0.2)] ring-1 ring-amber-300/30'
                               : idx === 0
                               ? 'border-white/15 bg-white/[0.04]'
                               : 'border-white/5 bg-white/[0.02] hover:bg-white/[0.05]'
                           }`}
                         >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <span className="font-mono text-xs font-bold text-white/70 w-12 text-left shrink-0">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="font-mono text-xs font-bold text-white/60 w-12 text-left shrink-0">
                               {tagDisplay}
                             </span>
                             <div className="min-w-0">
-                              <span className="font-display text-lg font-bold lowercase leading-tight text-white block truncate">
+                              <span className="font-display text-xl sm:text-2xl font-bold lowercase leading-tight text-white block truncate">
                                 {guest.name || `Guest ${guest.tag_id}`}
                               </span>
                             </div>
                           </div>
 
                           <div className="text-right shrink-0">
-                            <span className="font-mono text-xs font-bold block text-white/80">
+                            <span className="font-mono text-xs font-medium block text-white/80">
                               {formatWallClockTime(guest.entered_at)}
                             </span>
                             <span className="font-sans-clean text-[10px] text-white/40 lowercase">
@@ -945,47 +823,38 @@ export function ProjectorDisplay() {
                   )}
                 </div>
 
-                {/* Everyone Arrived Suggestion Banner */}
-                {stats.totalEntered >= stats.totalCapacity && stats.totalCapacity > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setIsArrivalsCollapsed(true)}
-                    className="w-full mb-1 py-1.5 px-3 rounded-xl bg-amber-400/15 border border-amber-400/30 text-amber-300 text-xs font-sans-clean font-bold flex items-center justify-center gap-1.5 hover:bg-amber-400/25 transition-all cursor-pointer shrink-0"
-                  >
-                    <span>Everyone arrived! Switch to Poker Table & Stats</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                )}
-
-                {/* Footer with Instant Test Check-in */}
-                <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs opacity-60 shrink-0">
-                  <span className="font-sans-clean text-[11px] text-white/50">
-                    Live Arrivals Stream
+                {/* Footer with Low-Key Simulation */}
+                <div className="pt-2.5 border-t border-white/10 flex items-center justify-between text-xs text-white/50 shrink-0">
+                  <span className="font-sans-clean text-[11px]">
+                    Live Venue Stream
                   </span>
                   <button
                     type="button"
                     onClick={handleSimulateCheckIn}
-                    className="hover:opacity-100 underline decoration-white/30 text-[11px] font-sans-clean lowercase cursor-pointer text-white"
+                    className="hover:text-white underline decoration-white/30 text-[11px] font-sans-clean lowercase cursor-pointer"
                     title="Simulate instant guest admission"
                   >
                     + test check-in
                   </button>
                 </div>
               </>
-            ) : (
-              // ==============================================================
-              // VIEW B: COLLAPSED SPACE REPLACED WITH POKER & PARTY LOUNGE
-              // ==============================================================
-              <div className="flex-1 min-h-0 flex flex-col pt-2 overflow-y-auto animate-in fade-in duration-200">
-                {activeLoungeTab === 'poker' && (
-                  <PokerWidget onExpandFeed={() => setIsArrivalsCollapsed(false)} />
-                )}
-                {activeLoungeTab === 'stats' && (
-                  <PartyFunStatsWidget guests={guests} />
-                )}
-                {activeLoungeTab === 'qrs' && (
-                  <PartyQrHubWidget />
-                )}
+            )}
+
+            {activeSidebarTab === 'poker' && (
+              <div className="flex-1 min-h-0 pt-2 animate-in fade-in duration-200">
+                <PokerWidget onExpandFeed={() => setActiveSidebarTab('arrivals')} />
+              </div>
+            )}
+
+            {activeSidebarTab === 'stats' && (
+              <div className="flex-1 min-h-0 pt-2 animate-in fade-in duration-200">
+                <PartyFunStatsWidget guests={guests} />
+              </div>
+            )}
+
+            {activeSidebarTab === 'qrs' && (
+              <div className="flex-1 min-h-0 pt-2 animate-in fade-in duration-200">
+                <PartyQrHubWidget />
               </div>
             )}
           </div>
@@ -1112,20 +981,6 @@ export function ProjectorDisplay() {
         </div>
       )}
 
-      {/* ================================================================ */}
-      {/* 4. PARTY PROGRAM SCHEDULE MODAL                                  */}
-      {/* ================================================================ */}
-      <PartyScheduleModal
-        isOpen={isScheduleModalOpen}
-        onClose={() => setIsScheduleModalOpen(false)}
-        schedule={partySchedule}
-        onSave={updated => {
-          setPartySchedule(updated);
-          savePartySchedule(updated);
-        }}
-        simulatedTime={simulatedTime}
-        onSetSimulatedTime={setSimulatedTime}
-      />
     </div>
   );
 }

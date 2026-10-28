@@ -7,6 +7,7 @@ import { NfcWriterModal } from '@/components/NfcWriterModal';
 import { AdminPinModal } from '@/components/AdminPinModal';
 import { StationLockScreen } from '@/components/StationLockScreen';
 import { GuestListImportModal } from '@/components/GuestListImportModal';
+import { PartyScheduleModal } from '@/components/PartyScheduleModal';
 import { usePartyStore } from '@/lib/store';
 import { useStaffAuth } from '@/lib/auth';
 import {
@@ -41,10 +42,16 @@ import {
   Trash2,
   Edit3,
   FileSpreadsheet,
+  Clock,
 } from 'lucide-react';
 import { soundSystem } from '@/lib/audio';
 import { AdminGuestFilter, computeAdminKpis } from '@/lib/admin-utils';
 import { MenuItem } from '@/lib/types';
+import {
+  PartyProgramSchedule,
+  loadPartySchedule,
+  savePartySchedule,
+} from '@/lib/party-schedule-utils';
 
 export type AdminTab = 'guests' | 'activity' | 'settings';
 
@@ -112,6 +119,8 @@ export default function AdminPage() {
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isTimelineModalOpen, setIsTimelineModalOpen] = useState(false);
+  const [partySchedule, setPartySchedule] = useState<PartyProgramSchedule>(() => loadPartySchedule());
 
   useEffect(() => {
     setDefaultLimit(settings.default_drink_limit);
@@ -827,6 +836,93 @@ export default function AdminPage() {
             </div>
           </div>
 
+          {/* Card: Party Program & Projector Timeline Schedule */}
+          <div className="glass-card p-6 sm:p-7 border border-black/10 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-black/8">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-black text-white flex items-center justify-center shrink-0">
+                  <Clock className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-display text-2xl font-bold lowercase text-black leading-none">
+                      projector party timeline
+                    </h2>
+                    <span className="px-2 py-0.5 rounded-full bg-black/5 border border-black/10 text-[10px] font-mono font-bold text-black/60">
+                      {partySchedule.checkpoints.length} milestones
+                    </span>
+                  </div>
+                  <p className="font-sans-clean text-xs text-black/50 lowercase mt-1">
+                    configure the party hours and milestone checkpoints shown on the venue projector screen
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsTimelineModalOpen(true)}
+                className="btn-premium-primary text-xs py-2.5 px-5 gap-2 shrink-0"
+              >
+                <Clock className="w-3.5 h-3.5" />
+                <span>edit timeline checkpoints</span>
+              </button>
+            </div>
+
+            {/* Timeline Overview & Checkpoints Summary */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="p-3.5 rounded-2xl bg-black/[0.025] border border-black/8">
+                <span className="font-sans-clean text-[10px] font-bold text-black/45 uppercase tracking-wider block">
+                  Doors Open
+                </span>
+                <span className="font-mono text-xl font-bold text-black mt-0.5 block">
+                  {partySchedule.startTime}
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-black/[0.025] border border-black/8">
+                <span className="font-sans-clean text-[10px] font-bold text-black/45 uppercase tracking-wider block">
+                  Party Concludes
+                </span>
+                <span className="font-mono text-xl font-bold text-black mt-0.5 block">
+                  {partySchedule.endTime}
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-black/[0.025] border border-black/8 sm:col-span-2">
+                <span className="font-sans-clean text-[10px] font-bold text-black/45 uppercase tracking-wider block">
+                  Program Schedule Title
+                </span>
+                <span className="font-sans-clean text-sm font-semibold text-black mt-0.5 block truncate">
+                  {partySchedule.title || "Tonight's Party Timeline"}
+                </span>
+              </div>
+            </div>
+
+            {/* Milestone Checkpoints List */}
+            <div className="space-y-2">
+              <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-black/50 block">
+                Active Milestones ({partySchedule.checkpoints.length})
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {partySchedule.checkpoints.map(cp => (
+                  <div
+                    key={cp.id}
+                    className="p-3 rounded-xl bg-white border border-black/10 flex items-center justify-between gap-2.5 shadow-2xs"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="font-mono text-xs font-bold text-black/70 bg-black/5 px-2 py-0.5 rounded-lg shrink-0">
+                        {cp.time}
+                      </span>
+                      <span className="font-sans-clean text-xs font-semibold text-black truncate">
+                        {cp.title}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
           {/* Card: Party Drink Menu & Custom Catalog */}
           <div className="glass-card p-6 sm:p-7 border border-black/10 space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-black/8">
@@ -1130,6 +1226,21 @@ export default function AdminPage() {
       <GuestListImportModal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
+      />
+
+      {/* Projector Party Schedule & Checkpoints Modal */}
+      <PartyScheduleModal
+        isOpen={isTimelineModalOpen}
+        onClose={() => setIsTimelineModalOpen(false)}
+        schedule={partySchedule}
+        onSave={updated => {
+          setPartySchedule(updated);
+          savePartySchedule(updated);
+          setIsTimelineModalOpen(false);
+          soundSystem.playApprovedSound();
+        }}
+        simulatedTime={null}
+        onSetSimulatedTime={() => {}}
       />
     </div>
   );

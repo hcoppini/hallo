@@ -1,12 +1,49 @@
 'use client';
 
-import React from 'react';
-import { usePathname } from 'next/navigation';
+import React, { useEffect } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { usePartyStore } from '@/lib/store';
+import { subscribeToTagRelay } from '@/lib/tag-relay';
+import { parseTagId, findRegisteredGuestByTag, isUniversalOnboardingTag } from '@/lib/tag-utils';
+import { soundSystem } from '@/lib/audio';
 
 export function AppContainer({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { guests } = usePartyStore();
   const isProjector = pathname === '/projector';
   const isCompactView = pathname === '/barman' || pathname === '/door';
+
+  // Global NFC tap router: whenever an unregistered sticker is tapped anywhere in the app,
+  // route to the Door Check-In console and prompt to create a new guest.
+  useEffect(() => {
+    if (pathname === '/door' || pathname === '/barman' || pathname.startsWith('/t/')) {
+      return;
+    }
+
+    const unsubscribe = subscribeToTagRelay(msg => {
+      if (msg.type === 'TAG_TAPPED' && (msg.tagId || msg.rawId)) {
+        const rawTag = msg.tagId || msg.rawId || '';
+        if (isUniversalOnboardingTag(rawTag)) return;
+
+        const parsed = parseTagId(rawTag);
+        const canonical = parsed.canonicalTag || rawTag.toUpperCase();
+        const registered = findRegisteredGuestByTag(guests, canonical);
+
+        if (!registered) {
+          soundSystem.playApprovedSound();
+          const pinParam =
+            typeof window !== 'undefined'
+              ? new URLSearchParams(window.location.search).get('pin')
+              : null;
+          const pinSuffix = pinParam ? `&pin=${encodeURIComponent(pinParam)}` : '';
+          router.push(`/door?tag=${encodeURIComponent(canonical)}&unregistered=1${pinSuffix}`);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [pathname, router, guests]);
 
   if (isProjector) {
     return (

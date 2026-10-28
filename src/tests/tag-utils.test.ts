@@ -253,4 +253,50 @@ describe('Tag Utils Parsing & Matching', () => {
     expect(getGuestDisplayName(guest1)).toBe('Kasia Kowalska (Tag #1)');
     expect(getGuestDisplayName(guest2)).toBe('Tag #2 (Unassigned)');
   });
+
+  it('correctly identifies registered vs unregistered guest slots', async () => {
+    const { isGuestRegistered, findRegisteredGuestByTag } = await import('../lib/tag-utils');
+
+    const emptySlot: Guest = {
+      id: 'GUEST-069',
+      tag_id: 'TAG-069',
+      name: null,
+      category: 'standard',
+      custom_drink_limit: null,
+      drinks_consumed: 0,
+      is_entered: false,
+      entered_at: null,
+      is_blocked: false,
+      notes: null,
+    };
+
+    const registeredGuest: Guest = {
+      id: 'GUEST-005',
+      tag_id: 'TAG-005',
+      name: 'Heitor Coppini',
+      category: 'standard',
+      custom_drink_limit: null,
+      drinks_consumed: 1,
+      is_entered: true,
+      entered_at: '2026-10-25T21:05:10Z',
+      is_blocked: false,
+      notes: null,
+    };
+
+    expect(isGuestRegistered(emptySlot)).toBe(false);
+    expect(isGuestRegistered(registeredGuest)).toBe(true);
+    expect(isGuestRegistered(null)).toBe(false);
+    expect(isGuestRegistered(undefined)).toBe(false);
+
+    const guestList = [emptySlot, registeredGuest];
+    // Slot 69 exists in array, but is not registered!
+    expect(findRegisteredGuestByTag(guestList, 'TAG-069')).toBeUndefined();
+    expect(findRegisteredGuestByTag(guestList, 'https://hallo-zkqp.vercel.app/t/69')).toBeUndefined();
+    expect(findRegisteredGuestByTag(guestList, '69')).toBeUndefined();
+
+    // Slot 5 is registered and entered!
+    expect(findRegisteredGuestByTag(guestList, 'TAG-005')?.name).toBe('Heitor Coppini');
+    expect(findRegisteredGuestByTag(guestList, 'https://hallo-zkqp.vercel.app/t/5')?.name).toBe('Heitor Coppini');
+    expect(findRegisteredGuestByTag(guestList, '5')?.name).toBe('Heitor Coppini');
+  });
 });

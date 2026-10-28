@@ -941,9 +941,23 @@ export function usePartyStore() {
 
     if (isSupabaseConfigured && supabase) {
       try {
-        await supabase.from('drink_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-        await supabase.from('guests').delete().neq('id', 'NONE');
-        await supabase.from('guests').insert(globalGuests);
+        await supabase
+          .from('drink_logs')
+          .update({ is_reverted: true, reverted_at: new Date().toISOString() })
+          .neq('id', '00000000-0000-0000-0000-000000000000');
+        await supabase
+          .from('guests')
+          .update({
+            name: null,
+            category: 'standard',
+            custom_drink_limit: null,
+            drinks_consumed: 0,
+            is_entered: false,
+            entered_at: null,
+            is_blocked: false,
+            notes: null,
+          })
+          .neq('id', 'NONE');
       } catch (err) {
         console.error('Failed to reset party in Supabase:', err);
       }

@@ -2,14 +2,12 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  Clock,
   Sparkles,
   Cake,
   GlassWater,
   Flame,
   Moon,
   Music,
-  Settings,
 } from 'lucide-react';
 import {
   PartyProgramSchedule,
@@ -18,20 +16,18 @@ import {
   calculateCheckpointPosition,
   getCheckpointStatus,
   findActiveOrNextCheckpoint,
-  formatMinutesUntil,
   getCurrentWallClockTime,
 } from '@/lib/party-schedule-utils';
 
 interface PartyProgressBarProps {
   schedule: PartyProgramSchedule;
-  onOpenSettings: () => void;
+  onOpenSettings?: () => void;
   simulatedTime?: string | null;
   className?: string;
 }
 
 export function PartyProgressBar({
   schedule,
-  onOpenSettings,
   simulatedTime,
   className = '',
 }: PartyProgressBarProps) {
@@ -65,7 +61,7 @@ export function PartyProgressBar({
     });
   }, [checkpoints, startTime, endTime]);
 
-  const { active, next, minutesUntilNext } = useMemo(
+  const { active, next } = useMemo(
     () => findActiveOrNextCheckpoint(schedule, currentTime),
     [schedule, currentTime]
   );
@@ -73,46 +69,43 @@ export function PartyProgressBar({
   const renderIcon = (icon?: PartyCheckpoint['icon']) => {
     switch (icon) {
       case 'cake':
-        return <Cake className="w-2.5 h-2.5 text-amber-300" />;
+        return <Cake className="w-2.5 h-2.5" />;
       case 'glass':
-        return <GlassWater className="w-2.5 h-2.5 text-amber-300" />;
+        return <GlassWater className="w-2.5 h-2.5" />;
       case 'sparkles':
-        return <Sparkles className="w-2.5 h-2.5 text-amber-300" />;
+        return <Sparkles className="w-2.5 h-2.5" />;
       case 'flame':
-        return <Flame className="w-2.5 h-2.5 text-amber-300" />;
+        return <Flame className="w-2.5 h-2.5" />;
       case 'moon':
-        return <Moon className="w-2.5 h-2.5 text-amber-300" />;
+        return <Moon className="w-2.5 h-2.5" />;
       case 'music':
-        return <Music className="w-2.5 h-2.5 text-amber-300" />;
+        return <Music className="w-2.5 h-2.5" />;
       default:
-        return <Sparkles className="w-2.5 h-2.5 text-amber-300" />;
+        return <Sparkles className="w-2.5 h-2.5" />;
     }
   };
 
   return (
     <div className={`flex items-center gap-3 min-w-0 ${className}`}>
-      {/* Start Time Pill */}
-      <span className="font-mono text-xs font-bold text-white/70 shrink-0">
+      {/* Start Time */}
+      <span className="font-mono text-[11px] tracking-wider text-white/40 shrink-0">
         {startTime}
       </span>
 
-      {/* Main Timeline Bar Container */}
-      <div className="relative flex-1 min-w-[180px] max-w-[560px] h-3.5 bg-white/10 rounded-full border border-white/15">
-        {/* Glow Progress Fill */}
+      {/* Main Refined Timeline Track */}
+      <div className="relative flex-1 min-w-[140px] max-w-[480px] h-1.5 bg-white/10 rounded-full border border-white/10">
+        {/* Sleek Champagne Progress Fill */}
         <div
-          className="h-full bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-300 rounded-full transition-all duration-700 ease-out shadow-[0_0_12px_rgba(251,191,36,0.5)]"
+          className="h-full bg-gradient-to-r from-white/30 via-white/70 to-amber-200/90 rounded-full transition-all duration-700 ease-out shadow-[0_0_8px_rgba(255,255,255,0.25)]"
           style={{ width: `${progressPct}%` }}
         />
 
-        {/* Pulsing NOW Marker */}
+        {/* Minimal NOW Marker pip */}
         <div
           className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 pointer-events-none transition-all duration-700 ease-out"
           style={{ left: `${progressPct}%` }}
         >
-          <div className="relative flex items-center justify-center">
-            <span className="animate-ping absolute h-4 w-4 rounded-full bg-amber-400 opacity-75"></span>
-            <div className="w-3 h-3 rounded-full bg-white border-2 border-amber-400 shadow-[0_0_10px_#fbbf24]" />
-          </div>
+          <div className="w-2.5 h-2.5 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)] ring-2 ring-white/30" />
         </div>
 
         {/* Checkpoint Milestone Nodes */}
@@ -125,35 +118,33 @@ export function PartyProgressBar({
           return (
             <div
               key={cp.id}
-              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 group cursor-pointer z-10"
+              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 group cursor-default z-10"
               style={{ left: `${pos}%` }}
-              onClick={onOpenSettings}
-              title={`${cp.time} — ${cp.title} (${status})`}
             >
-              {/* Dot Node */}
+              {/* Pip Node */}
               <div
-                className={`w-4 h-4 rounded-full flex items-center justify-center transition-all ${
+                className={`transition-all rounded-full flex items-center justify-center ${
                   isCurrent
-                    ? 'bg-amber-400 text-black ring-2 ring-amber-400/50 shadow-[0_0_10px_#fbbf24] scale-110'
+                    ? 'w-3 h-3 bg-white text-black shadow-[0_0_10px_rgba(255,255,255,0.9)] ring-2 ring-amber-200/60 scale-110'
                     : isPast
-                    ? 'bg-neutral-800 border border-amber-400/70 text-amber-400'
-                    : 'bg-neutral-900 border border-white/30 text-white/60 group-hover:border-white group-hover:scale-105'
+                    ? 'w-2 h-2 bg-white/50'
+                    : 'w-2 h-2 bg-neutral-900 border border-white/25 group-hover:border-white/60'
                 }`}
               >
-                {isPast ? (
-                  <span className="text-[8px] font-bold">✓</span>
-                ) : (
-                  renderIcon(cp.icon)
+                {isCurrent && (
+                  <span className="scale-75 text-neutral-900">
+                    {renderIcon(cp.icon)}
+                  </span>
                 )}
               </div>
 
               {/* Clean Tooltip on Hover */}
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:flex flex-col items-center pointer-events-none z-30">
-                <div className="px-2 py-1 rounded-md bg-black/90 border border-white/20 shadow-xl text-center whitespace-nowrap">
-                  <span className="font-mono text-[10px] font-bold text-amber-300 block">
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center pointer-events-none z-30">
+                <div className="px-2.5 py-1 rounded-lg bg-black/95 border border-white/15 shadow-2xl text-center whitespace-nowrap backdrop-blur-md">
+                  <span className="font-mono text-[10px] text-amber-200/90 font-semibold block">
                     {cp.time}
                   </span>
-                  <span className="font-sans-clean text-[11px] text-white block">
+                  <span className="font-sans-clean text-xs text-white/90 block">
                     {cp.title}
                   </span>
                 </div>
@@ -163,53 +154,32 @@ export function PartyProgressBar({
         })}
       </div>
 
-      {/* End Time Pill */}
-      <span className="font-mono text-xs font-bold text-white/70 shrink-0">
+      {/* End Time */}
+      <span className="font-mono text-[11px] tracking-wider text-white/40 shrink-0">
         {endTime}
       </span>
 
-      {/* Active or Upcoming Highlight Badge */}
-      <div
-        onClick={onOpenSettings}
-        className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs cursor-pointer transition-colors shrink-0"
-        title="Click to view/edit party schedule"
-      >
-        {active ? (
-          <>
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-            <span className="font-mono text-[11px] font-bold text-amber-400 uppercase">
-              Now:
-            </span>
-            <span className="font-sans-clean text-xs font-semibold text-white max-w-[130px] truncate">
-              {active.title}
-            </span>
-          </>
-        ) : next ? (
-          <>
-            <Sparkles className="w-3 h-3 text-amber-400 animate-pulse" />
-            <span className="font-sans-clean text-xs font-semibold text-white max-w-[130px] truncate">
-              {next.title}
-            </span>
-            <span className="font-mono text-[10px] text-amber-300">
-              ({next.time} • {formatMinutesUntil(minutesUntilNext)})
-            </span>
-          </>
-        ) : (
-          <span className="font-mono text-[11px] text-white/50">
-            {currentTime}
-          </span>
-        )}
-      </div>
-
-      {/* Settings / Edit Button */}
-      <button
-        type="button"
-        onClick={onOpenSettings}
-        className="p-1.5 rounded-xl bg-white/[0.06] hover:bg-white/15 border border-white/10 text-white/70 hover:text-white transition-all cursor-pointer shrink-0"
-        title="Edit Party Schedule & Checkpoints"
-      >
-        <Settings className="w-3.5 h-3.5" />
-      </button>
+      {/* Low-Key Milestone Indicator */}
+      {(active || next) && (
+        <div className="hidden lg:flex items-center gap-2 pl-1 shrink-0 text-xs">
+          {active ? (
+            <div className="flex items-center gap-1.5 text-white/80">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="font-mono text-[10px] tracking-wider uppercase text-white/50">now</span>
+              <span className="font-sans-clean font-medium text-white max-w-[180px] truncate">
+                {active.title}
+              </span>
+            </div>
+          ) : next ? (
+            <div className="flex items-center gap-1.5 text-white/50">
+              <span className="font-mono text-[10px] tracking-wider uppercase text-white/35">next ({next.time})</span>
+              <span className="font-sans-clean font-normal text-white/70 max-w-[160px] truncate">
+                {next.title}
+              </span>
+            </div>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }

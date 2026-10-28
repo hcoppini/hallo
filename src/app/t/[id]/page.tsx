@@ -271,6 +271,15 @@ export default function DirectTapPage() {
     }
   }, [isAuthenticated, assignedGuest, setSelectedGuestId]);
 
+  // 4. If staff taps an unregistered sticker on mobile, take them directly to the door check-in desk
+  useEffect(() => {
+    if (isLoading || isUniversal) return;
+    if (isAuthenticated && !assignedGuest && tagId && tagId !== 'UNIVERSAL') {
+      const canonical = parsedTag.canonicalTag || tagId;
+      router.replace(`/door?tag=${encodeURIComponent(canonical)}&unregistered=1`);
+    }
+  }, [isLoading, isUniversal, isAuthenticated, assignedGuest, tagId, parsedTag, router]);
+
   // Undo 10-second countdown timer
   useEffect(() => {
     if (undoSeconds <= 0) return;

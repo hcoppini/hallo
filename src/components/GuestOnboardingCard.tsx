@@ -153,9 +153,9 @@ export function GuestOnboardingCard({
     setIsNfcSupported(isWebNfcSupported());
   }, []);
 
-  // Pre-populate if selecting an existing guest slot that already has data
+  // Pre-populate if selecting an existing guest slot that already has data, or reset for new slot
   useEffect(() => {
-    if (existingGuestForSlot && existingGuestForSlot.name) {
+    if (existingGuestForSlot && existingGuestForSlot.name && existingGuestForSlot.is_entered) {
       setName(existingGuestForSlot.name);
       setCategory(existingGuestForSlot.category || 'standard');
       if (
@@ -169,8 +169,18 @@ export function GuestOnboardingCard({
         setIsCustomLimit(false);
       }
       setNotes(stripUidFromNotes(existingGuestForSlot.notes));
+    } else {
+      setName('');
+      setCategory('standard');
+      setDrinkLimit(settings.default_drink_limit);
+      setIsCustomLimit(false);
+      setNotes('');
+      setErrorMsg(null);
     }
-  }, [existingGuestForSlot, settings.default_drink_limit]);
+    setTimeout(() => {
+      nameInputRef.current?.focus();
+    }, 60);
+  }, [effectiveTagId, existingGuestForSlot, settings.default_drink_limit]);
 
   // Pre-populate if a guest was selected from the expected roster
   useEffect(() => {
@@ -269,15 +279,21 @@ export function GuestOnboardingCard({
     executeOnboarding(false);
   };
 
+  const parsedEffective = useMemo(() => parseTagId(effectiveTagId), [effectiveTagId]);
+  const slotNumber = parsedEffective.tagNumber;
+
   return (
     <div className="glass-card p-4 sm:p-5 border border-black/15 shadow-lg relative overflow-hidden">
       {/* Compact Header */}
       <div className="flex items-center justify-between pb-3 mb-3 border-b border-black/10">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
           <h2 className="font-display text-2xl sm:text-3xl font-bold lowercase text-black leading-none">
             {existingGuestForSlot?.is_entered ? 'edit guest' : 'register guest'}
           </h2>
+          <span className="px-2.5 py-0.5 rounded-full bg-black text-white font-mono text-xs font-bold tracking-wider shrink-0">
+            {slotNumber !== null ? `Wristband #${slotNumber}` : effectiveTagId}
+          </span>
         </div>
 
         {isNfcSupported && (
@@ -293,6 +309,21 @@ export function GuestOnboardingCard({
           </button>
         )}
       </div>
+
+      {/* Prominent Prompt When Creating New Guest */}
+      {!existingGuestForSlot?.is_entered && (
+        <div className="p-3 mb-3 rounded-2xl bg-emerald-50 border border-emerald-200/80 text-emerald-950 flex items-center justify-between gap-2 shadow-xs animate-in fade-in duration-150">
+          <div className="flex items-center gap-2 min-w-0">
+            <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span className="font-sans-clean text-xs font-bold truncate">
+              Wristband {slotNumber !== null ? `#${slotNumber}` : effectiveTagId} ready — enter guest name to register
+            </span>
+          </div>
+          <span className="font-mono text-[10px] uppercase font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full shrink-0">
+            Unregistered
+          </span>
+        </div>
+      )}
 
       {errorMsg && (
         <div className="p-2.5 mb-3 rounded-xl bg-red-50 text-red-800 text-xs font-sans-clean flex items-center gap-2 border border-red-200">
@@ -329,7 +360,7 @@ export function GuestOnboardingCard({
               type="text"
               required
               autoFocus
-              placeholder="Guest name or nickname..."
+              placeholder={slotNumber !== null ? `Guest name for Wristband #${slotNumber}...` : "Guest name or nickname..."}
               value={name}
               onChange={e => {
                 setName(e.target.value);

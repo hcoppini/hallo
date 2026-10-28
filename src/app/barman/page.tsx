@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { BarmanDisplay } from '@/components/BarmanDisplay';
 import { QuickSearchModal } from '@/components/QuickSearchModal';
 import { AdminPinModal } from '@/components/AdminPinModal';
@@ -8,7 +9,7 @@ import { StationLockScreen } from '@/components/StationLockScreen';
 import { usePartyStore } from '@/lib/store';
 import { DrinkType, Guest, BAR_DRINKS } from '@/lib/types';
 import { isWebNfcSupported, nfcController } from '@/lib/nfc';
-import { findGuestByTag, parseTagId } from '@/lib/tag-utils';
+import { findGuestByTag, parseTagId, isGuestRegistered } from '@/lib/tag-utils';
 import { calculateEffectiveLimit } from '@/lib/party-engine';
 import { soundSystem } from '@/lib/audio';
 import {
@@ -40,6 +41,7 @@ interface LastServedDrink {
 }
 
 export default function BarmanPage() {
+  const router = useRouter();
   const {
     guests,
     logs,
@@ -200,6 +202,20 @@ export default function BarmanPage() {
         }
       }
 
+      // Check if this tag belongs to an officially registered guest (has entered and has name)
+      const isRegistered = isGuestRegistered(matched);
+
+      if (!isRegistered) {
+        // UNREGISTERED STICKER: Take staff directly to door check-in and prompt to create new guest!
+        const parsed = parseTagId(targetTag);
+        const canonical = parsed.canonicalTag || targetTag;
+        soundSystem.playApprovedSound();
+        const pinParam = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('pin') : null;
+        const pinSuffix = pinParam ? `&pin=${encodeURIComponent(pinParam)}` : '';
+        router.push(`/door?tag=${encodeURIComponent(canonical)}&unregistered=1${pinSuffix}`);
+        return;
+      }
+
       if (matched) {
         setUnassignedTagPrompt(null);
         setDockFilter('');
@@ -230,7 +246,7 @@ export default function BarmanPage() {
         soundSystem.playWarningSound();
       }
     },
-    [guests, fetchGuestByTag, setSelectedGuestId, quickServeMode, settings, handleManualServe]
+    [guests, fetchGuestByTag, setSelectedGuestId, quickServeMode, settings, handleManualServe, router]
   );
 
   const handleLinkUnassignedCard = async () => {

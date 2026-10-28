@@ -255,6 +255,29 @@ export function findGuestByTag(guests: Guest[], searchTag: string): Guest | unde
 }
 
 /**
+ * Checks whether a guest slot is officially registered/admitted (has entered and has a valid name).
+ * Unentered slots from pre-seeded batches (GUEST-001..100) return false.
+ */
+export function isGuestRegistered(guest: Guest | null | undefined): boolean {
+  if (!guest) return false;
+  return Boolean(guest.is_entered && guest.name && guest.name.trim().length > 0);
+}
+
+/**
+ * Finds a guest by tag that is already registered and entered.
+ * Returns undefined if the tag belongs to an unassigned / unentered wristband slot or is unknown.
+ */
+export function findRegisteredGuestByTag(guests: Guest[], searchTag: string): Guest | undefined {
+  if (!searchTag || !guests || guests.length === 0) return undefined;
+  if (isUniversalOnboardingTag(searchTag)) return undefined;
+  const match = guests.find(g => isTagMatch(g, searchTag));
+  if (match && isGuestRegistered(match)) {
+    return match;
+  }
+  return undefined;
+}
+
+/**
  * Finds the next unassigned guest slot in ascending tag order (TAG-001 .. TAG-100).
  */
 export function getNextFreeGuestSlot(guests: Guest[]): Guest | null {
