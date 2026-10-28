@@ -67,7 +67,7 @@ def log(msg: str) -> None:
 
 
 def parse_ndef_message(msg: bytes) -> str | None:
-    if not msg:
+    if not msg or len(msg) < 3:
         return None
     header = msg[0]
     type_len = msg[1]
@@ -77,11 +77,18 @@ def parse_ndef_message(msg: bytes) -> str | None:
         payload_len = msg[2]
         idx = 3
     else:
+        if len(msg) < 6:
+            return None
         payload_len = int.from_bytes(msg[2:6], "big")
         idx = 6
     if il:
+        if len(msg) < idx + 1:
+            return None
         id_len = msg[idx]
         idx += 1 + id_len
+    if len(msg) < idx + type_len + payload_len:
+        # Buffer truncated! Must read more pages before accepting
+        return None
     type_bytes = msg[idx : idx + type_len]
     idx += type_len
     payload = msg[idx : idx + payload_len]
@@ -379,8 +386,8 @@ def run_card_loop():
                             if hres == SCARD_S_SUCCESS and len(resp) >= 2 and resp[-2] == 0x90:
                                 uid = "".join(f"{b:02X}" for b in resp[:-2])
 
-                            # 2. Read NDEF (pages 4, 8, 12 = 48 bytes) with retry
-                            for retry in range(3):
+                            # 2. Read NDEF (pages 4, 8, 12 = 48 bytes) with inter-command delay
+                            for retry in range(4):
                                 raw = bytearray()
                                 for page in (4, 8, 12):
                                     hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, page, 0x10])
@@ -388,10 +395,11 @@ def run_card_loop():
                                         raw.extend(r[:-2])
                                     else:
                                         break
+                                    time.sleep(0.008)  # 8ms inter-command delay so ACR122U RF buffer doesn't overflow
                                 ndef = parse_ndef(raw)
-                                if ndef:
+                                if ndef and ("/t/" in ndef or "TAG-" in ndef or ndef.startswith("http")):
                                     break
-                                time.sleep(0.015)
+                                time.sleep(0.02)
                         finally:
                             # CRITICAL: SCARD_LEAVE_CARD leaves RF field powered!
                             SCardDisconnect(hcard, SCARD_LEAVE_CARD)

@@ -222,6 +222,17 @@ export default function BarmanPage() {
         // Immediately select the guest so they appear directly on the bar station!
         setSelectedGuestId(matched.id);
 
+        // Auto-bind physical hardware chip UID so future ultra-fast taps always match immediately
+        if (hardwareUid && hardwareUid.length >= 6 && (!matched.notes || !matched.notes.includes(hardwareUid))) {
+          const cleanUid = hardwareUid.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+          const existingNotes = (matched.notes || '').replace(/\[UID:[^\]]+\]/gi, '').trim();
+          const newNotes = existingNotes ? `[UID:${cleanUid}] ${existingNotes}` : `[UID:${cleanUid}]`;
+          updateGuest({
+            id: matched.id,
+            notes: newNotes,
+          }).catch(() => {});
+        }
+
         if (quickServeMode) {
           const limit = calculateEffectiveLimit(matched, settings);
           const isAtLimit = matched.category !== 'vip' && (matched.drinks_consumed ?? 0) >= limit;
