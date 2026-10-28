@@ -149,7 +149,21 @@ function connectLocalNfcBridge() {
   } catch {}
 }
 
+let lastReceivedTapKey = '';
+let lastReceivedTapTime = 0;
+
 function notifyListeners(msg: TagRelayMessage) {
+  if (msg.type === 'TAG_TAPPED') {
+    const tapKey = (msg.tagId || msg.rawId || '').trim();
+    const now = Date.now();
+    if (tapKey && tapKey === lastReceivedTapKey && now - lastReceivedTapTime < 1200) {
+      // Debounce duplicate tap delivered via dual broadcast (Local WebSocket + Supabase Cloud)
+      return;
+    }
+    lastReceivedTapKey = tapKey;
+    lastReceivedTapTime = now;
+  }
+
   listeners.forEach(fn => {
     try {
       fn(msg);

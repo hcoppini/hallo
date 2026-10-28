@@ -333,7 +333,11 @@ def run_card_loop():
             while True:
                 # Kernel wait: wakes up within 0.1ms of physical card tap
                 hresult, states = SCardGetStatusChange(hcontext, 150, [(reader_name, last_state)])
-                if hresult != SCARD_S_SUCCESS and hresult != SCARD_E_TIMEOUT:
+                if hresult == SCARD_E_TIMEOUT:
+                    # On timeout, NOTHING CHANGED! Do NOT modify last_state!
+                    continue
+
+                if hresult != SCARD_S_SUCCESS:
                     # Reader removed or reset
                     break
 
@@ -347,6 +351,7 @@ def run_card_loop():
 
                 if is_present and not was_present:
                     t0 = time.time()
+                    time.sleep(0.02)  # 20ms settling time for transponder EEPROM to stabilize
                     hcard = None
                     proto = None
 
@@ -358,26 +363,30 @@ def run_card_loop():
                         if hres == SCARD_S_SUCCESS:
                             break
                         hcard = None
-                        time.sleep(0.01)
+                        time.sleep(0.015)
 
                     if hcard is not None:
                         uid = None
                         ndef = None
                         try:
-                            # 1. Hardware UID (Get Data APDU) - ~2ms
+                            # 1. Hardware UID (Get Data APDU)
                             hres, resp = SCardTransmit(hcard, proto, [0xFF, 0xCA, 0x00, 0x00, 0x00])
                             if hres == SCARD_S_SUCCESS and len(resp) >= 2 and resp[-2] == 0x90:
                                 uid = "".join(f"{b:02X}" for b in resp[:-2])
 
-                            # 2. Read NDEF (pages 4, 8, 12 = 48 bytes) - ~6ms
-                            raw = bytearray()
-                            for page in (4, 8, 12):
-                                hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, page, 0x10])
-                                if hres == SCARD_S_SUCCESS and len(r) >= 2 and r[-2] == 0x90:
-                                    raw.extend(r[:-2])
-                                else:
+                            # 2. Read NDEF (pages 4, 8, 12 = 48 bytes) with retry
+                            for retry in range(3):
+                                raw = bytearray()
+                                for page in (4, 8, 12):
+                                    hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, page, 0x10])
+                                    if hres == SCARD_S_SUCCESS and len(r) >= 2 and r[-2] == 0x90:
+                                        raw.extend(r[:-2])
+                                    else:
+                                        break
+                                ndef = parse_ndef(raw)
+                                if ndef:
                                     break
-                            ndef = parse_ndef(raw)
+                                time.sleep(0.015)
                         finally:
                             # CRITICAL: SCARD_LEAVE_CARD leaves RF field powered!
                             SCardDisconnect(hcard, SCARD_LEAVE_CARD)
@@ -387,7 +396,7 @@ def run_card_loop():
                         if effective_tag:
                             emit_tap(effective_tag, uid or effective_tag, "reader", t0, read_ms, ndef)
                     else:
-                        log(f"tap detected on {reader_name} but connect failed (bounced)")
+                        log(f"tap detected on {reader_name} but connect failed")
 
                 elif not is_present and was_present:
                     # Card lifted: clear debounce immediately so immediate re-tap is instant
