@@ -122,9 +122,18 @@ export default function DoorCheckInPage() {
 
         const parsed = parseTagId(rawTag);
         const canonical = parsed.canonicalTag || rawTag.toUpperCase();
-        const slotText = parsed.tagNumber !== null ? `#${parsed.tagNumber}` : canonical;
 
-        const registered = findRegisteredGuestByTag(guests, canonical);
+        const registered = findRegisteredGuestByTag(guests, canonical)
+          || (msg.rawId ? findRegisteredGuestByTag(guests, msg.rawId) : undefined)
+          || (msg.hardwareUid ? findRegisteredGuestByTag(guests, msg.hardwareUid) : undefined);
+
+        const slotNum = parsed.tagNumber !== null
+          ? parsed.tagNumber
+          : registered
+          ? parseTagId(registered.tag_id).tagNumber
+          : null;
+        const slotText = slotNum !== null ? `#${slotNum}` : canonical;
+
         if (registered) {
           soundSystem.playApprovedSound();
           setLastAdmittedGuest(registered);

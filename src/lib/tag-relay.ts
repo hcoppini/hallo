@@ -23,6 +23,7 @@ export interface TagRelayMessage {
   timestamp: number;
   tagId?: string;
   rawId?: string;
+  hardwareUid?: string;
   station?: 'barman' | 'door';
   drinkType?: DrinkType;
   result?: ServeDrinkResult;
@@ -128,6 +129,7 @@ function connectLocalNfcBridge() {
             type: 'TAG_TAPPED',
             tagId: incomingTag,
             rawId: data.hardwareUid || data.uid || incomingTag,
+            hardwareUid: data.hardwareUid || data.uid || incomingTag,
             timestamp: Date.now(),
             tabId: 'acr122u_local_bridge',
           });
