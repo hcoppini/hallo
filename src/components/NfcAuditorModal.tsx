@@ -54,11 +54,19 @@ export function NfcAuditorModal({ isOpen, onClose }: NfcAuditorModalProps) {
   const [viewFilter, setViewFilter] = useState<'all' | 'verified' | 'missing' | 'duplicates'>('all');
   const lastScanKeyRef = useRef<{ key: string; time: number }>({ key: '', time: 0 });
 
-  // Reset state when opening fresh
+  // Reset state and mark auditor active when opening fresh
   useEffect(() => {
     if (isOpen) {
       setIsDone(false);
+      if (typeof window !== 'undefined') {
+        (window as any).__nfcAuditorActive = true;
+      }
     }
+    return () => {
+      if (typeof window !== 'undefined') {
+        (window as any).__nfcAuditorActive = false;
+      }
+    };
   }, [isOpen]);
 
   // Core Tag Ingestion Handler

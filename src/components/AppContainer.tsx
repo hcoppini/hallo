@@ -16,12 +16,22 @@ export function AppContainer({ children }: { children: React.ReactNode }) {
 
   // Global NFC tap router: whenever an unregistered sticker is tapped anywhere in the app,
   // route to the Door Check-In console and prompt to create a new guest.
+  // Never redirect if already on door, barman, admin, or direct pass pages!
   useEffect(() => {
-    if (pathname === '/door' || pathname === '/barman' || pathname.startsWith('/t/')) {
+    if (
+      pathname === '/door' ||
+      pathname === '/barman' ||
+      pathname === '/admin' ||
+      pathname.startsWith('/admin') ||
+      pathname.startsWith('/t/')
+    ) {
       return;
     }
 
     const unsubscribe = subscribeToTagRelay(msg => {
+      // Do not redirect if auditor is active
+      if (typeof window !== 'undefined' && (window as any).__nfcAuditorActive) return;
+
       if (msg.type === 'TAG_TAPPED' && (msg.tagId || msg.rawId)) {
         const rawTag = msg.tagId || msg.rawId || '';
         if (isUniversalOnboardingTag(rawTag)) return;

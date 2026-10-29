@@ -193,26 +193,16 @@ def read_card_memory(hcard, proto) -> tuple[str | None, bytearray]:
     """
     raw = bytearray()
 
-    # Strategy 0: PN532 Direct InDataExchange FAST_READ (Pages 4 through 15 = 48 bytes)
-    # NTAG213/215/216 FAST_READ opcode is 0x3A <start_page> <end_page>
-    try:
-        fast_cmd = [0xFF, 0x00, 0x00, 0x00, 0x06, 0xD4, 0x40, 0x01, 0x3A, 4, 15]
-        hres, r_fast = SCardTransmit(hcard, proto, fast_cmd)
-        if hres == SCARD_S_SUCCESS and len(r_fast) >= 19 and r_fast[0] == 0xD5 and r_fast[1] == 0x41 and r_fast[2] == 0x00:
-            raw_fast = bytearray(r_fast[3:-2] if len(r_fast) > 5 and r_fast[-2] == 0x90 else r_fast[3:])
-            cand = extract_ndef(raw_fast)
-            if cand:
-                log(f"NDEF read success (NTAG FAST_READ): {cand} ({len(raw_fast)} bytes)")
-                return cand, raw_fast
-    except Exception:
-        pass
+    # Strategy 1: Standard PC/SC Type 2 / NTAG Sequential Read (Pages 4, 8, 12)
+    # Read Page 4 (Pages 4, 5, 6, 7 = 16 bytes) with retry
+    for retry in range(3):
+        hres, r4 = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, 4, 0x10])
+        if hres == SCARD_S_SUCCESS and len(r4) >= 18 and r4[-2] == 0x90 and r4[-1] == 0x00:
+            raw.extend(r4[:-2])
+            break
+        time.sleep(0.008)
 
-    # Strategy 1: Type 2 / NTAG Sequential Read (Pages 4, 8, 12)
-    # Read Page 4 (Pages 4, 5, 6, 7 = 16 bytes)
-    hres, r4 = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, 4, 0x10])
-    if hres == SCARD_S_SUCCESS and len(r4) >= 18 and r4[-2] == 0x90 and r4[-1] == 0x00:
-        raw.extend(r4[:-2])
-
+    if raw:
         # Sequentially read Pages 8 and 12 (covers up to page 15 = 48 bytes)
         for next_page in (8, 12):
             cand = extract_ndef(raw)
@@ -220,12 +210,12 @@ def read_card_memory(hcard, proto) -> tuple[str | None, bytearray]:
                 log(f"NDEF read success (Type 2 NTAG early): {cand} ({len(raw)} bytes)")
                 return cand, raw
 
-            for retry in range(2):
+            for retry in range(3):
                 hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, next_page, 0x10])
                 if hres == SCARD_S_SUCCESS and len(r) >= 18 and r[-2] == 0x90 and r[-1] == 0x00:
                     raw.extend(r[:-2])
                     break
-                time.sleep(0.005)
+                time.sleep(0.008)
 
         ndef = extract_ndef(raw)
         if ndef:
@@ -256,20 +246,21 @@ def read_card_memory(hcard, proto) -> tuple[str | None, bytearray]:
                     return cand, raw_classic
                 break
 
-    # Strategy 3: PN532 Direct InDataExchange fallback
+    # Strategy 3: PN532 Direct InDataExchange fallback (only if not NTAG)
     raw_pn532 = bytearray()
-    for page in (4, 8, 12):
-        cmd = [0xFF, 0x00, 0x00, 0x00, 0x05, 0xD4, 0x40, 0x01, 0x30, page]
-        time.sleep(0.004)
-        hres, r = SCardTransmit(hcard, proto, cmd)
-        if hres == SCARD_S_SUCCESS and len(r) >= 19 and r[0] == 0xD5 and r[1] == 0x41 and r[2] == 0x00:
-            raw_pn532.extend(r[3:19])
-            cand = extract_ndef(raw_pn532)
-            if cand:
-                log(f"NDEF read success (PN532 Direct): {cand}")
-                return cand, raw_pn532
-        else:
-            break
+    if not raw and not raw_classic:
+        for page in (4, 8, 12):
+            cmd = [0xFF, 0x00, 0x00, 0x00, 0x05, 0xD4, 0x40, 0x01, 0x30, page]
+            time.sleep(0.004)
+            hres, r = SCardTransmit(hcard, proto, cmd)
+            if hres == SCARD_S_SUCCESS and len(r) >= 19 and r[0] == 0xD5 and r[1] == 0x41 and r[2] == 0x00:
+                raw_pn532.extend(r[3:19])
+                cand = extract_ndef(raw_pn532)
+                if cand:
+                    log(f"NDEF read success (PN532 Direct): {cand}")
+                    return cand, raw_pn532
+            else:
+                break
 
     best_raw = raw or raw_classic or raw_pn532
     if best_raw:
@@ -566,10 +557,11 @@ def run_card_loop():
                                 ndef = card_uid_cache[uid]
                                 log(f"instant resolve from cache for chip {uid} -> {ndef}")
 
-                            # 3. Read NDEF with multi-strategy fallback (FAST_READ, Type 2, Mifare Classic)
+                            # 3. Read NDEF with multi-strategy fallback (Type 2, Mifare Classic)
+                            raw = bytearray()
                             if not ndef:
                                 ndef, raw = read_card_memory(hcard, proto)
-                                # If an NDEF TLV (0x03) was detected but incomplete, retry reading
+                                # If an NDEF TLV (0x03) was detected but incomplete, retry reading with settling time
                                 if not ndef and raw and 0x03 in raw:
                                     time.sleep(0.015)
                                     ndef, raw = read_card_memory(hcard, proto)
@@ -586,10 +578,12 @@ def run_card_loop():
                         read_ms = (time.time() - t0) * 1000
                         if ndef:
                             emit_tap(ndef, uid or ndef, "reader", t0, read_ms, ndef)
-                        elif uid:
-                            # Only reads UID if there's no NDEF on the card!
+                        elif uid and not (raw and 0x03 in raw):
+                            # Only reads UID if the card is truly blank / has NO NDEF TLV!
                             log(f"chip {uid} has no NDEF; reading hardware UID as fallback")
                             emit_tap(uid, uid, "reader", t0, read_ms, None)
+                        else:
+                            log(f"chip {uid} has NDEF record but read was incomplete; suppressed raw UID emission")
                     else:
                         log(f"tap detected on {reader_name} but connect failed")
 
