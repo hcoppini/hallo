@@ -497,12 +497,16 @@ def run_card_loop():
                 continue
 
             acr = [r for r in r_list if "ACR122" in r or "PICC" in r or "ACS" in r]
-            if not acr:
+            if acr:
+                reader_name = acr[0]
+            elif len(r_list) == 1:
+                reader_name = r_list[0]
+                log(f"Using only available smartcard reader: {reader_name}")
+            else:
                 log(f"ACR122 reader not detected (found: {r_list}), waiting 2s...")
                 SCardReleaseContext(hcontext)
                 time.sleep(2)
                 continue
-            reader_name = acr[0]
             active_reader["name"] = reader_name
             log(f"Ultra-fast kernel listener attached to: {reader_name}")
 
