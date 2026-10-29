@@ -8,6 +8,7 @@ import { AdminPinModal } from '@/components/AdminPinModal';
 import { StationLockScreen } from '@/components/StationLockScreen';
 import { GuestListImportModal } from '@/components/GuestListImportModal';
 import { PartyScheduleModal } from '@/components/PartyScheduleModal';
+import { NfcAuditorModal } from '@/components/NfcAuditorModal';
 import { usePartyStore } from '@/lib/store';
 import { useStaffAuth } from '@/lib/auth';
 import {
@@ -17,6 +18,7 @@ import {
   RotateCcw,
   Save,
   CheckCircle2,
+  CheckCheck,
   Lock,
   ShieldCheck,
   Users,
@@ -117,6 +119,7 @@ export default function AdminPage() {
 
   // Modals State
   const [isWriterOpen, setIsWriterOpen] = useState(false);
+  const [isAuditorOpen, setIsAuditorOpen] = useState(false);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -775,6 +778,29 @@ export default function AdminPage() {
                   </button>
                 </div>
 
+                {/* Tool: NFC Tag Auditor & Range Verifier */}
+                <div className="p-4 rounded-2xl bg-black/[0.025] border border-black/8 flex flex-col justify-between gap-3">
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="font-sans-clean text-xs font-bold text-black lowercase">
+                        tag auditor & range verifier
+                      </span>
+                      <CheckCheck className="w-4 h-4 text-black/50" />
+                    </div>
+                    <p className="font-sans-clean text-[11px] text-black/55 lowercase leading-relaxed">
+                      tap written stickers to audit sequence, detect repeats, and notify missing numbers between min/max.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsAuditorOpen(true)}
+                    className="btn-premium w-full py-2.5 text-xs gap-2"
+                  >
+                    <CheckCheck className="w-3.5 h-3.5" />
+                    <span>open tag auditor</span>
+                  </button>
+                </div>
+
                 {/* Tool 2: CSV Export */}
                 <div className="p-4 rounded-2xl bg-black/[0.025] border border-black/8 flex flex-col justify-between gap-3">
                   <div>
@@ -1248,6 +1274,12 @@ export default function AdminPage() {
       <NfcWriterModal
         isOpen={isWriterOpen}
         onClose={() => setIsWriterOpen(false)}
+      />
+
+      {/* NFC Tag Auditor & Range Verifier Modal */}
+      <NfcAuditorModal
+        isOpen={isAuditorOpen}
+        onClose={() => setIsAuditorOpen(false)}
       />
 
       {/* Reset Confirmation Modal */}
