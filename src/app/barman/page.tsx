@@ -191,7 +191,7 @@ export default function BarmanPage() {
 
   const handleSelectTag = useCallback(
     async (tagId: string, hardwareUid?: string) => {
-      const targetTag = tagId || hardwareUid || '';
+      const targetTag = tagId || (!settings.enable_hardware_uid_reading ? '' : (hardwareUid || ''));
       if (!targetTag) return;
 
       const cleanHwUid = (hardwareUid || (targetTag && targetTag.length >= 6 && !targetTag.startsWith('TAG-') ? targetTag : '')).replace(/[^A-Za-z0-9]/g, '').toUpperCase();
@@ -344,21 +344,26 @@ export default function BarmanPage() {
     soundSystem.playApprovedSound();
   };
 
+  const handleSelectTagRef = useRef(handleSelectTag);
+  useEffect(() => {
+    handleSelectTagRef.current = handleSelectTag;
+  }, [handleSelectTag]);
+
   // Auto-acquire wake lock and background NFC listener on barman desk
   useEffect(() => {
     if (isAuthenticated) {
       setStaffStationMode('barman');
       nfcController.requestWakeLock();
-      if (isWebNfcSupported() && !nfcController.getScanningState()) {
+      if (isWebNfcSupported()) {
         nfcController.startScan((tagId, hardwareUid) => {
-          handleSelectTag(tagId, hardwareUid);
+          handleSelectTagRef.current(tagId, hardwareUid);
         });
       }
     }
     return () => {
       nfcController.releaseWakeLock();
     };
-  }, [isAuthenticated, handleSelectTag]);
+  }, [isAuthenticated]);
 
   // Listen to real-time NFC Tag Relay
   useEffect(() => {
@@ -375,13 +380,13 @@ export default function BarmanPage() {
         if (msg.result.guest?.id) {
           setSelectedGuestId(msg.result.guest.id);
         } else if (msg.tagId) {
-          handleSelectTag(msg.tagId);
+          handleSelectTagRef.current(msg.tagId);
         }
         setRelayFlash(`Relayed NFC tap: ${msg.result.guest?.name || msg.tagId}`);
         refresh();
         setTimeout(() => setRelayFlash(null), 3500);
       } else if (msg.type === 'TAG_TAPPED' && (msg.tagId || msg.rawId)) {
-        handleSelectTag(msg.tagId || msg.rawId || '', msg.hardwareUid || msg.rawId);
+        handleSelectTagRef.current(msg.tagId || msg.rawId || '', msg.hardwareUid || msg.rawId);
         if (msg.isAssigned === false) {
           setRelayFlash(`Unassigned wristband tapped: ${msg.tagId}`);
           setTimeout(() => setRelayFlash(null), 4000);
@@ -390,7 +395,7 @@ export default function BarmanPage() {
     });
 
     return () => unsubscribe();
-  }, [isAuthenticated, refresh, handleSelectTag, setSelectedGuestId]);
+  }, [isAuthenticated, refresh, setSelectedGuestId]);
 
   const handleDrinkTypeChange = useCallback((type: DrinkType) => {
     setSelectedDrinkType(type);

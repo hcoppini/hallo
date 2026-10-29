@@ -76,13 +76,20 @@ export class NfcController {
     }
   }
 
+  private currentOnTag?: (tagId: string, hardwareUid?: string, recordPayload?: string) => void;
+
   async startScan(
     onTag: (tagId: string, hardwareUid?: string, recordPayload?: string) => void,
     onError?: (err: Error) => void
   ): Promise<boolean> {
+    this.currentOnTag = onTag;
     if (!isWebNfcSupported() || !window.NDEFReader) {
       onError?.(new Error('Web NFC is not supported on this browser/platform. Requires Chrome on Android.'));
       return false;
+    }
+
+    if (this.isScanning) {
+      return true;
     }
 
     try {
@@ -94,11 +101,7 @@ export class NfcController {
       this.isScanning = true;
 
       this.reader.onreading = (event: NDEFReadingEvent) => {
-        const hardwareUid = event.serialNumber
-          ? event.serialNumber.replace(/:/g, '').toUpperCase()
-          : undefined;
-
-        let detectedTagId = hardwareUid || '';
+        let detectedTagId = '';
         let payloadString: string | undefined;
 
         // Try reading NDEF records (both URL and Text)
@@ -138,8 +141,10 @@ export class NfcController {
           }
         }
 
-        if (detectedTagId || hardwareUid) {
-          onTag(detectedTagId || hardwareUid || '', hardwareUid, payloadString);
+        if (detectedTagId) {
+          this.currentOnTag?.(detectedTagId, undefined, payloadString);
+        } else {
+          console.log('[WebNFC] Card tapped but has no valid NDEF payload. Strictly reading solely NDEF.');
         }
       };
 

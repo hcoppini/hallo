@@ -93,10 +93,12 @@ def parse_ndef_message(msg: bytes) -> str | None:
         id_len = msg[idx]
         idx += 1 + id_len
 
-    type_bytes = msg[idx : min(len(msg), idx + type_len)]
+    if len(msg) < idx + type_len + payload_len:
+        return None  # Do not parse incomplete/truncated messages
+
+    type_bytes = msg[idx : idx + type_len]
     idx += type_len
-    payload_end = min(len(msg), idx + payload_len)
-    payload = msg[idx:payload_end]
+    payload = msg[idx : idx + payload_len]
 
     tnf = header & 0x07
     if tnf == 0x01:
@@ -127,13 +129,46 @@ def parse_ndef(raw: bytes) -> str | None:
                 if i + 3 >= len(raw):
                     break
                 length = (raw[i + 2] << 8) | raw[i + 3]
+                if len(raw) < i + 4 + length:
+                    return None  # Incomplete TLV: still waiting for remaining pages
                 msg = raw[i + 4 : i + 4 + length]
             else:
+                if len(raw) < i + 2 + length:
+                    return None  # Incomplete TLV: still waiting for remaining pages
                 msg = raw[i + 2 : i + 2 + length]
             return parse_ndef_message(msg)
         else:
             if i + 1 >= len(raw):
                 break
+            length = raw[i + 1]
+            i += 2 + length
+    return None
+
+
+def get_expected_ndef_bytes(raw: bytes) -> int | None:
+    """Calculates the total byte offset needed to contain the complete NDEF TLV."""
+    i = 0
+    while i < len(raw):
+        b = raw[i]
+        if b == 0x00:
+            i += 1
+            continue
+        if b == 0xFE:
+            return None
+        if b == 0x03:
+            if i + 1 >= len(raw):
+                return None
+            length = raw[i + 1]
+            if length == 0xFF:
+                if i + 3 >= len(raw):
+                    return None
+                length = (raw[i + 2] << 8) | raw[i + 3]
+                return i + 4 + length
+            else:
+                return i + 2 + length
+        else:
+            if i + 1 >= len(raw):
+                return None
             length = raw[i + 1]
             i += 2 + length
     return None
@@ -155,40 +190,12 @@ def extract_ndef(raw: bytes) -> str | None:
     if not raw:
         return None
 
-    # 1. Regex scan for /t/<slug> - highest priority and 100% accurate for wristband set IDs
-    m = re.search(rb'/t/([a-zA-Z0-9_\-]+)', raw)
-    if m:
-        slug = m.group(1).decode("utf-8", errors="replace").strip()
-        if slug and slug.lower() not in ("http", "https"):
-            return parse_tag_slug(slug)
+    # If this is an NDEF TLV and we haven't received all declared bytes yet, wait!
+    needed = get_expected_ndef_bytes(raw)
+    if needed is not None and len(raw) < needed:
+        return None
 
-    # 1b. Regex scan for /(?:tag|wristband|pass|guest)/<slug>
-    m_path = re.search(rb'/(?:tag|wristband|pass|guest)/([a-zA-Z0-9_\-]+)', raw, re.IGNORECASE)
-    if m_path:
-        slug = m_path.group(1).decode("utf-8", errors="replace").strip()
-        if slug and slug.lower() not in ("http", "https"):
-            return parse_tag_slug(slug)
-
-    # 1c. Regex scan for ?tag=<slug> or &tag=<slug>
-    m_url = re.search(rb'[?&](?:tag|id)=([a-zA-Z0-9_\-]+)', raw)
-    if m_url:
-        slug = m_url.group(1).decode("utf-8", errors="replace").strip()
-        if slug:
-            return parse_tag_slug(slug)
-
-    # 2. Regex scan for TAG-XXX, ID-XXX, GUEST-XXX
-    m2 = re.search(rb'(?:TAG|GUEST|ID)[-_#\s]*0*([1-9]\d{0,2})(?:[^0-9]|$)', raw, re.IGNORECASE)
-    if m2:
-        num = int(m2.group(1).decode("utf-8", errors="replace"))
-        return f"TAG-{num:03d}"
-
-    # 3. Regex scan for pure number at end of URL path: /<num>
-    m3_num = re.search(rb'/0*([1-9]\d{0,2})(?:[/?#\x00\xfe]|$)', raw)
-    if m3_num:
-        num = int(m3_num.group(1).decode("utf-8", errors="replace"))
-        return f"TAG-{num:03d}"
-
-    # 4. Standard NDEF parser
+    # 1. Standard NDEF parser on complete message
     parsed = parse_ndef(raw)
     if parsed:
         clean = parsed.strip("\x00\r\n\t ")
@@ -209,12 +216,52 @@ def extract_ndef(raw: bytes) -> str | None:
             slug = m5.group(1).strip()
             if slug and slug.lower() not in ("http", "https"):
                 return parse_tag_slug(slug)
+        m6_q = re.search(r'[?&](?:tag|id)=([a-zA-Z0-9_\-]+)', clean)
+        if m6_q:
+            slug = m6_q.group(1).strip()
+            if slug:
+                return parse_tag_slug(slug)
         m6 = re.search(r'/0*([1-9]\d{0,2})(?:[/?#]|$)', clean)
         if m6:
             num = int(m6.group(1))
             return f"TAG-{num:03d}"
+        # Reject plain URLs without tag slug or query
+        if clean.startswith("http://") or clean.startswith("https://"):
+            return None
+        # Reject raw hex hardware serials (e.g. 8+ char hex)
+        if re.match(r'^[0-9a-fA-F]{8,}$', clean):
+            return None
         if clean:
             return clean
+
+    # 2. Raw regex scans (fallback only if no NDEF TLV was detected or for plain EEPROM dumps)
+    m = re.search(rb'/t/([a-zA-Z0-9_\-]+)', raw)
+    if m:
+        slug = m.group(1).decode("utf-8", errors="replace").strip()
+        if slug and slug.lower() not in ("http", "https"):
+            return parse_tag_slug(slug)
+
+    m_path = re.search(rb'/(?:tag|wristband|pass|guest)/([a-zA-Z0-9_\-]+)', raw, re.IGNORECASE)
+    if m_path:
+        slug = m_path.group(1).decode("utf-8", errors="replace").strip()
+        if slug and slug.lower() not in ("http", "https"):
+            return parse_tag_slug(slug)
+
+    m_url = re.search(rb'[?&](?:tag|id)=([a-zA-Z0-9_\-]+)', raw)
+    if m_url:
+        slug = m_url.group(1).decode("utf-8", errors="replace").strip()
+        if slug:
+            return parse_tag_slug(slug)
+
+    m2 = re.search(rb'(?:TAG|GUEST|ID)[-_#\s]*0*([1-9]\d{0,2})(?:[^0-9]|$)', raw, re.IGNORECASE)
+    if m2:
+        num = int(m2.group(1).decode("utf-8", errors="replace"))
+        return f"TAG-{num:03d}"
+
+    m3_num = re.search(rb'/0*([1-9]\d{0,2})(?:[/?#\x00\xfe]|$)', raw)
+    if m3_num:
+        num = int(m3_num.group(1).decode("utf-8", errors="replace"))
+        return f"TAG-{num:03d}"
 
     return None
 
@@ -230,14 +277,18 @@ def read_card_memory(hcard, proto) -> tuple[str | None, bytearray]:
     """
     # Strategy 1: Non-overlapping 16-byte chunk reads for Type 2 / NTAG
     raw_16 = bytearray()
+    expected_len = None
     for page in (4, 8, 12, 16, 20, 24, 28, 32, 36):
         hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, page, 0x10])
         if hres == SCARD_S_SUCCESS and len(r) >= 18 and r[-2] == 0x90:
             raw_16.extend(r[:-2])
-            cand = extract_ndef(raw_16)
-            if cand:
-                log(f"NDEF read success (Type 2 16B Page {page}): {cand} ({len(raw_16)} bytes)")
-                return cand, raw_16
+            if expected_len is None:
+                expected_len = get_expected_ndef_bytes(raw_16)
+            if (expected_len and len(raw_16) >= expected_len) or (0xFE in raw_16 and len(raw_16) >= 16):
+                cand = extract_ndef(raw_16)
+                if cand:
+                    log(f"NDEF read success (Type 2 16B Page {page}): {cand} ({len(raw_16)} bytes)")
+                    return cand, raw_16
         else:
             break
         time.sleep(0.003)
@@ -249,14 +300,18 @@ def read_card_memory(hcard, proto) -> tuple[str | None, bytearray]:
 
     # Strategy 2: Universal 4-byte single-page reads for Type 2 / NTAG
     raw_4b = bytearray()
+    expected_len = None
     for page in range(4, 40):
         hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, page, 0x04])
         if hres == SCARD_S_SUCCESS and len(r) >= 6 and r[-2] == 0x90:
             raw_4b.extend(r[:-2])
-            cand = extract_ndef(raw_4b)
-            if cand:
-                log(f"NDEF read success (Type 2 4B Page {page}): {cand} ({len(raw_4b)} bytes)")
-                return cand, raw_4b
+            if expected_len is None:
+                expected_len = get_expected_ndef_bytes(raw_4b)
+            if (expected_len and len(raw_4b) >= expected_len) or (0xFE in raw_4b and len(raw_4b) >= 16):
+                cand = extract_ndef(raw_4b)
+                if cand:
+                    log(f"NDEF read success (Type 2 4B Page {page}): {cand} ({len(raw_4b)} bytes)")
+                    return cand, raw_4b
         else:
             break
         time.sleep(0.003)
@@ -268,15 +323,19 @@ def read_card_memory(hcard, proto) -> tuple[str | None, bytearray]:
 
     # Strategy 3: Native PN532 Direct InDataExchange 0x30 read
     raw_pn532 = bytearray()
+    expected_len = None
     for page in (4, 8, 12, 16, 20, 24, 28, 32):
         cmd = [0xFF, 0x00, 0x00, 0x00, 0x05, 0xD4, 0x40, 0x01, 0x30, page]
         hres, r = SCardTransmit(hcard, proto, cmd)
         if hres == SCARD_S_SUCCESS and len(r) >= 19 and r[0] == 0xD5 and r[1] == 0x41 and r[2] == 0x00:
             raw_pn532.extend(r[3:19])
-            cand = extract_ndef(raw_pn532)
-            if cand:
-                log(f"NDEF read success (PN532 Direct Page {page}): {cand} ({len(raw_pn532)} bytes)")
-                return cand, raw_pn532
+            if expected_len is None:
+                expected_len = get_expected_ndef_bytes(raw_pn532)
+            if (expected_len and len(raw_pn532) >= expected_len) or (0xFE in raw_pn532 and len(raw_pn532) >= 16):
+                cand = extract_ndef(raw_pn532)
+                if cand:
+                    log(f"NDEF read success (PN532 Direct Page {page}): {cand} ({len(raw_pn532)} bytes)")
+                    return cand, raw_pn532
         else:
             break
         time.sleep(0.003)
@@ -374,7 +433,9 @@ def load_card_cache() -> dict[str, str]:
             with open(CACHE_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if isinstance(data, dict):
-                    cache.update(data)
+                    for k, v in data.items():
+                        if isinstance(v, str) and (v.startswith("TAG-") or v.isdigit()):
+                            cache[k] = parse_tag_slug(v)
         except Exception as e:
             log(f"warning loading {CACHE_FILE}: {e}")
     return cache
@@ -408,8 +469,8 @@ def broadcast(payload: dict) -> None:
                     "tabId": "acr122u_bridge",
                     "timestamp": payload.get("detectedAt", int(time.time() * 1000)),
                     "tagId": payload.get("tagId"),
-                    "rawId": payload.get("hardwareUid") or payload.get("tagId"),
-                    "hardwareUid": payload.get("hardwareUid") or payload.get("tagId"),
+                    "rawId": payload.get("tagId"),
+                    "hardwareUid": None,
                 }
             },
             "ref": uuid.uuid4().hex[:6]
@@ -508,13 +569,13 @@ def run_ws_server():
         os._exit(1)
 
 
-def emit_tap(tag_id: str, hardware_uid: str, source: str, detected_at: float, read_ms: float, ndef: str | None = None) -> str | None:
+def emit_tap(tag_id: str, hardware_uid: str | None, source: str, detected_at: float, read_ms: float, ndef: str | None = None) -> str | None:
+    clean_tag = parse_tag_slug(tag_id)
     with emitter_lock:
         now = time.time()
-        # Always deduplicate by physical chip hardware UID so the same card never double-triggers
-        card_key = hardware_uid or tag_id
+        card_key = clean_tag
         if card_key and card_key == last_tap["uid"] and now - last_tap["time"] < DEBOUNCE_SECONDS:
-            log(f"debounced duplicate tap for card {card_key}")
+            log(f"debounced duplicate tap for tag {card_key}")
             return None
         last_tap["uid"], last_tap["time"] = card_key, now
     tap_id = uuid.uuid4().hex[:12]
@@ -523,17 +584,18 @@ def emit_tap(tag_id: str, hardware_uid: str, source: str, detected_at: float, re
         {
             "type": "TAG_TAPPED",
             "tapId": tap_id,
-            "tagId": tag_id,
-            "uid": tag_id,
-            "ndef": ndef,
-            "hardwareUid": hardware_uid,
+            "tagId": clean_tag,
+            "uid": clean_tag,
+            "ndef": clean_tag,
+            "rawId": clean_tag,
+            "hardwareUid": None,
             "handlerId": handler,
             "source": source,
             "detectedAt": int(detected_at * 1000),
             "readMs": round(read_ms, 1),
         }
     )
-    log(f"⚡ INSTANT TAP tag={tag_id} hw={hardware_uid} ({source}) read={read_ms:.1f}ms -> handler={handler} clients={len(clients.sockets())}")
+    log(f"⚡ INSTANT NDEF TAP tag={clean_tag} ({source}) read={read_ms:.1f}ms -> handler={handler} clients={len(clients.sockets())}")
     return tap_id
 
 
@@ -645,32 +707,32 @@ def run_card_loop():
                                 log(f"ignoring RF bounce for card {uid}")
                                 continue
 
-                            # 2. Check persistent cache: if this chip UID is already known, resolve it instantly!
-                            if uid and uid in card_uid_cache:
-                                ndef = card_uid_cache[uid]
-                                log(f"instant resolve from cache for chip {uid} -> {ndef}")
-
-                            # 3. Read NDEF with multi-strategy fallback (Type 2, Mifare Classic)
+                            # 2. Always read transponder user memory directly
                             raw = bytearray()
-                            if not ndef:
-                                for read_attempt in range(4):
-                                    ndef, raw = read_card_memory(hcard, proto)
-                                    if ndef:
-                                        break
-                                    time.sleep(0.02)
+                            for read_attempt in range(4):
+                                ndef, raw = read_card_memory(hcard, proto)
+                                if ndef:
+                                    break
+                                time.sleep(0.015)
 
-                            # If NDEF was resolved or read, update persistent cache
+                            # If reading succeeded, update cache
                             if uid and ndef:
                                 if card_uid_cache.get(uid) != ndef:
                                     card_uid_cache[uid] = ndef
                                     save_card_cache(card_uid_cache)
+                            elif uid and not ndef and uid in card_uid_cache:
+                                # Fallback to verified cache only if physical read glitched
+                                cached_val = card_uid_cache[uid]
+                                if cached_val and cached_val.startswith("TAG-"):
+                                    ndef = cached_val
+                                    log(f"resolved from verified cache for chip {uid} -> {ndef}")
                         finally:
                             # CRITICAL: SCARD_LEAVE_CARD leaves RF field powered!
                             SCardDisconnect(hcard, SCARD_LEAVE_CARD)
 
                         read_ms = (time.time() - t0) * 1000
                         if ndef:
-                            emit_tap(ndef, uid or ndef, "reader", t0, read_ms, ndef)
+                            emit_tap(ndef, None, "reader", t0, read_ms, ndef)
                         else:
                             log(f"Ignored card {uid}: no valid NDEF payload detected (raw={len(raw)}B). Strictly reading solely NDEF.")
                     else:

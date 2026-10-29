@@ -133,8 +133,8 @@ function connectLocalNfcBridge() {
           notifyListeners({
             type: 'TAG_TAPPED',
             tagId: incomingTag,
-            rawId: data.hardwareUid || data.uid || incomingTag,
-            hardwareUid: data.hardwareUid || data.uid || incomingTag,
+            rawId: incomingTag,
+            hardwareUid: data.hardwareUid || undefined,
             timestamp: Date.now(),
             tabId: 'acr122u_local_bridge',
           });

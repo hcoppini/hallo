@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { usePartyStore } from '@/lib/store';
 import { Guest, ImportedGuest } from '@/lib/types';
@@ -130,21 +130,26 @@ export default function DoorCheckInPage() {
     }
   }, [guests, settings.enable_hardware_uid_reading]);
 
+  const handleTagTapRef = useRef(handleTagTap);
+  useEffect(() => {
+    handleTagTapRef.current = handleTagTap;
+  }, [handleTagTap]);
+
   // Auto-acquire wake lock and background NFC listener on staff phone door station
   useEffect(() => {
     if (isAuthenticated) {
       setStaffStationMode('door');
       nfcController.requestWakeLock();
-      if (isWebNfcSupported() && !nfcController.getScanningState()) {
+      if (isWebNfcSupported()) {
         nfcController.startScan((tagId, hardwareUid) => {
-          handleTagTap(tagId, hardwareUid);
+          handleTagTapRef.current(tagId, hardwareUid);
         });
       }
     }
     return () => {
       nfcController.releaseWakeLock();
     };
-  }, [isAuthenticated, handleTagTap]);
+  }, [isAuthenticated]);
 
   // Listen for NFC taps relayed from /t/[id] tabs or local ACR122U bridge
   useEffect(() => {
@@ -157,12 +162,12 @@ export default function DoorCheckInPage() {
           station: 'door',
         });
       } else if (msg.type === 'TAG_TAPPED' && (msg.tagId || msg.rawId)) {
-        handleTagTap(msg.tagId || msg.rawId || '', msg.hardwareUid || msg.rawId);
+        handleTagTapRef.current(msg.tagId || msg.rawId || '', msg.hardwareUid || msg.rawId);
       }
     });
 
     return () => unsubscribe();
-  }, [isAuthenticated, handleTagTap]);
+  }, [isAuthenticated]);
 
   const admittedGuests = useMemo(
     () =>
