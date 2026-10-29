@@ -194,68 +194,65 @@ def extract_ndef(raw: bytes) -> str | None:
 def read_card_memory(hcard, proto) -> tuple[str | None, bytearray]:
     """
     Reads card user memory for Type 2 (NTAG213/215/216, Mifare Ultralight)
-    and Type 4 / Mifare Classic 1K tags:
-    - Type 2 tags: User memory starts at Page 4. Reads sequential 16-byte or 4-byte chunks.
-    - Mifare Classic 1K: Authenticates Sector 1 with Key A and reads Blocks 4, 5, 6.
+    and Type 4 / Mifare Classic 1K tags using a 3-tier resilient strategy:
+    1. Native PN532 Direct InDataExchange 0x30 read (bypasses PC/SC sector restrictions)
+    2. Standard PC/SC Type 2 Reads (16-byte chunks with seamless 4-byte single-page fallback)
+    3. Authenticated Mifare Classic 1K read (ONLY if tag is not Type 2)
     """
-    raw = bytearray()
-
-    # Strategy 1: Standard PC/SC Type 2 / NTAG Read
-    # Try reading Page 4 (16 bytes = pages 4..7, or fallback to 4 bytes)
-    for retry in range(5):
-        hres, r4 = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, 4, 0x10])
-        if hres == SCARD_S_SUCCESS and len(r4) >= 18 and r4[-2] == 0x90:
-            raw.extend(r4[:-2])
-            break
-        # Fallback to single page (4-byte) read
-        hres, r4_single = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, 4, 0x04])
-        if hres == SCARD_S_SUCCESS and len(r4_single) >= 6 and r4_single[-2] == 0x90:
-            raw.extend(r4_single[:-2])
-            break
-        time.sleep(0.012)
-
-    if raw:
-        if len(raw) >= 16:
-            # 16-byte chunk mode: read Pages 8 and 12 (covers up to page 15 = 48 bytes)
-            for next_page in (8, 12):
-                cand = extract_ndef(raw)
-                if cand:
-                    log(f"NDEF read success (Type 2 NTAG early): {cand} ({len(raw)} bytes)")
-                    return cand, raw
-
-                for retry in range(4):
-                    hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, next_page, 0x10])
-                    if hres == SCARD_S_SUCCESS and len(r) >= 18 and r[-2] == 0x90:
-                        raw.extend(r[:-2])
-                        break
-                    time.sleep(0.010)
+    # Strategy 1: Native PN532 Direct InDataExchange 0x30 read
+    raw_pn532 = bytearray()
+    for page in (4, 8, 12, 16):
+        cmd = [0xFF, 0x00, 0x00, 0x00, 0x05, 0xD4, 0x40, 0x01, 0x30, page]
+        hres, r = SCardTransmit(hcard, proto, cmd)
+        if hres == SCARD_S_SUCCESS and len(r) >= 19 and r[0] == 0xD5 and r[1] == 0x41 and r[2] == 0x00:
+            raw_pn532.extend(r[3:19])
+            cand = extract_ndef(raw_pn532)
+            if cand:
+                log(f"NDEF read success (PN532 Direct): {cand} ({len(raw_pn532)} bytes)")
+                return cand, raw_pn532
         else:
-            # 4-byte page-by-page mode: read pages 5 through 15
-            for p in range(5, 16):
-                cand = extract_ndef(raw)
-                if cand:
-                    log(f"NDEF read success (Type 2 NTAG early 4B): {cand} ({len(raw)} bytes)")
-                    return cand, raw
+            break
 
-                for retry in range(3):
-                    hres, rp = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, p, 0x04])
-                    if hres == SCARD_S_SUCCESS and len(rp) >= 6 and rp[-2] == 0x90:
-                        raw.extend(rp[:-2])
-                        break
-                    time.sleep(0.006)
+    # Strategy 2: Standard PC/SC Type 2 Reads (16-byte chunks with 4-byte fallback)
+    raw_pcsc = bytearray()
+    cand = None
+    for page in (4, 8, 12, 16):
+        for retry in range(2):
+            hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, page, 0x10])
+            if hres == SCARD_S_SUCCESS and len(r) >= 18 and r[-2] == 0x90:
+                raw_pcsc.extend(r[:-2])
+                break
+            time.sleep(0.005)
+        cand = extract_ndef(raw_pcsc)
+        if cand:
+            log(f"NDEF read success (PC/SC 16B): {cand} ({len(raw_pcsc)} bytes)")
+            return cand, raw_pcsc
+        if len(raw_pcsc) < (page - 4 + 4) * 4:
+            # 16-byte read did not return data for this chunk; fall back to 4-byte single-page reads
+            break
 
-        ndef = extract_ndef(raw)
-        if ndef:
-            log(f"NDEF read success (Type 2 NTAG): {ndef} ({len(raw)} bytes)")
-            return ndef, raw
+    # If 16-byte reads didn't complete or stopped, read page-by-page (4 bytes per page)
+    if not cand and len(raw_pcsc) < 64:
+        start_p = 4 + (len(raw_pcsc) // 4)
+        for p in range(start_p, 20):
+            for retry in range(3):
+                hres, rp = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, p, 0x04])
+                if hres == SCARD_S_SUCCESS and len(rp) >= 6 and rp[-2] == 0x90:
+                    raw_pcsc.extend(rp[:-2])
+                    break
+                time.sleep(0.004)
+            cand = extract_ndef(raw_pcsc)
+            if cand:
+                log(f"NDEF read success (PC/SC 4B page {p}): {cand} ({len(raw_pcsc)} bytes)")
+                return cand, raw_pcsc
 
-    # Strategy 2: Authenticated Mifare Classic read (Sector 1, Blocks 4, 5, 6)
-    # ONLY attempt if Page 4 read was empty (not an NTAG tag), avoiding NTAG state corruption
+    # Strategy 3: Authenticated Mifare Classic read (Sector 1, Blocks 4, 5, 6)
+    # ONLY attempt if NO Type 2 / NTAG memory was read (avoids halting NTAG chips with 0x60 auth)
     raw_classic = bytearray()
-    if not raw:
+    if not raw_pn532 and not raw_pcsc:
         keys = [
-            [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],  # Transport key
             [0xD3, 0xF7, 0xD3, 0xF7, 0xD3, 0xF7],  # NFC Forum NDEF key
+            [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],  # Transport key
             [0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5],  # MAD key
         ]
         for k in keys:
@@ -273,23 +270,7 @@ def read_card_memory(hcard, proto) -> tuple[str | None, bytearray]:
                     return cand, raw_classic
                 break
 
-    # Strategy 3: PN532 Direct InDataExchange fallback (only if not NTAG)
-    raw_pn532 = bytearray()
-    if not raw and not raw_classic:
-        for page in (4, 8, 12):
-            cmd = [0xFF, 0x00, 0x00, 0x00, 0x05, 0xD4, 0x40, 0x01, 0x30, page]
-            time.sleep(0.004)
-            hres, r = SCardTransmit(hcard, proto, cmd)
-            if hres == SCARD_S_SUCCESS and len(r) >= 19 and r[0] == 0xD5 and r[1] == 0x41 and r[2] == 0x00:
-                raw_pn532.extend(r[3:19])
-                cand = extract_ndef(raw_pn532)
-                if cand:
-                    log(f"NDEF read success (PN532 Direct): {cand}")
-                    return cand, raw_pn532
-            else:
-                break
-
-    best_raw = raw or raw_classic or raw_pn532
+    best_raw = raw_pn532 or raw_pcsc or raw_classic
     if best_raw:
         log(f"NDEF unreadable: raw_len={len(best_raw)} hex={best_raw[:32].hex()}")
     return None, best_raw
