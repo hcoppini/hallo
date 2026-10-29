@@ -12,7 +12,6 @@ import {
   Users,
   Search,
   Check,
-  Sparkles,
   Car,
 } from 'lucide-react';
 import { Guest, GuestCategory, PartySettings, DoorCheckInInput, ImportedGuest } from '@/lib/types';
@@ -148,6 +147,18 @@ export function GuestOnboardingCard({
   const [isNfcWriting, setIsNfcWriting] = useState(false);
   const [isNfcSupported, setIsNfcSupported] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isChangingSlot, setIsChangingSlot] = useState(false);
+  const [slotInputVal, setSlotInputVal] = useState('');
+
+  const handleApplyCustomSlot = () => {
+    const num = parseInt(slotInputVal.replace(/\D/g, ''), 10);
+    if (!isNaN(num) && num > 0 && num <= 999) {
+      const formatted = `TAG-${String(num).padStart(3, '0')}`;
+      onTargetTagChange?.(formatted);
+    }
+    setIsChangingSlot(false);
+    setSlotInputVal('');
+  };
 
   useEffect(() => {
     setIsNfcSupported(isWebNfcSupported());
@@ -284,16 +295,100 @@ export function GuestOnboardingCard({
 
   return (
     <div className="glass-card p-4 sm:p-5 border border-black/15 shadow-lg relative overflow-hidden">
-      {/* Compact Header */}
-      <div className="flex items-center justify-between pb-3 mb-3 border-b border-black/10">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-          <h2 className="font-display text-2xl sm:text-3xl font-bold lowercase text-black leading-none">
+      {/* Refined Minimal Header directly above text box */}
+      <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-black/8">
+        <div className="flex items-center gap-2 flex-wrap min-w-0">
+          <h2 className="font-display text-xl sm:text-2xl font-bold lowercase text-black leading-none tracking-tight">
             {existingGuestForSlot?.is_entered ? 'edit guest' : 'register guest'}
           </h2>
-          <span className="px-2.5 py-0.5 rounded-full bg-black text-white font-mono text-xs font-bold tracking-wider shrink-0">
-            {slotNumber !== null ? `Wristband #${slotNumber}` : effectiveTagId}
-          </span>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-md bg-black/[0.04] border border-black/10 text-black/80 tracking-wider">
+              {slotNumber !== null ? `wristband #${slotNumber}` : effectiveTagId}
+            </span>
+            <span className="text-[11px] font-sans-clean text-black/40 font-medium lowercase">
+              {existingGuestForSlot?.is_entered ? 'registered' : 'unassigned'}
+            </span>
+
+            {onTargetTagChange && (
+              isChangingSlot ? (
+                <div className="inline-flex items-center gap-1 ml-0.5">
+                  <input
+                    type="number"
+                    min="1"
+                    max="999"
+                    autoFocus
+                    placeholder="Slot #"
+                    value={slotInputVal}
+                    onChange={e => setSlotInputVal(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleApplyCustomSlot();
+                      } else if (e.key === 'Escape') {
+                        setIsChangingSlot(false);
+                        setSlotInputVal('');
+                      }
+                    }}
+                    className="w-16 px-1.5 py-0.5 text-xs font-mono bg-white border border-black/20 rounded outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleApplyCustomSlot}
+                    className="text-[10px] font-sans-clean font-bold px-1.5 py-0.5 bg-black text-white rounded cursor-pointer"
+                  >
+                    set
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsChangingSlot(false);
+                      setSlotInputVal('');
+                    }}
+                    className="text-[10px] text-black/40 hover:text-black cursor-pointer px-1"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsChangingSlot(true);
+                    setSlotInputVal(slotNumber !== null ? String(slotNumber) : '');
+                  }}
+                  className="text-[10px] font-sans-clean text-black/40 hover:text-black hover:underline cursor-pointer ml-0.5"
+                  title="Change target wristband number"
+                >
+                  change
+                </button>
+              )
+            )}
+
+            {targetTagId && targetTagId !== nextFreeTag && onTargetTagChange && (
+              <button
+                type="button"
+                onClick={() => onTargetTagChange('')}
+                className="text-[10px] font-sans-clean text-black/40 hover:text-black underline cursor-pointer ml-0.5"
+                title="Reset to next available wristband"
+              >
+                auto
+              </button>
+            )}
+
+            {existingGuestForSlot?.is_entered && onTargetTagChange && (
+              <button
+                type="button"
+                onClick={() => {
+                  onTargetTagChange('');
+                  setName('');
+                }}
+                className="text-[10px] font-sans-clean font-semibold text-black/55 hover:text-black underline cursor-pointer ml-1"
+                title="Cancel editing and register a new guest"
+              >
+                cancel edit
+              </button>
+            )}
+          </div>
         </div>
 
         {isNfcSupported && (
@@ -301,29 +396,14 @@ export function GuestOnboardingCard({
             type="button"
             onClick={() => executeOnboarding(true)}
             disabled={isSubmitting || isNfcWriting}
-            className="text-[11px] font-sans-clean font-semibold text-black/60 hover:text-black flex items-center gap-1 cursor-pointer"
+            className="text-[11px] font-sans-clean font-medium text-black/50 hover:text-black flex items-center gap-1 cursor-pointer transition-colors shrink-0"
             title="Write to physical NFC sticker on registration"
           >
-            <Radio className="w-3.5 h-3.5 text-black/50" />
+            <Radio className="w-3.5 h-3.5 text-black/40" />
             <span className="hidden sm:inline">write nfc</span>
           </button>
         )}
       </div>
-
-      {/* Prominent Prompt When Creating New Guest */}
-      {!existingGuestForSlot?.is_entered && (
-        <div className="p-3 mb-3 rounded-2xl bg-emerald-50 border border-emerald-200/80 text-emerald-950 flex items-center justify-between gap-2 shadow-xs animate-in fade-in duration-150">
-          <div className="flex items-center gap-2 min-w-0">
-            <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span className="font-sans-clean text-xs font-bold truncate">
-              Wristband {slotNumber !== null ? `#${slotNumber}` : effectiveTagId} ready — enter guest name to register
-            </span>
-          </div>
-          <span className="font-mono text-[10px] uppercase font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full shrink-0">
-            Unregistered
-          </span>
-        </div>
-      )}
 
       {errorMsg && (
         <div className="p-2.5 mb-3 rounded-xl bg-red-50 text-red-800 text-xs font-sans-clean flex items-center gap-2 border border-red-200">

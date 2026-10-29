@@ -14,7 +14,11 @@ import {
 import {
   PokerSettings,
   loadPokerSettings,
+  savePokerSettings,
   DEFAULT_POKER_SETTINGS,
+  extractLevelMinutes,
+  formatTimer,
+  isPokerGameActive,
 } from '@/lib/poker-utils';
 import { generateQrDataUrl } from '@/lib/qr-utils';
 
@@ -29,23 +33,21 @@ export function PokerWidget({ onExpandFeed }: PokerWidgetProps) {
   // Minimal Live Blind Countdown Timer
   const [levelMinutes, setLevelMinutes] = useState(7);
   const [secondsRemaining, setSecondsRemaining] = useState(7 * 60);
-  const [isTimerRunning, setIsTimerRunning] = useState(true);
   const [currentLevel, setCurrentLevel] = useState(1);
+
+  const isGameActive = isPokerGameActive(pokerSettings.status);
 
   useEffect(() => {
     const loaded = loadPokerSettings();
     setPokerSettings(loaded);
-
-    // Extract minutes from blindInterval if available (e.g. "7 min levels")
-    const match = loaded.blindInterval?.match(/(\d+)\s*min/i);
-    const mins = match ? parseInt(match[1], 10) : 7;
+    const mins = extractLevelMinutes(loaded.blindInterval, 7);
     setLevelMinutes(mins);
     setSecondsRemaining(mins * 60);
   }, []);
 
-  // Ticking countdown effect
+  // Ticking countdown effect: ONLY runs when game is actually active
   useEffect(() => {
-    if (!isTimerRunning) return;
+    if (!isGameActive) return;
     const interval = setInterval(() => {
       setSecondsRemaining(prev => {
         if (prev <= 1) {
@@ -57,7 +59,7 @@ export function PokerWidget({ onExpandFeed }: PokerWidgetProps) {
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [isTimerRunning, levelMinutes]);
+  }, [isGameActive, levelMinutes]);
 
   useEffect(() => {
     let active = true;
@@ -75,12 +77,6 @@ export function PokerWidget({ onExpandFeed }: PokerWidgetProps) {
       active = false;
     };
   }, [pokerSettings.qrUrl]);
-
-  const formatTimer = (totalSec: number) => {
-    const m = Math.floor(totalSec / 60);
-    const s = totalSec % 60;
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
 
   const timerProgress = ((levelMinutes * 60 - secondsRemaining) / (levelMinutes * 60)) * 100;
 
@@ -140,10 +136,15 @@ export function PokerWidget({ onExpandFeed }: PokerWidgetProps) {
               </span>
               <button
                 type="button"
-                onClick={() => setIsTimerRunning(prev => !prev)}
+                onClick={() => {
+                  const nextStatus: PokerSettings['status'] = isGameActive ? 'paused' : 'active';
+                  const updated: PokerSettings = { ...pokerSettings, status: nextStatus };
+                  setPokerSettings(updated);
+                  savePokerSettings(updated);
+                }}
                 className="font-mono text-[10px] text-white/50 hover:text-white transition-colors cursor-pointer"
               >
-                {isTimerRunning ? 'pause' : 'resume'}
+                {isGameActive ? 'pause' : 'resume / start'}
               </button>
             </div>
 

@@ -27,6 +27,7 @@ from smartcard.scard import (
     SCardGetStatusChange,
     SCARD_SCOPE_USER,
     SCARD_SHARE_SHARED,
+    SCARD_PROTOCOL_T0,
     SCARD_PROTOCOL_T1,
     SCARD_LEAVE_CARD,
     SCARD_STATE_UNAWARE,
@@ -462,7 +463,7 @@ def run_card_loop():
                 time.sleep(1)
                 continue
 
-            acr = [r for r in r_list if "ACR122" in r or "PICC" in r]
+            acr = [r for r in r_list if "ACR122" in r or "PICC" in r or "ACS" in r]
             if not acr:
                 log(f"ACR122 reader not detected (found: {r_list}), waiting 2s...")
                 SCardReleaseContext(hcontext)
@@ -492,7 +493,7 @@ def run_card_loop():
                 new_state = states[0][1]
                 was_present = bool(last_state & SCARD_STATE_PRESENT)
                 is_present = bool(new_state & SCARD_STATE_PRESENT)
-                last_state = new_state
+                last_state = new_state & ~SCARD_STATE_CHANGED
 
                 if is_present and not was_present:
                     t0 = time.time()
@@ -503,7 +504,7 @@ def run_card_loop():
                     # Fast connect with direct retry
                     for attempt in range(4):
                         hres, hcard, proto = SCardConnect(
-                            hcontext, reader_name, SCARD_SHARE_SHARED, SCARD_PROTOCOL_T1
+                            hcontext, reader_name, SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1
                         )
                         if hres == SCARD_S_SUCCESS:
                             break

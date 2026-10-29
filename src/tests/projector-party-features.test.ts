@@ -11,6 +11,10 @@ import {
 import {
   DEFAULT_POKER_SETTINGS,
   DEFAULT_PARTY_QRS,
+  extractLevelMinutes,
+  formatTimer,
+  isPokerScheduledNow,
+  isPokerGameActive,
 } from '../lib/poker-utils';
 import { generateQrDataUrl, generateQrSvg } from '../lib/qr-utils';
 import { Guest } from '../lib/types';
@@ -75,6 +79,13 @@ describe('Poker Table & QR Code Generation', () => {
     const pokerQr = DEFAULT_PARTY_QRS.find(q => q.icon === 'poker');
     expect(pokerQr).toBeDefined();
     expect(pokerQr?.url).toBeTruthy();
+  });
+
+  it('keeps poker tournament synced inside party QRs in the unified QR hub', () => {
+    const qrs = DEFAULT_PARTY_QRS;
+    const pokerItem = qrs.find(q => q.id === 'poker-main');
+    expect(pokerItem).toBeDefined();
+    expect(pokerItem?.url).toBe(DEFAULT_POKER_SETTINGS.qrUrl);
   });
 });
 
@@ -142,32 +153,47 @@ describe('Party Fun Stats Calculation', () => {
 });
 
 describe('Poker Live Clock & Blind Level Extraction', () => {
-  it('correctly extracts minutes from blind interval strings', () => {
-    const intervals = [
-      { input: '7 min levels (30–40m game)', expectedMins: 7 },
-      { input: '15 min levels', expectedMins: 15 },
-      { input: '10 min', expectedMins: 10 },
-      { input: 'turbo 5mins', expectedMins: 5 },
-    ];
-
-    intervals.forEach(({ input, expectedMins }) => {
-      const match = input.match(/(\d+)\s*min/i);
-      const mins = match ? parseInt(match[1], 10) : 7;
-      expect(mins).toBe(expectedMins);
-    });
+  it('correctly extracts minutes from blind interval strings using extractLevelMinutes', () => {
+    expect(extractLevelMinutes('7 min levels (30–40m game)')).toBe(7);
+    expect(extractLevelMinutes('15 min levels')).toBe(15);
+    expect(extractLevelMinutes('10 min')).toBe(10);
+    expect(extractLevelMinutes('turbo 5mins')).toBe(5);
+    expect(extractLevelMinutes(undefined, 7)).toBe(7);
   });
 
   it('formats level timer seconds into MM:SS correctly', () => {
-    const formatTimer = (totalSec: number) => {
-      const m = Math.floor(totalSec / 60);
-      const s = totalSec % 60;
-      return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    };
-
     expect(formatTimer(420)).toBe('07:00');
     expect(formatTimer(385)).toBe('06:25');
     expect(formatTimer(59)).toBe('00:59');
     expect(formatTimer(5)).toBe('00:05');
     expect(formatTimer(0)).toBe('00:00');
+  });
+
+  it('evaluates whether poker game is active correctly', () => {
+    // When manually active, game is active
+    expect(isPokerGameActive('active')).toBe(true);
+    expect(isPokerGameActive('active', false)).toBe(true);
+
+    // When paused, game is never active even if scheduled
+    expect(isPokerGameActive('paused', false)).toBe(false);
+    expect(isPokerGameActive('paused', true)).toBe(false);
+
+    // When upcoming, only active if reached on schedule
+    expect(isPokerGameActive('upcoming', false)).toBe(false);
+    expect(isPokerGameActive('upcoming', true)).toBe(true);
+  });
+
+  it('checks if poker tournament is scheduled right now based on party schedule', () => {
+    // cp-5 in DEFAULT_PARTY_SCHEDULE is 01:00 Poker Tournament Championship
+    // At 21:00: not scheduled yet
+    expect(isPokerScheduledNow(DEFAULT_PARTY_SCHEDULE, '21:00')).toBe(false);
+
+    // At 01:00: actively scheduled now!
+    expect(isPokerScheduledNow(DEFAULT_PARTY_SCHEDULE, '01:00')).toBe(true);
+    // Within 15m window of 01:00 (e.g. 01:05)
+    expect(isPokerScheduledNow(DEFAULT_PARTY_SCHEDULE, '01:05')).toBe(true);
+
+    // At 02:00: past
+    expect(isPokerScheduledNow(DEFAULT_PARTY_SCHEDULE, '02:00')).toBe(false);
   });
 });

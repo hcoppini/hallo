@@ -42,7 +42,6 @@ import {
   formatRelativeTime,
 } from '@/lib/projector-utils';
 import { PartyProgressBar } from './PartyProgressBar';
-import { PokerWidget } from './PokerWidget';
 import { PartyFunStatsWidget } from './PartyFunStatsWidget';
 import { PartyQrHubWidget } from './PartyQrHubWidget';
 import {
@@ -51,7 +50,7 @@ import {
   PARTY_SCHEDULE_STORAGE_KEY,
 } from '@/lib/party-schedule-utils';
 
-export type SidebarTab = 'arrivals' | 'poker' | 'stats' | 'qrs';
+export type SidebarTab = 'arrivals' | 'qrs' | 'stats';
 
 export function ProjectorDisplay() {
   const { guests, checkIn, refresh } = usePartyStore();
@@ -679,9 +678,8 @@ export function ProjectorDisplay() {
               <div className="flex items-center justify-between gap-3">
                 <h2 className="font-display text-2xl sm:text-3xl font-bold lowercase tracking-tight leading-none text-white truncate">
                   {activeSidebarTab === 'arrivals' && 'live guest arrivals'}
-                  {activeSidebarTab === 'poker' && 'poker table'}
+                  {activeSidebarTab === 'qrs' && 'guest qr hub'}
                   {activeSidebarTab === 'stats' && 'party leaderboard'}
-                  {activeSidebarTab === 'qrs' && 'guest qr station'}
                 </h2>
 
                 {/* The ONE Low-Key Attendance Counter */}
@@ -713,15 +711,15 @@ export function ProjectorDisplay() {
 
                 <button
                   type="button"
-                  onClick={() => setActiveSidebarTab('poker')}
+                  onClick={() => setActiveSidebarTab('qrs')}
                   className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-sans-clean font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                    activeSidebarTab === 'poker'
+                    activeSidebarTab === 'qrs'
                       ? 'bg-white text-black shadow-sm font-bold'
                       : 'text-white/60 hover:text-white hover:bg-white/[0.06]'
                   }`}
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>poker table</span>
+                  <QrCode className="w-3.5 h-3.5" />
+                  <span>qr hub</span>
                 </button>
 
                 <button
@@ -735,19 +733,6 @@ export function ProjectorDisplay() {
                 >
                   <Trophy className="w-3.5 h-3.5" />
                   <span>fun stats</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveSidebarTab('qrs')}
-                  className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-sans-clean font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                    activeSidebarTab === 'qrs'
-                      ? 'bg-white text-black shadow-sm font-bold'
-                      : 'text-white/60 hover:text-white hover:bg-white/[0.06]'
-                  }`}
-                >
-                  <QrCode className="w-3.5 h-3.5" />
-                  <span>qr hub</span>
                 </button>
               </div>
 
@@ -840,21 +825,18 @@ export function ProjectorDisplay() {
               </>
             )}
 
-            {activeSidebarTab === 'poker' && (
+            {activeSidebarTab === 'qrs' && (
               <div className="flex-1 min-h-0 pt-2 animate-in fade-in duration-200">
-                <PokerWidget onExpandFeed={() => setActiveSidebarTab('arrivals')} />
+                <PartyQrHubWidget
+                  onExpandFeed={() => setActiveSidebarTab('arrivals')}
+                  schedule={partySchedule}
+                />
               </div>
             )}
 
             {activeSidebarTab === 'stats' && (
               <div className="flex-1 min-h-0 pt-2 animate-in fade-in duration-200">
                 <PartyFunStatsWidget guests={guests} />
-              </div>
-            )}
-
-            {activeSidebarTab === 'qrs' && (
-              <div className="flex-1 min-h-0 pt-2 animate-in fade-in duration-200">
-                <PartyQrHubWidget />
               </div>
             )}
           </div>
