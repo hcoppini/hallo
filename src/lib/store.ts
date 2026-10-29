@@ -72,6 +72,7 @@ const initialSettings: PartySettings = {
   is_party_active: true,
   admin_pin: '2113',
   cutoff_time: null,
+  enable_hardware_uid_reading: false,
 };
 
 function generateUuid(): string {

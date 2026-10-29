@@ -246,6 +246,14 @@ export default function BarmanPage() {
         // Show inline unassigned badge and allow 1-click binding to active guest or door link.
         const parsed = parseTagId(targetTag);
         const canonical = parsed.canonicalTag || targetTag;
+
+        // Check if raw serial reading is disabled
+        const isRawSerial = parsed.tagNumber === null && !targetTag.toUpperCase().startsWith('TAG-') && !targetTag.toUpperCase().startsWith('ID-');
+        if (isRawSerial && !settings.enable_hardware_uid_reading) {
+          console.log(`[Barman] Suppressed unassigned raw hardware serial: ${targetTag}`);
+          return;
+        }
+
         setUnassignedTagPrompt(canonical);
         setUnassignedHardwareUid(hardwareUid || targetTag);
         soundSystem.playWarningSound();

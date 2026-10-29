@@ -132,6 +132,12 @@ export default function DoorCheckInPage() {
           setRelayedTagNotice(`Wristband ${slotText} is already registered to ${registered.name}!`);
           setTimeout(() => setRelayedTagNotice(null), 5000);
         } else {
+          // If hardware UID reading is disabled, suppress unassigned raw serials from populating registration
+          const isRawSerial = parsed.tagNumber === null && !canonical.startsWith('TAG-') && !canonical.startsWith('ID-');
+          if (isRawSerial && !settings.enable_hardware_uid_reading) {
+            console.log(`[Door] Suppressed unassigned raw hardware serial: ${canonical}`);
+            return;
+          }
           // Unregistered tag: seamlessly load into registration form with zero annoying popups
           setSelectedTagId(canonical);
           soundSystem.playApprovedSound();
@@ -141,7 +147,7 @@ export default function DoorCheckInPage() {
     });
 
     return () => unsubscribe();
-  }, [isAuthenticated, guests]);
+  }, [isAuthenticated, guests, settings]);
 
   const admittedGuests = useMemo(
     () =>

@@ -138,6 +138,7 @@ export interface PartySettings {
   is_party_active: boolean;
   admin_pin: string;
   cutoff_time?: string | null;
+  enable_hardware_uid_reading?: boolean;
   created_at?: string;
   updated_at?: string;
 }

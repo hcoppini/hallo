@@ -92,6 +92,7 @@ export default function AdminPage() {
   const [defaultLimit, setDefaultLimit] = useState(settings.default_drink_limit);
   const [partyName, setPartyName] = useState(settings.party_name);
   const [adminPin, setAdminPin] = useState(settings.admin_pin);
+  const [enableHardwareUid, setEnableHardwareUid] = useState(Boolean(settings.enable_hardware_uid_reading));
   const [showPin, setShowPin] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
@@ -126,6 +127,7 @@ export default function AdminPage() {
     setDefaultLimit(settings.default_drink_limit);
     setPartyName(settings.party_name);
     setAdminPin(settings.admin_pin);
+    setEnableHardwareUid(Boolean(settings.enable_hardware_uid_reading));
   }, [settings]);
 
   const kpis = useMemo(
@@ -140,6 +142,7 @@ export default function AdminPage() {
       default_drink_limit: sanitizedLimit,
       party_name: partyName.trim() || 'Halloween Birthday Party 2026',
       admin_pin: adminPin.trim() || '2113',
+      enable_hardware_uid_reading: enableHardwareUid,
     });
     soundSystem.playApprovedSound();
     setSaveSuccess(true);
@@ -682,6 +685,40 @@ export default function AdminPage() {
                           <span>resume bar</span>
                         </>
                       )}
+                    </button>
+                  </div>
+
+                  {/* Hardware UID (NFC Serial) Reading Toggle */}
+                  <div className="md:col-span-2 xl:col-span-2 p-4 rounded-2xl bg-black/[0.025] border border-black/8 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <label className="block text-xs font-sans-clean font-bold text-black lowercase">
+                          hardware uid (nfc serial) reading
+                        </label>
+                        <span className={`font-mono text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          enableHardwareUid ? 'bg-amber-100 text-amber-800' : 'bg-black/6 text-black/60'
+                        }`}>
+                          {enableHardwareUid ? 'ENABLED' : 'DISABLED (NDEF ONLY)'}
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-sans-clean text-black/50 lowercase block mt-0.5">
+                        {enableHardwareUid
+                          ? 'Accept raw hardware chip serials (e.g. 53B88CFF...) as wristband identifiers'
+                          : 'Disabled (recommended) — strictly uses pre-encoded TAG-XXX / URLs to prevent serial overrides'}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setEnableHardwareUid(prev => !prev)}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-semibold lowercase flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
+                        enableHardwareUid
+                          ? 'bg-amber-500 text-black font-bold hover:bg-amber-400'
+                          : 'bg-black text-white hover:bg-black/85'
+                      }`}
+                    >
+                      <Radio className="w-3.5 h-3.5" />
+                      <span>{enableHardwareUid ? 'turn off uid' : 'enable uid'}</span>
                     </button>
                   </div>
                 </div>

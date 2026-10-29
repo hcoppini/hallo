@@ -333,5 +333,15 @@ describe('Tag Utils Parsing & Matching', () => {
 
     // Rejects truncated httpshall fragment
     expect(isTagMatch(guest, 'httpshall')).toBe(false);
+
+    // Tag 69 verification
+    const res69 = parseTagId('https://hallo-zkqp.vercel.app/t/69');
+    expect(res69.canonicalTag).toBe('TAG-069');
+    expect(res69.tagNumber).toBe(69);
+
+    // Raw serial does not parse as a numeric tag number
+    const rawSerial = parseTagId('53B88CFF130001');
+    expect(rawSerial.tagNumber).toBeNull();
+    expect(rawSerial.canonicalTag).toBe('53B88CFF130001');
   });
 });

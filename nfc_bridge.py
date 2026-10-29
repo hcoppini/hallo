@@ -188,37 +188,44 @@ def read_card_memory(hcard, proto) -> tuple[str | None, bytearray]:
     """
     Reads card user memory for Type 2 (NTAG213/215/216, Mifare Ultralight)
     and Type 4 / Mifare Classic 1K tags:
-    - Type 2 tags: User memory starts at Page 4. Reads sequential 16-byte chunks (Pages 4, 8, 12, 16, 20).
+    - Type 2 tags: User memory starts at Page 4. Reads sequential 16-byte chunks (Pages 4, 8, 12).
     - Mifare Classic 1K: Authenticates Sector 1 with Key A and reads Blocks 4, 5, 6.
-    - Fallback: Direct PN532 InDataExchange reads.
     """
     raw = bytearray()
 
-    # Strategy 1: Type 2 / NTAG Sequential Read (Pages 4, 8, 12, 16, 20)
+    # Strategy 0: PN532 Direct InDataExchange FAST_READ (Pages 4 through 15 = 48 bytes)
+    # NTAG213/215/216 FAST_READ opcode is 0x3A <start_page> <end_page>
+    try:
+        fast_cmd = [0xFF, 0x00, 0x00, 0x00, 0x06, 0xD4, 0x40, 0x01, 0x3A, 4, 15]
+        hres, r_fast = SCardTransmit(hcard, proto, fast_cmd)
+        if hres == SCARD_S_SUCCESS and len(r_fast) >= 19 and r_fast[0] == 0xD5 and r_fast[1] == 0x41 and r_fast[2] == 0x00:
+            raw_fast = bytearray(r_fast[3:-2] if len(r_fast) > 5 and r_fast[-2] == 0x90 else r_fast[3:])
+            cand = extract_ndef(raw_fast)
+            if cand:
+                log(f"NDEF read success (NTAG FAST_READ): {cand} ({len(raw_fast)} bytes)")
+                return cand, raw_fast
+    except Exception:
+        pass
+
+    # Strategy 1: Type 2 / NTAG Sequential Read (Pages 4, 8, 12)
+    # Read Page 4 (Pages 4, 5, 6, 7 = 16 bytes)
     hres, r4 = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, 4, 0x10])
     if hres == SCARD_S_SUCCESS and len(r4) >= 18 and r4[-2] == 0x90 and r4[-1] == 0x00:
         raw.extend(r4[:-2])
 
-        p4_bytes = r4[:-2]
-        needed_bytes = 48
-        if 0x03 in p4_bytes:
-            idx = p4_bytes.index(0x03)
-            if idx + 1 < len(p4_bytes):
-                tlv_len = p4_bytes[idx + 1]
-                if tlv_len < 0xFF:
-                    needed_bytes = idx + 2 + tlv_len + 1
-                elif idx + 3 < len(p4_bytes):
-                    needed_bytes = idx + 4 + ((p4_bytes[idx + 2] << 8) | p4_bytes[idx + 3]) + 1
+        # Sequentially read Pages 8 and 12 (covers up to page 15 = 48 bytes)
+        for next_page in (8, 12):
+            cand = extract_ndef(raw)
+            if cand:
+                log(f"NDEF read success (Type 2 NTAG early): {cand} ({len(raw)} bytes)")
+                return cand, raw
 
-        for next_page in (8, 12, 16, 20):
-            if len(raw) >= needed_bytes:
-                break
-            time.sleep(0.008)
-            hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, next_page, 0x10])
-            if hres == SCARD_S_SUCCESS and len(r) >= 18 and r[-2] == 0x90 and r[-1] == 0x00:
-                raw.extend(r[:-2])
-            else:
-                break
+            for retry in range(2):
+                hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, next_page, 0x10])
+                if hres == SCARD_S_SUCCESS and len(r) >= 18 and r[-2] == 0x90 and r[-1] == 0x00:
+                    raw.extend(r[:-2])
+                    break
+                time.sleep(0.005)
 
         ndef = extract_ndef(raw)
         if ndef:
@@ -226,32 +233,34 @@ def read_card_memory(hcard, proto) -> tuple[str | None, bytearray]:
             return ndef, raw
 
     # Strategy 2: Authenticated Mifare Classic read (Sector 1, Blocks 4, 5, 6)
+    # ONLY attempt if Page 4 read was empty (not an NTAG tag), avoiding NTAG state corruption
     raw_classic = bytearray()
-    keys = [
-        [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],  # Transport key
-        [0xD3, 0xF7, 0xD3, 0xF7, 0xD3, 0xF7],  # NFC Forum NDEF key
-        [0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5],  # MAD key
-    ]
-    for k in keys:
-        SCardTransmit(hcard, proto, [0xFF, 0x82, 0x00, 0x00, 0x06] + k)
-        hres, r = SCardTransmit(hcard, proto, [0xFF, 0x86, 0x00, 0x00, 0x05, 0x01, 0x00, 0x04, 0x60, 0x00])
-        if hres == SCARD_S_SUCCESS and len(r) >= 2 and r[-2] == 0x90:
-            for b in (4, 5, 6):
-                time.sleep(0.005)
-                hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, b, 0x10])
-                if hres == SCARD_S_SUCCESS and len(r) >= 18 and r[-2] == 0x90:
-                    raw_classic.extend(r[:-2])
-            cand = extract_ndef(raw_classic)
-            if cand:
-                log(f"NDEF read success (Mifare Classic): {cand}")
-                return cand, raw_classic
-            break
+    if not raw:
+        keys = [
+            [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],  # Transport key
+            [0xD3, 0xF7, 0xD3, 0xF7, 0xD3, 0xF7],  # NFC Forum NDEF key
+            [0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5],  # MAD key
+        ]
+        for k in keys:
+            SCardTransmit(hcard, proto, [0xFF, 0x82, 0x00, 0x00, 0x06] + k)
+            hres, r = SCardTransmit(hcard, proto, [0xFF, 0x86, 0x00, 0x00, 0x05, 0x01, 0x00, 0x04, 0x60, 0x00])
+            if hres == SCARD_S_SUCCESS and len(r) >= 2 and r[-2] == 0x90:
+                for b in (4, 5, 6):
+                    time.sleep(0.005)
+                    hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, b, 0x10])
+                    if hres == SCARD_S_SUCCESS and len(r) >= 18 and r[-2] == 0x90:
+                        raw_classic.extend(r[:-2])
+                cand = extract_ndef(raw_classic)
+                if cand:
+                    log(f"NDEF read success (Mifare Classic): {cand}")
+                    return cand, raw_classic
+                break
 
     # Strategy 3: PN532 Direct InDataExchange fallback
     raw_pn532 = bytearray()
-    for page in (4, 8, 12, 16):
+    for page in (4, 8, 12):
         cmd = [0xFF, 0x00, 0x00, 0x00, 0x05, 0xD4, 0x40, 0x01, 0x30, page]
-        time.sleep(0.005)
+        time.sleep(0.004)
         hres, r = SCardTransmit(hcard, proto, cmd)
         if hres == SCARD_S_SUCCESS and len(r) >= 19 and r[0] == 0xD5 and r[1] == 0x41 and r[2] == 0x00:
             raw_pn532.extend(r[3:19])
@@ -315,7 +324,32 @@ supabase_ws = None
 active_reader = {"name": None}
 emitter_lock = threading.Lock()
 last_tap = {"uid": None, "time": 0.0}
-card_uid_cache = {}
+
+CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "nfc_cache.json")
+
+def load_card_cache() -> dict[str, str]:
+    # Default pre-seed mapping for known stickers
+    cache: dict[str, str] = {
+        "53B88CFF130001": "TAG-069",
+    }
+    if os.path.exists(CACHE_FILE):
+        try:
+            with open(CACHE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    cache.update(data)
+        except Exception as e:
+            log(f"warning loading {CACHE_FILE}: {e}")
+    return cache
+
+def save_card_cache(cache: dict[str, str]) -> None:
+    try:
+        with open(CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(cache, f, indent=2)
+    except Exception as e:
+        log(f"warning saving {CACHE_FILE}: {e}")
+
+card_uid_cache = load_card_cache()
 
 
 def broadcast(payload: dict) -> None:
@@ -527,27 +561,33 @@ def run_card_loop():
                                 log(f"ignoring RF bounce for card {uid}")
                                 continue
 
-                            # 2. Read NDEF with multi-strategy fallback (PN532 direct, PC/SC, Mifare Classic)
-                            ndef, raw = read_card_memory(hcard, proto)
-                            if not ndef:
-                                time.sleep(0.015)
-                                ndef, raw = read_card_memory(hcard, proto)
+                            # 2. Check persistent cache: if this chip UID is already known, resolve it instantly!
+                            if uid and uid in card_uid_cache:
+                                ndef = card_uid_cache[uid]
+                                log(f"instant resolve from cache for chip {uid} -> {ndef}")
 
-                            # If NDEF was previously known for this chip, use cached tag so it never drops to raw serial!
-                            if uid:
-                                if ndef:
+                            # 3. Read NDEF with multi-strategy fallback (FAST_READ, Type 2, Mifare Classic)
+                            if not ndef:
+                                ndef, raw = read_card_memory(hcard, proto)
+                                if not ndef:
+                                    time.sleep(0.005)
+                                    ndef, raw = read_card_memory(hcard, proto)
+
+                            # If NDEF was resolved or read, update persistent cache
+                            if uid and ndef:
+                                if card_uid_cache.get(uid) != ndef:
                                     card_uid_cache[uid] = ndef
-                                elif uid in card_uid_cache:
-                                    ndef = card_uid_cache[uid]
-                                    log(f"recovering cached tag {ndef} for chip {uid}")
+                                    save_card_cache(card_uid_cache)
                         finally:
                             # CRITICAL: SCARD_LEAVE_CARD leaves RF field powered!
                             SCardDisconnect(hcard, SCARD_LEAVE_CARD)
 
                         read_ms = (time.time() - t0) * 1000
-                        effective_tag = ndef or uid
-                        if effective_tag:
-                            emit_tap(effective_tag, uid or effective_tag, "reader", t0, read_ms, ndef)
+                        if ndef:
+                            emit_tap(ndef, uid or ndef, "reader", t0, read_ms, ndef)
+                        else:
+                            # Strictly suppress raw hardware serial emission unless NDEF was extracted
+                            log(f"chip {uid} has no valid NDEF; raw UID emission suppressed")
                     else:
                         log(f"tap detected on {reader_name} but connect failed")
 
