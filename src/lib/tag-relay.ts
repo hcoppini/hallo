@@ -85,9 +85,14 @@ function initRelay() {
 
       supabaseRelayChannel
         .on('broadcast', { event: 'nfc_tap_relay' }, payload => {
-          const msg = payload?.payload as TagRelayMessage | undefined;
-          if (msg && msg.tabId !== currentTabId) {
-            notifyListeners(msg);
+          let msg = payload?.payload as any;
+          // Robustly unwrap nested payload if wrapped in { type: 'broadcast', payload: ... }
+          if (msg && msg.payload && (msg.type === 'broadcast' || !msg.type || msg.type !== 'TAG_TAPPED')) {
+            msg = msg.payload;
+          }
+          if (msg && (msg.type === 'TAG_TAPPED' || msg.tagId || msg.rawId) && msg.tabId !== currentTabId) {
+            if (!msg.type) msg.type = 'TAG_TAPPED';
+            notifyListeners(msg as TagRelayMessage);
           }
         })
         .subscribe();

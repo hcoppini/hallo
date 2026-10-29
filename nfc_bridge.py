@@ -198,58 +198,49 @@ def extract_ndef(raw: bytes) -> str | None:
 def read_card_memory(hcard, proto) -> tuple[str | None, bytearray]:
     """
     Reads card user memory for Type 2 (NTAG213/215/216, Mifare Ultralight)
-    and Type 4 / Mifare Classic 1K tags:
-    1. Read Page 4 (16 bytes = pages 4..7).
-    2. Read Pages 8 through 19 (4 bytes each: FF B0 00 <page> 04).
-       Reading 4 bytes per page on ACR122U completely avoids the 69 82 Sector boundary error!
-    3. As soon as extract_ndef finds a valid tag, return early.
-    4. Fallback for Mifare Classic (ONLY if Page 4 read returned nothing).
+    and Mifare Classic 1K tags using sequential block/page reading:
+    - Sector 1 Blocks 4, 5, 6 (16 bytes each = 48 bytes)
+    - Sequential 4-byte pages: Pages 4 through 19
     """
     raw = bytearray()
 
-    # Step 1: Read Page 4 (try 16-byte chunk, or fallback to 4 bytes)
-    for retry in range(4):
-        hres, r4 = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, 4, 0x10])
-        if hres == SCARD_S_SUCCESS and len(r4) >= 18 and r4[-2] == 0x90:
-            raw.extend(r4[:-2])
-            break
-        hres, r4_single = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, 4, 0x04])
-        if hres == SCARD_S_SUCCESS and len(r4_single) >= 6 and r4_single[-2] == 0x90:
-            raw.extend(r4_single[:-2])
-            break
-        time.sleep(0.008)
-
-    # Step 2: Read remaining pages 4 bytes at a time
-    if raw:
+    # Step 1: Read Sector 1 Blocks 4, 5, 6 (16-byte chunks)
+    # Covers Mifare Classic 1K (Blocks 4, 5, 6 = Sector 1 = 48 bytes)
+    # Also reads NTAG213 Pages 4..7 in one shot!
+    for b in (4, 5, 6):
+        for retry in range(3):
+            hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, b, 0x10])
+            if hres == SCARD_S_SUCCESS and len(r) >= 18 and r[-2] == 0x90:
+                raw.extend(r[:-2])
+                break
+            time.sleep(0.005)
         cand = extract_ndef(raw)
         if cand:
-            log(f"NDEF read success (Page 4): {cand} ({len(raw)} bytes)")
+            log(f"NDEF read success (Block {b} 16B): {cand} ({len(raw)} bytes)")
             return cand, raw
 
-        start_page = 4 + (len(raw) // 4)
-        for page in range(start_page, 20):
-            for retry in range(3):
-                hres, rp = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, page, 0x04])
-                if hres == SCARD_S_SUCCESS and len(rp) >= 6 and rp[-2] == 0x90:
-                    raw.extend(rp[:-2])
-                    break
-                time.sleep(0.004)
+    # Step 2: Read individual pages (4 bytes each) for pages 4 through 19
+    cand = extract_ndef(raw)
+    if cand:
+        return cand, raw
 
-            cand = extract_ndef(raw)
-            if cand:
-                log(f"NDEF read success (Page {page}): {cand} ({len(raw)} bytes)")
-                return cand, raw
-
+    start_p = 4 if not raw else 8
+    for p in range(start_p, 20):
+        for retry in range(3):
+            hres, rp = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, p, 0x04])
+            if hres == SCARD_S_SUCCESS and len(rp) >= 6 and rp[-2] == 0x90:
+                raw.extend(rp[:-2])
+                break
+            time.sleep(0.004)
         cand = extract_ndef(raw)
         if cand:
-            log(f"NDEF read success (full NTAG): {cand} ({len(raw)} bytes)")
+            log(f"NDEF read success (Page {p} 4B): {cand} ({len(raw)} bytes)")
             return cand, raw
 
-    # Step 3: Mifare Classic fallback ONLY if Page 4 was completely unreadable
-    raw_classic = bytearray()
+    # Step 3: Authenticated Mifare Classic fallback with Key A
     if not raw:
         keys = [
-            [0xD3, 0xF7, 0xD3, 0xF7, 0xD3, 0xF7],  # NFC Forum NDEF key
+            [0xD3, 0xF7, 0xD3, 0xF7, 0xD3, 0xF7],  # NFC Forum key
             [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],  # Transport key
             [0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5],  # MAD key
         ]
@@ -258,17 +249,17 @@ def read_card_memory(hcard, proto) -> tuple[str | None, bytearray]:
             hres, r = SCardTransmit(hcard, proto, [0xFF, 0x86, 0x00, 0x00, 0x05, 0x01, 0x00, 0x04, 0x60, 0x00])
             if hres == SCARD_S_SUCCESS and len(r) >= 2 and r[-2] == 0x90:
                 for b in (4, 5, 6):
-                    time.sleep(0.005)
+                    time.sleep(0.004)
                     hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, b, 0x10])
                     if hres == SCARD_S_SUCCESS and len(r) >= 18 and r[-2] == 0x90:
-                        raw_classic.extend(r[:-2])
-                cand = extract_ndef(raw_classic)
+                        raw.extend(r[:-2])
+                cand = extract_ndef(raw)
                 if cand:
-                    log(f"NDEF read success (Mifare Classic): {cand}")
-                    return cand, raw_classic
+                    log(f"NDEF read success (Mifare Classic Auth): {cand}")
+                    return cand, raw
                 break
 
-    best_raw = raw or raw_classic
+    best_raw = raw
     if best_raw:
         log(f"NDEF unreadable: raw_len={len(best_raw)} hex={best_raw[:32].hex()}")
     return None, best_raw
@@ -368,7 +359,8 @@ def broadcast(payload: dict) -> None:
                     "tabId": "acr122u_bridge",
                     "timestamp": payload.get("detectedAt", int(time.time() * 1000)),
                     "tagId": payload.get("tagId"),
-                    "rawId": payload.get("hardwareUid"),
+                    "rawId": payload.get("hardwareUid") or payload.get("tagId"),
+                    "hardwareUid": payload.get("hardwareUid") or payload.get("tagId"),
                 }
             },
             "ref": uuid.uuid4().hex[:6]
@@ -414,17 +406,44 @@ async def supabase_realtime_loop():
             await asyncio.sleep(3)
 
 
+def kill_competing_bridges():
+    """Ensure no duplicate nfc_bridge.py or process is holding port 4567."""
+    my_pid = os.getpid()
+    if sys.platform == "win32":
+        try:
+            import subprocess
+            out = subprocess.check_output('netstat -aon | findstr ":4567" | findstr "LISTENING"', shell=True, text=True, stderr=subprocess.DEVNULL)
+            for line in out.strip().splitlines():
+                parts = line.split()
+                if parts:
+                    pid = int(parts[-1])
+                    if pid != my_pid and pid > 0:
+                        log(f"Terminating old competing bridge process (PID {pid})...")
+                        subprocess.run(f"taskkill /F /PID {pid}", shell=True, capture_output=True)
+                        time.sleep(0.4)
+        except Exception:
+            pass
+
+
 def run_ws_server():
     global ws_loop
     ws_loop = asyncio.new_event_loop()
     asyncio.set_event_loop(ws_loop)
 
-    async def main():
+    async def main_ws():
         asyncio.create_task(supabase_realtime_loop())
-        async with websockets.serve(ws_handler, WS_HOST, WS_PORT):
-            await asyncio.Future()
+        try:
+            async with websockets.serve(ws_handler, WS_HOST, WS_PORT):
+                await asyncio.Future()
+        except OSError as e:
+            log(f"FATAL: Port {WS_PORT} already in use or unavailable ({e}). Exiting to prevent conflict.")
+            os._exit(1)
 
-    ws_loop.run_until_complete(main())
+    try:
+        ws_loop.run_until_complete(main_ws())
+    except Exception as e:
+        log(f"FATAL in WebSocket server: {e}")
+        os._exit(1)
 
 
 def emit_tap(tag_id: str, hardware_uid: str, source: str, detected_at: float, read_ms: float, ndef: str | None = None) -> str | None:
@@ -616,6 +635,9 @@ def run_card_loop():
 def main():
     log("=" * 50)
     log(f"Ultra-Fast ACR122U bridge starting on ws://{WS_HOST}:{WS_PORT}")
+
+    # Ensure no old orphaned processes are holding the port
+    kill_competing_bridges()
 
     # Start WebSocket server
     threading.Thread(target=run_ws_server, daemon=True).start()

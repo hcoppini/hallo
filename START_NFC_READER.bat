@@ -22,7 +22,8 @@ if not exist "nfc_bridge.py" (
     exit /b 1
 )
 
-:: 2. Terminate any previous stuck bridge process holding port 4567
+:: 2. Terminate any previous stuck bridge process holding port 4567 or running nfc_bridge
+powershell -Command "Get-Process python* -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*nfc_bridge*' } | Stop-Process -Force -ErrorAction SilentlyContinue" >nul 2>&1
 for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":4567" ^| findstr "LISTENING"') do (
     echo [INFO] Stopping previous bridge instance (PID %%a)...
     taskkill /F /PID %%a >nul 2>&1
