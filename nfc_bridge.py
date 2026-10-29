@@ -162,8 +162,15 @@ def extract_ndef(raw: bytes) -> str | None:
         if slug and slug.lower() not in ("http", "https"):
             return parse_tag_slug(slug)
 
-    # 1b. Regex scan for ?tag=<slug> or &tag=<slug>
-    m_url = re.search(rb'[?&]tag(?:_id)?=([a-zA-Z0-9_\-]+)', raw)
+    # 1b. Regex scan for /(?:tag|wristband|pass|guest)/<slug>
+    m_path = re.search(rb'/(?:tag|wristband|pass|guest)/([a-zA-Z0-9_\-]+)', raw, re.IGNORECASE)
+    if m_path:
+        slug = m_path.group(1).decode("utf-8", errors="replace").strip()
+        if slug and slug.lower() not in ("http", "https"):
+            return parse_tag_slug(slug)
+
+    # 1c. Regex scan for ?tag=<slug> or &tag=<slug>
+    m_url = re.search(rb'[?&](?:tag|id)=([a-zA-Z0-9_\-]+)', raw)
     if m_url:
         slug = m_url.group(1).decode("utf-8", errors="replace").strip()
         if slug:
@@ -175,7 +182,13 @@ def extract_ndef(raw: bytes) -> str | None:
         num = int(m2.group(1).decode("utf-8", errors="replace"))
         return f"TAG-{num:03d}"
 
-    # 3. Standard NDEF parsing - ONLY if it's a complete valid record with /t/ or TAG
+    # 3. Regex scan for pure number at end of URL path: /<num>
+    m3_num = re.search(rb'/0*([1-9]\d{0,2})(?:[/?#\x00\xfe]|$)', raw)
+    if m3_num:
+        num = int(m3_num.group(1).decode("utf-8", errors="replace"))
+        return f"TAG-{num:03d}"
+
+    # 4. Standard NDEF parser
     parsed = parse_ndef(raw)
     if parsed:
         clean = parsed.strip("\x00\r\n\t ")
@@ -191,6 +204,17 @@ def extract_ndef(raw: bytes) -> str | None:
             num = int(clean)
             if 1 <= num <= 999:
                 return f"TAG-{num:03d}"
+        m5 = re.search(r'/(?:tag|wristband|pass|guest)/([a-zA-Z0-9_\-]+)', clean, re.IGNORECASE)
+        if m5:
+            slug = m5.group(1).strip()
+            if slug and slug.lower() not in ("http", "https"):
+                return parse_tag_slug(slug)
+        m6 = re.search(r'/0*([1-9]\d{0,2})(?:[/?#]|$)', clean)
+        if m6:
+            num = int(m6.group(1))
+            return f"TAG-{num:03d}"
+        if clean:
+            return clean
 
     return None
 
@@ -198,68 +222,93 @@ def extract_ndef(raw: bytes) -> str | None:
 def read_card_memory(hcard, proto) -> tuple[str | None, bytearray]:
     """
     Reads card user memory for Type 2 (NTAG213/215/216, Mifare Ultralight)
-    and Mifare Classic 1K tags using sequential block/page reading:
-    - Sector 1 Blocks 4, 5, 6 (16 bytes each = 48 bytes)
-    - Sequential 4-byte pages: Pages 4 through 19
+    and Mifare Classic 1K tags using a resilient non-overlapping multi-tier strategy:
+    1. Type 2 fast 16-byte reads on pages 4, 8, 12, 16, 20, 24, 28, 32, 36 (non-overlapping!)
+    2. Type 2 universal single-page 4-byte reads (pages 4 to 39)
+    3. Direct PN532 InDataExchange 0x30 read (pages 4, 8, 12, 16, 20, 24)
+    4. Authenticated Mifare Classic 1K read (Sector 1 Blocks 4, 5, 6)
     """
-    raw = bytearray()
+    # Strategy 1: Non-overlapping 16-byte chunk reads for Type 2 / NTAG
+    raw_16 = bytearray()
+    for page in (4, 8, 12, 16, 20, 24, 28, 32, 36):
+        hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, page, 0x10])
+        if hres == SCARD_S_SUCCESS and len(r) >= 18 and r[-2] == 0x90:
+            raw_16.extend(r[:-2])
+            cand = extract_ndef(raw_16)
+            if cand:
+                log(f"NDEF read success (Type 2 16B Page {page}): {cand} ({len(raw_16)} bytes)")
+                return cand, raw_16
+        else:
+            break
+        time.sleep(0.003)
 
-    # Step 1: Read Sector 1 Blocks 4, 5, 6 (16-byte chunks)
-    # Covers Mifare Classic 1K (Blocks 4, 5, 6 = Sector 1 = 48 bytes)
-    # Also reads NTAG213 Pages 4..7 in one shot!
-    for b in (4, 5, 6):
-        for retry in range(3):
-            hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, b, 0x10])
-            if hres == SCARD_S_SUCCESS and len(r) >= 18 and r[-2] == 0x90:
-                raw.extend(r[:-2])
-                break
-            time.sleep(0.005)
-        cand = extract_ndef(raw)
+    if raw_16:
+        cand = extract_ndef(raw_16)
         if cand:
-            log(f"NDEF read success (Block {b} 16B): {cand} ({len(raw)} bytes)")
-            return cand, raw
+            return cand, raw_16
 
-    # Step 2: Read individual pages (4 bytes each) for pages 4 through 19
-    cand = extract_ndef(raw)
-    if cand:
-        return cand, raw
+    # Strategy 2: Universal 4-byte single-page reads for Type 2 / NTAG
+    raw_4b = bytearray()
+    for page in range(4, 40):
+        hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, page, 0x04])
+        if hres == SCARD_S_SUCCESS and len(r) >= 6 and r[-2] == 0x90:
+            raw_4b.extend(r[:-2])
+            cand = extract_ndef(raw_4b)
+            if cand:
+                log(f"NDEF read success (Type 2 4B Page {page}): {cand} ({len(raw_4b)} bytes)")
+                return cand, raw_4b
+        else:
+            break
+        time.sleep(0.003)
 
-    start_p = 4 if not raw else 8
-    for p in range(start_p, 20):
-        for retry in range(3):
-            hres, rp = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, p, 0x04])
-            if hres == SCARD_S_SUCCESS and len(rp) >= 6 and rp[-2] == 0x90:
-                raw.extend(rp[:-2])
-                break
-            time.sleep(0.004)
-        cand = extract_ndef(raw)
+    if raw_4b:
+        cand = extract_ndef(raw_4b)
         if cand:
-            log(f"NDEF read success (Page {p} 4B): {cand} ({len(raw)} bytes)")
-            return cand, raw
+            return cand, raw_4b
 
-    # Step 3: Authenticated Mifare Classic fallback with Key A
-    if not raw:
-        keys = [
-            [0xD3, 0xF7, 0xD3, 0xF7, 0xD3, 0xF7],  # NFC Forum key
-            [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],  # Transport key
-            [0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5],  # MAD key
-        ]
-        for k in keys:
-            SCardTransmit(hcard, proto, [0xFF, 0x82, 0x00, 0x00, 0x06] + k)
-            hres, r = SCardTransmit(hcard, proto, [0xFF, 0x86, 0x00, 0x00, 0x05, 0x01, 0x00, 0x04, 0x60, 0x00])
-            if hres == SCARD_S_SUCCESS and len(r) >= 2 and r[-2] == 0x90:
-                for b in (4, 5, 6):
-                    time.sleep(0.004)
-                    hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, b, 0x10])
-                    if hres == SCARD_S_SUCCESS and len(r) >= 18 and r[-2] == 0x90:
-                        raw.extend(r[:-2])
-                cand = extract_ndef(raw)
-                if cand:
-                    log(f"NDEF read success (Mifare Classic Auth): {cand}")
-                    return cand, raw
-                break
+    # Strategy 3: Native PN532 Direct InDataExchange 0x30 read
+    raw_pn532 = bytearray()
+    for page in (4, 8, 12, 16, 20, 24, 28, 32):
+        cmd = [0xFF, 0x00, 0x00, 0x00, 0x05, 0xD4, 0x40, 0x01, 0x30, page]
+        hres, r = SCardTransmit(hcard, proto, cmd)
+        if hres == SCARD_S_SUCCESS and len(r) >= 19 and r[0] == 0xD5 and r[1] == 0x41 and r[2] == 0x00:
+            raw_pn532.extend(r[3:19])
+            cand = extract_ndef(raw_pn532)
+            if cand:
+                log(f"NDEF read success (PN532 Direct Page {page}): {cand} ({len(raw_pn532)} bytes)")
+                return cand, raw_pn532
+        else:
+            break
+        time.sleep(0.003)
 
-    best_raw = raw
+    if raw_pn532:
+        cand = extract_ndef(raw_pn532)
+        if cand:
+            return cand, raw_pn532
+
+    # Strategy 4: Authenticated Mifare Classic fallback with Key A
+    raw_classic = bytearray()
+    keys = [
+        [0xD3, 0xF7, 0xD3, 0xF7, 0xD3, 0xF7],  # NFC Forum key
+        [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],  # Transport key
+        [0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5],  # MAD key
+    ]
+    for k in keys:
+        SCardTransmit(hcard, proto, [0xFF, 0x82, 0x00, 0x00, 0x06] + k)
+        hres, r = SCardTransmit(hcard, proto, [0xFF, 0x86, 0x00, 0x00, 0x05, 0x01, 0x00, 0x04, 0x60, 0x00])
+        if hres == SCARD_S_SUCCESS and len(r) >= 2 and r[-2] == 0x90:
+            for b in (4, 5, 6):
+                time.sleep(0.003)
+                hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, b, 0x10])
+                if hres == SCARD_S_SUCCESS and len(r) >= 18 and r[-2] == 0x90:
+                    raw_classic.extend(r[:-2])
+            cand = extract_ndef(raw_classic)
+            if cand:
+                log(f"NDEF read success (Mifare Classic Auth): {cand}")
+                return cand, raw_classic
+            break
+
+    best_raw = raw_16 or raw_4b or raw_pn532 or raw_classic
     if best_raw:
         log(f"NDEF unreadable: raw_len={len(best_raw)} hex={best_raw[:32].hex()}")
     return None, best_raw
@@ -418,9 +467,22 @@ def kill_competing_bridges():
                 if parts:
                     pid = int(parts[-1])
                     if pid != my_pid and pid > 0:
-                        log(f"Terminating old competing bridge process (PID {pid})...")
+                        log(f"Terminating old competing bridge process on port 4567 (PID {pid})...")
                         subprocess.run(f"taskkill /F /PID {pid}", shell=True, capture_output=True)
-                        time.sleep(0.4)
+                        time.sleep(0.3)
+        except Exception:
+            pass
+
+        try:
+            import subprocess
+            ps_cmd = (
+                f'powershell -NoProfile -Command "'
+                f'Get-CimInstance Win32_Process -Filter \\"Name LIKE \'python%\'\\" | '
+                f'Where-Object {{ $_.ProcessId -ne {my_pid} -and $_.CommandLine -like \'*nfc_bridge*\' }} | '
+                f'ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"'
+            )
+            subprocess.run(ps_cmd, shell=True, capture_output=True)
+            time.sleep(0.3)
         except Exception:
             pass
 
@@ -515,12 +577,12 @@ def run_card_loop():
                 time.sleep(1)
                 continue
 
-            acr = [r for r in r_list if "ACR122" in r or "PICC" in r or "ACS" in r]
+            acr = [r for r in r_list if ("ACR122" in r or "PICC" in r or "ACS" in r) and "IFD" not in r]
             if acr:
                 reader_name = acr[0]
-            elif len(r_list) == 1:
+            elif sys.platform == "darwin" and len(r_list) == 1:
                 reader_name = r_list[0]
-                log(f"Using only available smartcard reader: {reader_name}")
+                log(f"Using only available smartcard reader on macOS: {reader_name}")
             else:
                 log(f"ACR122 reader not detected (found: {r_list}), waiting 2s...")
                 SCardReleaseContext(hcontext)
@@ -591,11 +653,11 @@ def run_card_loop():
                             # 3. Read NDEF with multi-strategy fallback (Type 2, Mifare Classic)
                             raw = bytearray()
                             if not ndef:
-                                ndef, raw = read_card_memory(hcard, proto)
-                                # If an NDEF TLV (0x03) was detected but incomplete, retry reading with settling time
-                                if not ndef and raw and 0x03 in raw:
-                                    time.sleep(0.02)
+                                for read_attempt in range(4):
                                     ndef, raw = read_card_memory(hcard, proto)
+                                    if ndef:
+                                        break
+                                    time.sleep(0.02)
 
                             # If NDEF was resolved or read, update persistent cache
                             if uid and ndef:
@@ -609,14 +671,8 @@ def run_card_loop():
                         read_ms = (time.time() - t0) * 1000
                         if ndef:
                             emit_tap(ndef, uid or ndef, "reader", t0, read_ms, ndef)
-                        elif uid and not (raw and 0x03 in raw):
-                            # Only reads UID if the card is truly blank / has NO NDEF TLV!
-                            log(f"chip {uid} has no NDEF; reading hardware UID as fallback")
-                            emit_tap(uid, uid, "reader", t0, read_ms, None)
-                        elif uid:
-                            # NDEF TLV was detected but not parseable as a standard slug: emit hardware UID so Auditor and Door can still register it!
-                            log(f"chip {uid} has raw NDEF ({len(raw)} bytes); emitting hardware UID as fallback")
-                            emit_tap(uid, uid, "reader", t0, read_ms, None)
+                        else:
+                            log(f"Ignored card {uid}: no valid NDEF payload detected (raw={len(raw)}B). Strictly reading solely NDEF.")
                     else:
                         log(f"tap detected on {reader_name} but connect failed (hres={hex(last_hres & 0xFFFFFFFF) if last_hres is not None else 'None'})")
 

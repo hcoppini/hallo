@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { usePartyStore } from '@/lib/store';
 import { Guest, ImportedGuest } from '@/lib/types';
@@ -32,6 +32,7 @@ import {
 import { soundSystem } from '@/lib/audio';
 import { useStaffAuth, setStaffStationMode } from '@/lib/auth';
 import { subscribeToTagRelay, sendTagRelayMessage } from '@/lib/tag-relay';
+import { isWebNfcSupported, nfcController } from '@/lib/nfc';
 import { StationLockScreen } from '@/components/StationLockScreen';
 import { GuestOnboardingCard } from '@/components/GuestOnboardingCard';
 import { NfcWriterModal } from '@/components/NfcWriterModal';
@@ -89,12 +90,61 @@ export default function DoorCheckInPage() {
     syncFromUrl();
   }, []);
 
-  // Mark staff phone in 'door' station mode
+  const handleTagTap = useCallback((rawTag: string, hardwareUid?: string) => {
+    if (!rawTag && !hardwareUid) return;
+    const tag = rawTag || hardwareUid || '';
+    if (isUniversalOnboardingTag(tag)) return;
+
+    const parsed = parseTagId(tag);
+    const canonical = parsed.canonicalTag || tag.toUpperCase();
+
+    const registered =
+      findRegisteredGuestByTag(guests, canonical) ||
+      (hardwareUid ? findRegisteredGuestByTag(guests, hardwareUid) : undefined);
+
+    const slotNum =
+      parsed.tagNumber !== null
+        ? parsed.tagNumber
+        : registered
+        ? parseTagId(registered.tag_id).tagNumber
+        : null;
+    const slotText = slotNum !== null ? `#${slotNum}` : canonical;
+
+    if (registered) {
+      soundSystem.playApprovedSound();
+      setLastAdmittedGuest(registered);
+      setRelayedTagNotice(`Wristband ${slotText} is already registered to ${registered.name}!`);
+      setTimeout(() => setRelayedTagNotice(null), 5000);
+    } else {
+      // If hardware UID reading is disabled, suppress unassigned raw serials from populating registration
+      const isRawSerial = parsed.tagNumber === null && !canonical.startsWith('TAG-') && !canonical.startsWith('ID-');
+      if (isRawSerial && !settings.enable_hardware_uid_reading) {
+        console.log(`[Door] Suppressed unassigned raw hardware serial: ${canonical}`);
+        return;
+      }
+      // Unregistered tag: seamlessly load into registration form with zero annoying popups
+      setSelectedTagId(canonical);
+      soundSystem.playApprovedSound();
+      setRelayedTagNotice(`⚡ Wristband ${slotText} tapped — enter guest name to register!`);
+      setTimeout(() => setRelayedTagNotice(null), 6000);
+    }
+  }, [guests, settings.enable_hardware_uid_reading]);
+
+  // Auto-acquire wake lock and background NFC listener on staff phone door station
   useEffect(() => {
     if (isAuthenticated) {
       setStaffStationMode('door');
+      nfcController.requestWakeLock();
+      if (isWebNfcSupported() && !nfcController.getScanningState()) {
+        nfcController.startScan((tagId, hardwareUid) => {
+          handleTagTap(tagId, hardwareUid);
+        });
+      }
     }
-  }, [isAuthenticated]);
+    return () => {
+      nfcController.releaseWakeLock();
+    };
+  }, [isAuthenticated, handleTagTap]);
 
   // Listen for NFC taps relayed from /t/[id] tabs or local ACR122U bridge
   useEffect(() => {
@@ -107,47 +157,12 @@ export default function DoorCheckInPage() {
           station: 'door',
         });
       } else if (msg.type === 'TAG_TAPPED' && (msg.tagId || msg.rawId)) {
-        const rawTag = msg.tagId || msg.rawId || '';
-        if (isUniversalOnboardingTag(rawTag)) return;
-
-        const parsed = parseTagId(rawTag);
-        const canonical = parsed.canonicalTag || rawTag.toUpperCase();
-
-        const registered =
-          findRegisteredGuestByTag(guests, canonical) ||
-          (msg.rawId ? findRegisteredGuestByTag(guests, msg.rawId) : undefined) ||
-          (msg.hardwareUid ? findRegisteredGuestByTag(guests, msg.hardwareUid) : undefined);
-
-        const slotNum =
-          parsed.tagNumber !== null
-            ? parsed.tagNumber
-            : registered
-            ? parseTagId(registered.tag_id).tagNumber
-            : null;
-        const slotText = slotNum !== null ? `#${slotNum}` : canonical;
-
-        if (registered) {
-          soundSystem.playApprovedSound();
-          setLastAdmittedGuest(registered);
-          setRelayedTagNotice(`Wristband ${slotText} is already registered to ${registered.name}!`);
-          setTimeout(() => setRelayedTagNotice(null), 5000);
-        } else {
-          // If hardware UID reading is disabled, suppress unassigned raw serials from populating registration
-          const isRawSerial = parsed.tagNumber === null && !canonical.startsWith('TAG-') && !canonical.startsWith('ID-');
-          if (isRawSerial && !settings.enable_hardware_uid_reading) {
-            console.log(`[Door] Suppressed unassigned raw hardware serial: ${canonical}`);
-            return;
-          }
-          // Unregistered tag: seamlessly load into registration form with zero annoying popups
-          setSelectedTagId(canonical);
-          soundSystem.playApprovedSound();
-          setRelayedTagNotice(null);
-        }
+        handleTagTap(msg.tagId || msg.rawId || '', msg.hardwareUid || msg.rawId);
       }
     });
 
     return () => unsubscribe();
-  }, [isAuthenticated, guests, settings]);
+  }, [isAuthenticated, handleTagTap]);
 
   const admittedGuests = useMemo(
     () =>

@@ -112,15 +112,23 @@ export class NfcController {
               // Extract tag id if record is URL
               const urlMatch =
                 textContent.match(/\/t\/([^/?#]+)/i) ||
-                textContent.match(/[?&](?:tag|id)=([^&]+)/i);
+                textContent.match(/[?&](?:tag|id)=([^&]+)/i) ||
+                textContent.match(/\/(?:wristband|pass|guest|tag)\/([^/?#]+)/i) ||
+                textContent.match(/\/0*([1-9]\d{0,2})(?:[/?#]|$)/i);
 
               if (urlMatch && urlMatch[1]) {
-                detectedTagId = urlMatch[1].toUpperCase();
+                const rawVal = urlMatch[1].trim();
+                if (/^\d+$/.test(rawVal)) {
+                  const num = parseInt(rawVal, 10);
+                  detectedTagId = `TAG-${num.toString().padStart(3, '0')}`;
+                } else {
+                  detectedTagId = rawVal.toUpperCase();
+                }
                 break;
               }
 
               // Extract tag id if record is plain text (e.g. "TAG-005" or "5")
-              const textMatch = textContent.match(/(?:TAG|GUEST)?[-_#\s]*0*([1-9]\d{0,2})/i);
+              const textMatch = textContent.match(/(?:TAG|GUEST|ID)?[-_#\s]*0*([1-9]\d{0,2})/i);
               if (textMatch && textMatch[1]) {
                 const num = parseInt(textMatch[1], 10);
                 detectedTagId = `TAG-${num.toString().padStart(3, '0')}`;

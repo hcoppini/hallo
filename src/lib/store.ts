@@ -72,7 +72,7 @@ const initialSettings: PartySettings = {
   is_party_active: true,
   admin_pin: '2113',
   cutoff_time: null,
-  enable_hardware_uid_reading: true, // Read UID if there is no NDEF on the tag
+  enable_hardware_uid_reading: false, // Strictly enforce NDEF reading; ignore unassigned raw serials
 };
 
 function generateUuid(): string {
