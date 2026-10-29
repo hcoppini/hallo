@@ -158,6 +158,13 @@ def extract_ndef(raw: bytes) -> str | None:
         if slug and slug.lower() not in ("http", "https"):
             return parse_tag_slug(slug)
 
+    # 1b. Regex scan for ?tag=<slug> or &tag=<slug>
+    m_url = re.search(rb'[?&]tag(?:_id)?=([a-zA-Z0-9_\-]+)', raw)
+    if m_url:
+        slug = m_url.group(1).decode("utf-8", errors="replace").strip()
+        if slug:
+            return parse_tag_slug(slug)
+
     # 2. Regex scan for TAG-XXX, ID-XXX, GUEST-XXX
     m2 = re.search(rb'(?:TAG|GUEST|ID)[-_#\s]*0*([1-9]\d{0,2})(?:[^0-9]|$)', raw, re.IGNORECASE)
     if m2:
@@ -188,34 +195,54 @@ def read_card_memory(hcard, proto) -> tuple[str | None, bytearray]:
     """
     Reads card user memory for Type 2 (NTAG213/215/216, Mifare Ultralight)
     and Type 4 / Mifare Classic 1K tags:
-    - Type 2 tags: User memory starts at Page 4. Reads sequential 16-byte chunks (Pages 4, 8, 12).
+    - Type 2 tags: User memory starts at Page 4. Reads sequential 16-byte or 4-byte chunks.
     - Mifare Classic 1K: Authenticates Sector 1 with Key A and reads Blocks 4, 5, 6.
     """
     raw = bytearray()
 
-    # Strategy 1: Standard PC/SC Type 2 / NTAG Sequential Read (Pages 4, 8, 12)
-    # Read Page 4 (Pages 4, 5, 6, 7 = 16 bytes) with retry
-    for retry in range(3):
+    # Strategy 1: Standard PC/SC Type 2 / NTAG Read
+    # Try reading Page 4 (16 bytes = pages 4..7, or fallback to 4 bytes)
+    for retry in range(5):
         hres, r4 = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, 4, 0x10])
-        if hres == SCARD_S_SUCCESS and len(r4) >= 18 and r4[-2] == 0x90 and r4[-1] == 0x00:
+        if hres == SCARD_S_SUCCESS and len(r4) >= 18 and r4[-2] == 0x90:
             raw.extend(r4[:-2])
             break
-        time.sleep(0.008)
+        # Fallback to single page (4-byte) read
+        hres, r4_single = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, 4, 0x04])
+        if hres == SCARD_S_SUCCESS and len(r4_single) >= 6 and r4_single[-2] == 0x90:
+            raw.extend(r4_single[:-2])
+            break
+        time.sleep(0.012)
 
     if raw:
-        # Sequentially read Pages 8 and 12 (covers up to page 15 = 48 bytes)
-        for next_page in (8, 12):
-            cand = extract_ndef(raw)
-            if cand:
-                log(f"NDEF read success (Type 2 NTAG early): {cand} ({len(raw)} bytes)")
-                return cand, raw
+        if len(raw) >= 16:
+            # 16-byte chunk mode: read Pages 8 and 12 (covers up to page 15 = 48 bytes)
+            for next_page in (8, 12):
+                cand = extract_ndef(raw)
+                if cand:
+                    log(f"NDEF read success (Type 2 NTAG early): {cand} ({len(raw)} bytes)")
+                    return cand, raw
 
-            for retry in range(3):
-                hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, next_page, 0x10])
-                if hres == SCARD_S_SUCCESS and len(r) >= 18 and r[-2] == 0x90 and r[-1] == 0x00:
-                    raw.extend(r[:-2])
-                    break
-                time.sleep(0.008)
+                for retry in range(4):
+                    hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, next_page, 0x10])
+                    if hres == SCARD_S_SUCCESS and len(r) >= 18 and r[-2] == 0x90:
+                        raw.extend(r[:-2])
+                        break
+                    time.sleep(0.010)
+        else:
+            # 4-byte page-by-page mode: read pages 5 through 15
+            for p in range(5, 16):
+                cand = extract_ndef(raw)
+                if cand:
+                    log(f"NDEF read success (Type 2 NTAG early 4B): {cand} ({len(raw)} bytes)")
+                    return cand, raw
+
+                for retry in range(3):
+                    hres, rp = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, p, 0x04])
+                    if hres == SCARD_S_SUCCESS and len(rp) >= 6 and rp[-2] == 0x90:
+                        raw.extend(rp[:-2])
+                        break
+                    time.sleep(0.006)
 
         ndef = extract_ndef(raw)
         if ndef:

@@ -294,9 +294,13 @@ export function NfcAuditorModal({ isOpen, onClose }: NfcAuditorModalProps) {
                     <span className="font-mono text-base font-bold text-black">
                       {lastScan.tagId}
                     </span>
-                    {lastScan.tagNum !== null && (
+                    {lastScan.tagNum !== null ? (
                       <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-black text-white">
                         #{lastScan.tagNum}
+                      </span>
+                    ) : (
+                      <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-amber-400 text-black">
+                        NO NDEF URL
                       </span>
                     )}
                     {lastScan.isDuplicate && (
@@ -308,6 +312,8 @@ export function NfcAuditorModal({ isOpen, onClose }: NfcAuditorModalProps) {
                   <div className="text-[11px] font-sans-clean text-black/60 lowercase truncate mt-0.5">
                     {lastScan.isDuplicate
                       ? `⚠️ this wristband was already scanned previously!`
+                      : lastScan.tagNum === null
+                      ? `⚠️ raw chip serial detected. sticker needs /t/{number} written via nfc tools.`
                       : `verified clean — added to audited sequence`}
                   </div>
                 </div>
