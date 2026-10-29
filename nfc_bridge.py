@@ -569,8 +569,9 @@ def run_card_loop():
                             # 3. Read NDEF with multi-strategy fallback (FAST_READ, Type 2, Mifare Classic)
                             if not ndef:
                                 ndef, raw = read_card_memory(hcard, proto)
-                                if not ndef:
-                                    time.sleep(0.005)
+                                # If an NDEF TLV (0x03) was detected but incomplete, retry reading
+                                if not ndef and raw and 0x03 in raw:
+                                    time.sleep(0.015)
                                     ndef, raw = read_card_memory(hcard, proto)
 
                             # If NDEF was resolved or read, update persistent cache
@@ -585,9 +586,10 @@ def run_card_loop():
                         read_ms = (time.time() - t0) * 1000
                         if ndef:
                             emit_tap(ndef, uid or ndef, "reader", t0, read_ms, ndef)
-                        else:
-                            # Strictly suppress raw hardware serial emission unless NDEF was extracted
-                            log(f"chip {uid} has no valid NDEF; raw UID emission suppressed")
+                        elif uid:
+                            # Only reads UID if there's no NDEF on the card!
+                            log(f"chip {uid} has no NDEF; reading hardware UID as fallback")
+                            emit_tap(uid, uid, "reader", t0, read_ms, None)
                     else:
                         log(f"tap detected on {reader_name} but connect failed")
 
