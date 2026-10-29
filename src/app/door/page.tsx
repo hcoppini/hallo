@@ -16,6 +16,10 @@ import {
   Users,
   Radio,
   DoorOpen,
+  FileSpreadsheet,
+  UserCheck,
+  Plus,
+  Sparkles,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -31,12 +35,15 @@ import { subscribeToTagRelay, sendTagRelayMessage } from '@/lib/tag-relay';
 import { StationLockScreen } from '@/components/StationLockScreen';
 import { GuestOnboardingCard } from '@/components/GuestOnboardingCard';
 import { NfcWriterModal } from '@/components/NfcWriterModal';
+import { GuestListImportModal } from '@/components/GuestListImportModal';
 
 export default function DoorCheckInPage() {
   const router = useRouter();
   const { guests, checkIn, settings, importedGuests } = usePartyStore();
   const { isAuthenticated } = useStaffAuth();
   const [isBatchEncoderOpen, setIsBatchEncoderOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [mobileTab, setMobileTab] = useState<'checkin' | 'directory'>('checkin');
   const [selectedRosterGuest, setSelectedRosterGuest] = useState<ImportedGuest | null>(null);
   const [activeTab, setActiveTab] = useState<'expected' | 'admitted'>(() => {
     return importedGuests && importedGuests.length > 0 ? 'expected' : 'admitted';
@@ -226,6 +233,15 @@ export default function DoorCheckInPage() {
     setSelectedRosterGuest(null);
   };
 
+  // Auto-dismiss registration confirmation toast after 6 seconds to prevent mobile clutter
+  useEffect(() => {
+    if (!lastAdmittedGuest) return;
+    const timer = setTimeout(() => {
+      setLastAdmittedGuest(null);
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [lastAdmittedGuest]);
+
   if (!isAuthenticated) {
     return (
       <StationLockScreen
@@ -286,14 +302,55 @@ export default function DoorCheckInPage() {
 
           <button
             type="button"
-            onClick={() => setIsBatchEncoderOpen(true)}
+            onClick={() => setIsImportModalOpen(true)}
             className="p-1.5 px-2.5 rounded-xl text-xs font-sans-clean text-black/60 hover:text-black bg-black/[0.03] hover:bg-black/[0.07] border border-black/8 transition-colors flex items-center gap-1.5 cursor-pointer ml-auto sm:ml-0"
+            title="Import or paste guest roster"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-black/50" />
+            <span className="hidden md:inline">import roster</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsBatchEncoderOpen(true)}
+            className="p-1.5 px-2.5 rounded-xl text-xs font-sans-clean text-black/60 hover:text-black bg-black/[0.03] hover:bg-black/[0.07] border border-black/8 transition-colors flex items-center gap-1.5 cursor-pointer"
             title="Batch NFC Wristband Encoder"
           >
             <Smartphone className="w-3.5 h-3.5 text-black/50" />
             <span className="hidden md:inline">batch encoder</span>
           </button>
         </div>
+      </div>
+
+      {/* Mobile Tab Switcher (Check-In Desk vs Directory) */}
+      <div className="lg:hidden flex items-center p-1 bg-black/[0.04] rounded-xl">
+        <button
+          type="button"
+          onClick={() => setMobileTab('checkin')}
+          className={`flex-1 py-2 text-xs font-sans-clean font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+            mobileTab === 'checkin'
+              ? 'bg-white text-black shadow-xs'
+              : 'text-black/50 hover:text-black'
+          }`}
+        >
+          <UserCheck className="w-3.5 h-3.5" />
+          <span>Check-In Form</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setMobileTab('directory')}
+          className={`flex-1 py-2 text-xs font-sans-clean font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+            mobileTab === 'directory'
+              ? 'bg-white text-black shadow-xs'
+              : 'text-black/50 hover:text-black'
+          }`}
+        >
+          <Users className="w-3.5 h-3.5" />
+          <span>Guest Directory</span>
+          <span className="font-mono text-[10px] px-1.5 py-0.2 rounded-full bg-black/6 text-black/70">
+            {admittedCount + pendingExpectedGuests.length}
+          </span>
+        </button>
       </div>
 
       {/* Relayed Notice only if already registered */}
@@ -379,7 +436,7 @@ export default function DoorCheckInPage() {
       {/* Main Responsive Layout: Left Desk Console + Right Guest Directory */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 items-start">
         {/* Left Column (5 cols): Registration Console + Wristband Capacity Breakdown */}
-        <div className="lg:col-span-5 space-y-4">
+        <div className={`space-y-4 lg:col-span-5 ${mobileTab === 'checkin' ? 'block' : 'hidden lg:block'}`}>
           <GuestOnboardingCard
             targetTagId={effectiveTargetTag}
             isUniversalLink={false}
@@ -463,127 +520,146 @@ export default function DoorCheckInPage() {
         </div>
 
         {/* Right Column (7 cols): Guest Directory (Expected & Admitted) */}
-        <div className="lg:col-span-7 space-y-4">
+        <div className={`space-y-4 lg:col-span-7 ${mobileTab === 'directory' ? 'block' : 'hidden lg:block'}`}>
           <div className="glass-card p-4 sm:p-5 border border-black/12 shadow-md space-y-3.5">
-            {/* Header: Segmented Tabs when imported roster exists */}
-            {importedGuests.length > 0 ? (
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 pb-1 border-b border-black/8">
-                <div className="segmented-control p-1 bg-black/[0.04] rounded-xl flex gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('expected')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-sans-clean font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+            {/* Header: Segmented Tabs (Expected Roster vs Admitted) */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 pb-2 border-b border-black/8">
+              <div className="segmented-control p-1 bg-black/[0.04] rounded-xl flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('expected')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-sans-clean font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    activeTab === 'expected'
+                      ? 'bg-white text-black shadow-xs'
+                      : 'text-black/55 hover:text-black'
+                  }`}
+                >
+                  <span>Expected Roster</span>
+                  <span
+                    className={`font-mono text-[10px] px-1.5 py-0.2 rounded-full ${
                       activeTab === 'expected'
-                        ? 'bg-white text-black shadow-xs'
-                        : 'text-black/55 hover:text-black'
+                        ? 'bg-amber-100 text-amber-900 font-bold'
+                        : 'bg-black/5 text-black/50'
                     }`}
                   >
-                    <span>Expected Roster</span>
-                    <span
-                      className={`font-mono text-[10px] px-1.5 py-0.2 rounded-full ${
-                        activeTab === 'expected'
-                          ? 'bg-amber-100 text-amber-900 font-bold'
-                          : 'bg-black/5 text-black/50'
-                      }`}
-                    >
-                      {pendingExpectedGuests.length}
-                    </span>
-                  </button>
+                    {pendingExpectedGuests.length}
+                  </span>
+                </button>
 
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('admitted')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-sans-clean font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('admitted')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-sans-clean font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    activeTab === 'admitted'
+                      ? 'bg-white text-black shadow-xs'
+                      : 'text-black/55 hover:text-black'
+                  }`}
+                >
+                  <span>Admitted</span>
+                  <span
+                    className={`font-mono text-[10px] px-1.5 py-0.2 rounded-full ${
                       activeTab === 'admitted'
-                        ? 'bg-white text-black shadow-xs'
-                        : 'text-black/55 hover:text-black'
+                        ? 'bg-black text-white font-bold'
+                        : 'bg-black/5 text-black/50'
                     }`}
                   >
-                    <span>Admitted</span>
-                    <span
-                      className={`font-mono text-[10px] px-1.5 py-0.2 rounded-full ${
-                        activeTab === 'admitted'
-                          ? 'bg-black text-white font-bold'
-                          : 'bg-black/5 text-black/50'
-                      }`}
-                    >
-                      {admittedGuests.length}
-                    </span>
-                  </button>
-                </div>
+                    {admittedGuests.length}
+                  </span>
+                </button>
+              </div>
 
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsImportModalOpen(true)}
+                  className="px-2.5 py-1 rounded-lg text-xs font-sans-clean font-semibold text-black/70 hover:text-black bg-black/[0.03] hover:bg-black/[0.07] border border-black/8 transition-colors flex items-center gap-1.5 cursor-pointer"
+                  title="Import or paste guest roster"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-black/50" />
+                  <span>import roster</span>
+                </button>
                 <span className="text-[11px] font-sans-clean text-black/45 hidden sm:inline">
                   {activeTab === 'expected'
-                    ? 'click any guest to autofill registration'
-                    : 'guest passes & profile editing'}
+                    ? 'click guest to autofill'
+                    : 'access passes & profiles'}
                 </span>
-              </div>
-            ) : (
-              <div className="flex items-center justify-between pb-1 border-b border-black/8">
-                <div>
-                  <h3 className="font-display text-xl font-bold lowercase text-black leading-none">
-                    admitted guests
-                  </h3>
-                  <p className="font-sans-clean text-xs text-black/45 mt-0.5">
-                    attendees checked in at the door
-                  </p>
-                </div>
-                <span className="font-mono text-xs font-semibold px-2.5 py-0.5 rounded-full bg-black/6 text-black/75">
-                  {admittedGuests.length} admitted
-                </span>
-              </div>
-            )}
-
-            {/* Unified Search & Category Filters */}
-            <div className="space-y-2">
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 text-black/40 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  placeholder={
-                    activeTab === 'expected'
-                      ? 'Search expected guests by name or notes...'
-                      : 'Search admitted guests by name, wristband #, or notes...'
-                  }
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-7 py-2 bg-black/[0.035] border border-black/12 rounded-xl font-sans-clean text-xs text-black placeholder:text-black/35 outline-none focus:bg-white focus:border-black transition-colors"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-black/40 hover:text-black cursor-pointer"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-
-              {/* Category Filter Chips */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
-                {(['all', 'vip', 'driver', 'standard'] as const).map(cat => (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => setCategoryFilter(cat)}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-sans-clean font-semibold uppercase tracking-wider transition-all cursor-pointer shrink-0 ${
-                      categoryFilter === cat
-                        ? 'bg-black text-white shadow-xs'
-                        : 'bg-black/[0.03] text-black/55 hover:bg-black/[0.06] hover:text-black'
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
               </div>
             </div>
 
+            {/* Unified Search & Category Filters (shown when active list has items) */}
+            {(activeTab === 'expected' ? importedGuests.length > 0 : admittedGuests.length > 0) && (
+              <div className="space-y-2">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-black/40 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder={
+                      activeTab === 'expected'
+                        ? 'Search expected guests by name or notes...'
+                        : 'Search admitted guests by name, wristband #, or notes...'
+                    }
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="w-full pl-8 pr-7 py-2 bg-black/[0.035] border border-black/12 rounded-xl font-sans-clean text-xs text-black placeholder:text-black/35 outline-none focus:bg-white focus:border-black transition-colors"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-black/40 hover:text-black cursor-pointer"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Category Filter Chips */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+                  {(['all', 'vip', 'driver', 'standard'] as const).map(cat => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setCategoryFilter(cat)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-sans-clean font-semibold uppercase tracking-wider transition-all cursor-pointer shrink-0 ${
+                        categoryFilter === cat
+                          ? 'bg-black text-white shadow-xs'
+                          : 'bg-black/[0.03] text-black/55 hover:bg-black/[0.06] hover:text-black'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Guest Directory List */}
-            <div className="space-y-1.5 min-h-[320px] max-h-[500px] sm:max-h-[560px] lg:max-h-[620px] overflow-y-auto pr-1">
-              {activeTab === 'expected' && importedGuests.length > 0 ? (
+            <div className="space-y-1.5 min-h-[280px] max-h-[500px] sm:max-h-[560px] lg:max-h-[620px] overflow-y-auto pr-1">
+              {activeTab === 'expected' ? (
                 /* Expected Guests List */
-                filteredPendingExpectedGuests.length === 0 ? (
+                importedGuests.length === 0 ? (
+                  <div className="text-center py-12 px-4 space-y-3">
+                    <div className="w-12 h-12 rounded-2xl bg-black/[0.03] border border-black/8 text-black/50 flex items-center justify-center mx-auto">
+                      <Users className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h4 className="font-display text-lg font-bold lowercase text-black">
+                        no expected roster imported
+                      </h4>
+                      <p className="font-sans-clean text-xs text-black/50 max-w-sm mx-auto mt-1 leading-relaxed">
+                        Upload a guest list CSV or paste attendee names to enable 1-click check-in at the door. You can also register walk-in guests directly on the left.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsImportModalOpen(true)}
+                      className="py-2 px-4 rounded-xl bg-black text-white hover:bg-black/85 font-sans-clean text-xs font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5" />
+                      <span>import guest list</span>
+                    </button>
+                  </div>
+                ) : filteredPendingExpectedGuests.length === 0 ? (
                   <div className="text-center py-16 text-xs font-sans-clean text-black/45 lowercase">
                     {pendingExpectedGuests.length === 0
                       ? '🎉 all expected guests have arrived!'
@@ -598,6 +674,7 @@ export default function DoorCheckInPage() {
                         onClick={() => {
                           soundSystem.vibrate(10);
                           setSelectedRosterGuest(guest);
+                          setMobileTab('checkin');
                         }}
                         className={`p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2.5 cursor-pointer ${
                           isSelected
@@ -654,13 +731,23 @@ export default function DoorCheckInPage() {
                 )
               ) : (
                 /* Admitted Guests List */
-                filteredAdmittedGuests.length === 0 ? (
-                  <div className="text-center py-16 text-xs font-sans-clean text-black/45 lowercase space-y-1">
-                    <div>
-                      {admittedGuests.length === 0
-                        ? 'no guests admitted yet — register attendees on the left!'
-                        : 'no admitted guests match the filter'}
+                admittedGuests.length === 0 ? (
+                  <div className="text-center py-12 px-4 space-y-2">
+                    <div className="w-12 h-12 rounded-2xl bg-black/[0.03] border border-black/8 text-black/50 flex items-center justify-center mx-auto">
+                      <DoorOpen className="w-6 h-6" />
                     </div>
+                    <div>
+                      <h4 className="font-display text-lg font-bold lowercase text-black">
+                        no guests admitted yet
+                      </h4>
+                      <p className="font-sans-clean text-xs text-black/50 max-w-sm mx-auto mt-1 leading-relaxed">
+                        Registered attendees will appear here in real-time with pass links, check-in timestamps, and profile editing.
+                      </p>
+                    </div>
+                  </div>
+                ) : filteredAdmittedGuests.length === 0 ? (
+                  <div className="text-center py-16 text-xs font-sans-clean text-black/45 lowercase space-y-1">
+                    <div>no admitted guests match the filter</div>
                   </div>
                 ) : (
                   filteredAdmittedGuests.map(guest => {
@@ -755,7 +842,10 @@ export default function DoorCheckInPage() {
 
                           <button
                             type="button"
-                            onClick={() => setSelectedTagId(guest.tag_id)}
+                            onClick={() => {
+                              setSelectedTagId(guest.tag_id);
+                              setMobileTab('checkin');
+                            }}
                             className={`p-1.5 rounded-lg text-xs font-sans-clean transition-colors cursor-pointer ${
                               isEditingThis
                                 ? 'text-white hover:bg-white/20'
@@ -775,6 +865,12 @@ export default function DoorCheckInPage() {
           </div>
         </div>
       </div>
+
+      {/* Guest List Import Modal */}
+      <GuestListImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+      />
 
       {/* Batch Encoder Modal (Optional backup tool) */}
       <NfcWriterModal

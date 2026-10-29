@@ -315,6 +315,7 @@ supabase_ws = None
 active_reader = {"name": None}
 emitter_lock = threading.Lock()
 last_tap = {"uid": None, "time": 0.0}
+card_uid_cache = {}
 
 
 def broadcast(payload: dict) -> None:
@@ -398,11 +399,12 @@ def run_ws_server():
 def emit_tap(tag_id: str, hardware_uid: str, source: str, detected_at: float, read_ms: float, ndef: str | None = None) -> str | None:
     with emitter_lock:
         now = time.time()
-        dedup_key = tag_id or hardware_uid
-        if dedup_key == last_tap["uid"] and now - last_tap["time"] < DEBOUNCE_SECONDS:
-            log(f"debounced duplicate tap {dedup_key}")
+        # Always deduplicate by physical chip hardware UID so the same card never double-triggers
+        card_key = hardware_uid or tag_id
+        if card_key and card_key == last_tap["uid"] and now - last_tap["time"] < DEBOUNCE_SECONDS:
+            log(f"debounced duplicate tap for card {card_key}")
             return None
-        last_tap["uid"], last_tap["time"] = dedup_key, now
+        last_tap["uid"], last_tap["time"] = card_key, now
     tap_id = uuid.uuid4().hex[:12]
     handler = clients.pick_handler()
     broadcast(
@@ -520,11 +522,24 @@ def run_card_loop():
                             if hres == SCARD_S_SUCCESS and len(resp) >= 2 and resp[-2] == 0x90:
                                 uid = "".join(f"{b:02X}" for b in resp[:-2])
 
+                            # Early debounce check: ignore card bounce within DEBOUNCE_SECONDS
+                            if uid and uid == last_tap["uid"] and (time.time() - last_tap["time"]) < DEBOUNCE_SECONDS:
+                                log(f"ignoring RF bounce for card {uid}")
+                                continue
+
                             # 2. Read NDEF with multi-strategy fallback (PN532 direct, PC/SC, Mifare Classic)
                             ndef, raw = read_card_memory(hcard, proto)
                             if not ndef:
                                 time.sleep(0.015)
                                 ndef, raw = read_card_memory(hcard, proto)
+
+                            # If NDEF was previously known for this chip, use cached tag so it never drops to raw serial!
+                            if uid:
+                                if ndef:
+                                    card_uid_cache[uid] = ndef
+                                elif uid in card_uid_cache:
+                                    ndef = card_uid_cache[uid]
+                                    log(f"recovering cached tag {ndef} for chip {uid}")
                         finally:
                             # CRITICAL: SCARD_LEAVE_CARD leaves RF field powered!
                             SCardDisconnect(hcard, SCARD_LEAVE_CARD)

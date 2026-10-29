@@ -131,4 +131,32 @@ describe('Door Check-In Desk Functionality', () => {
     const unregGuest = findRegisteredGuestByTag(guests, 'TAG-002');
     expect(unregGuest).toBeUndefined();
   });
+
+  it('validates and formats manual slot override numbers safely', () => {
+    const parseSlotInput = (input: string) => {
+      const num = parseInt(input.replace(/\D/g, ''), 10);
+      if (!isNaN(num) && num > 0 && num <= 999) {
+        return `TAG-${String(num).padStart(3, '0')}`;
+      }
+      return null;
+    };
+
+    expect(parseSlotInput('42')).toBe('TAG-042');
+    expect(parseSlotInput('#7')).toBe('TAG-007');
+    expect(parseSlotInput('slot 100')).toBe('TAG-100');
+    expect(parseSlotInput('0')).toBeNull();
+    expect(parseSlotInput('-5')).toBe('TAG-005'); // stripped to 5
+    expect(parseSlotInput('1000')).toBeNull(); // exceeds 999
+    expect(parseSlotInput('invalid')).toBeNull();
+  });
+
+  it('handles empty expected roster without breaking directory telemetry', () => {
+    const importedGuests: ImportedGuest[] = [];
+    const pendingExpected = (importedGuests || []).filter(g => !g.is_checked_in);
+    expect(pendingExpected).toHaveLength(0);
+
+    // Filter query on empty array does not throw
+    const filtered = pendingExpected.filter(g => g.name.toLowerCase().includes('search'));
+    expect(filtered).toHaveLength(0);
+  });
 });
