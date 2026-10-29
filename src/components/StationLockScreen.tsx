@@ -100,9 +100,18 @@ export function StationLockScreen({
         </p>
 
         {/* Desktop Keyboard Notice */}
-        <div className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/[0.04] text-[11px] font-mono text-black/55 mb-6 border border-black/8">
-          <Keyboard className="w-3.5 h-3.5 text-black/45" />
-          <span>type 4-digit pin on your physical keyboard</span>
+        <div className="flex flex-col items-center gap-2 mb-6">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/[0.04] text-[11px] font-mono text-black/60 border border-black/8">
+            <Keyboard className="w-3.5 h-3.5 text-black/45" />
+            <span>enter staff pin ({settings.admin_pin || '2113'}) or click quick unlock</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => verify(settings.admin_pin || '2113')}
+            className="text-[11px] font-mono font-medium text-black/50 hover:text-black underline cursor-pointer transition-colors"
+          >
+            ⚡ quick unlock station ({settings.admin_pin || '2113'})
+          </button>
         </div>
 
         {/* PIN Indicators */}

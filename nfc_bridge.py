@@ -279,7 +279,14 @@ def read_card_memory(hcard, proto) -> tuple[str | None, bytearray]:
     raw_16 = bytearray()
     expected_len = None
     for page in (4, 8, 12, 16, 20, 24, 28, 32, 36):
-        hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, page, 0x10])
+        hres = -1
+        r = []
+        for retry in range(3):
+            hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, page, 0x10])
+            if hres == SCARD_S_SUCCESS and len(r) >= 18 and r[-2] == 0x90:
+                break
+            time.sleep(0.005)
+
         if hres == SCARD_S_SUCCESS and len(r) >= 18 and r[-2] == 0x90:
             raw_16.extend(r[:-2])
             if expected_len is None:
@@ -290,6 +297,9 @@ def read_card_memory(hcard, proto) -> tuple[str | None, bytearray]:
                     log(f"NDEF read success (Type 2 16B Page {page}): {cand} ({len(raw_16)} bytes)")
                     return cand, raw_16
         else:
+            if page == 4:
+                sw = [f"{x:02X}" for x in r[-2:]] if len(r) >= 2 else []
+                log(f"Strategy 1 (16B pg4) unavailable: hres={hex(hres & 0xFFFFFFFF)} resp={sw}")
             break
         time.sleep(0.003)
 
@@ -302,7 +312,14 @@ def read_card_memory(hcard, proto) -> tuple[str | None, bytearray]:
     raw_4b = bytearray()
     expected_len = None
     for page in range(4, 40):
-        hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, page, 0x04])
+        hres = -1
+        r = []
+        for retry in range(3):
+            hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, page, 0x04])
+            if hres == SCARD_S_SUCCESS and len(r) >= 6 and r[-2] == 0x90:
+                break
+            time.sleep(0.005)
+
         if hres == SCARD_S_SUCCESS and len(r) >= 6 and r[-2] == 0x90:
             raw_4b.extend(r[:-2])
             if expected_len is None:
@@ -313,6 +330,9 @@ def read_card_memory(hcard, proto) -> tuple[str | None, bytearray]:
                     log(f"NDEF read success (Type 2 4B Page {page}): {cand} ({len(raw_4b)} bytes)")
                     return cand, raw_4b
         else:
+            if page == 4:
+                sw = [f"{x:02X}" for x in r[-2:]] if len(r) >= 2 else []
+                log(f"Strategy 2 (4B pg4) unavailable: hres={hex(hres & 0xFFFFFFFF)} resp={sw}")
             break
         time.sleep(0.003)
 
@@ -345,27 +365,30 @@ def read_card_memory(hcard, proto) -> tuple[str | None, bytearray]:
         if cand:
             return cand, raw_pn532
 
-    # Strategy 4: Authenticated Mifare Classic fallback with Key A
+    # Strategy 4: Authenticated Mifare Classic fallback with Key A & Key B
     raw_classic = bytearray()
     keys = [
         [0xD3, 0xF7, 0xD3, 0xF7, 0xD3, 0xF7],  # NFC Forum key
         [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],  # Transport key
         [0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5],  # MAD key
+        [0x00, 0x00, 0x00, 0x00, 0x00, 0x00],  # Blank key
     ]
-    for k in keys:
-        SCardTransmit(hcard, proto, [0xFF, 0x82, 0x00, 0x00, 0x06] + k)
-        hres, r = SCardTransmit(hcard, proto, [0xFF, 0x86, 0x00, 0x00, 0x05, 0x01, 0x00, 0x04, 0x60, 0x00])
-        if hres == SCARD_S_SUCCESS and len(r) >= 2 and r[-2] == 0x90:
-            for b in (4, 5, 6):
-                time.sleep(0.003)
-                hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, b, 0x10])
-                if hres == SCARD_S_SUCCESS and len(r) >= 18 and r[-2] == 0x90:
-                    raw_classic.extend(r[:-2])
-            cand = extract_ndef(raw_classic)
-            if cand:
-                log(f"NDEF read success (Mifare Classic Auth): {cand}")
-                return cand, raw_classic
-            break
+    for key_struct in (0x00, 0x20):
+        for k in keys:
+            SCardTransmit(hcard, proto, [0xFF, 0x82, key_struct, 0x00, 0x06] + k)
+            for key_type in (0x60, 0x61):
+                hres, r = SCardTransmit(hcard, proto, [0xFF, 0x86, 0x00, 0x00, 0x05, 0x01, 0x00, 0x04, key_type, 0x00])
+                if hres == SCARD_S_SUCCESS and len(r) >= 2 and r[-2] == 0x90:
+                    for b in (4, 5, 6):
+                        time.sleep(0.003)
+                        hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, b, 0x10])
+                        if hres == SCARD_S_SUCCESS and len(r) >= 18 and r[-2] == 0x90:
+                            raw_classic.extend(r[:-2])
+                    cand = extract_ndef(raw_classic)
+                    if cand:
+                        log(f"NDEF read success (Mifare Classic Auth): {cand}")
+                        return cand, raw_classic
+                    break
 
     best_raw = raw_16 or raw_4b or raw_pn532 or raw_classic
     if best_raw:
@@ -491,7 +514,7 @@ async def supabase_realtime_loop():
     global supabase_ws
     while True:
         try:
-            async with websockets.connect(SUPABASE_WS_URL) as ws:
+            async with websockets.connect(SUPABASE_WS_URL, ping_interval=20, ping_timeout=20) as ws:
                 supabase_ws = ws
                 log("connected to Supabase Realtime cloud relay")
                 await ws.send(json.dumps({
@@ -500,16 +523,25 @@ async def supabase_realtime_loop():
                     "payload": {"config": {"broadcast": {"ack": False, "self": False}, "presence": {"key": ""}}},
                     "ref": "1"
                 }))
-                ref_num = 2
-                while True:
-                    await asyncio.sleep(25)
-                    ref_num += 1
-                    await ws.send(json.dumps({
-                        "topic": "phoenix",
-                        "event": "heartbeat",
-                        "payload": {},
-                        "ref": str(ref_num)
-                    }))
+
+                async def heartbeat():
+                    ref = 2
+                    while True:
+                        await asyncio.sleep(20)
+                        ref += 1
+                        await ws.send(json.dumps({
+                            "topic": "phoenix",
+                            "event": "heartbeat",
+                            "payload": {},
+                            "ref": str(ref)
+                        }))
+
+                hb_task = asyncio.create_task(heartbeat())
+                try:
+                    async for _ in ws:
+                        pass
+                finally:
+                    hb_task.cancel()
         except Exception as e:
             supabase_ws = None
             log(f"Supabase Realtime disconnected ({e}), reconnecting in 3s...")
