@@ -299,4 +299,39 @@ describe('Tag Utils Parsing & Matching', () => {
     expect(findRegisteredGuestByTag(guestList, 'https://hallo-zkqp.vercel.app/t/5')?.name).toBe('Heitor Coppini');
     expect(findRegisteredGuestByTag(guestList, '5')?.name).toBe('Heitor Coppini');
   });
+
+  it('correctly handles stickers written with short /t/1 URLs and hardware UID auto-binding', () => {
+    const res1 = parseTagId('https://hallo-zkqp.vercel.app/t/1');
+    expect(res1.canonicalTag).toBe('TAG-001');
+    expect(res1.tagNumber).toBe(1);
+
+    const res2 = parseTagId('https://hallo-zkqp.vercel.app/t/TAG-001');
+    expect(res2.canonicalTag).toBe('TAG-001');
+    expect(res2.tagNumber).toBe(1);
+
+    const guest: Guest = {
+      id: 'GUEST-001',
+      tag_id: 'TAG-001',
+      name: 'Lucas Guest',
+      category: 'standard',
+      custom_drink_limit: null,
+      drinks_consumed: 0,
+      is_entered: true,
+      entered_at: '2026-10-29T20:00:00Z',
+      is_blocked: false,
+      hardware_uid: '04A23B5F',
+      notes: '[UID:04A23B5F]',
+    };
+
+    // Matches via canonical tag
+    expect(isTagMatch(guest, 'TAG-001')).toBe(true);
+    // Matches via URL
+    expect(isTagMatch(guest, 'https://hallo-zkqp.vercel.app/t/1')).toBe(true);
+    // Matches via hardware UID directly
+    expect(isTagMatch(guest, '04A23B5F')).toBe(true);
+    expect(isTagMatch(guest, '04:A2:3B:5F')).toBe(true);
+
+    // Rejects truncated httpshall fragment
+    expect(isTagMatch(guest, 'httpshall')).toBe(false);
+  });
 });

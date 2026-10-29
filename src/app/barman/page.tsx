@@ -9,7 +9,7 @@ import { StationLockScreen } from '@/components/StationLockScreen';
 import { usePartyStore } from '@/lib/store';
 import { DrinkType, Guest, BAR_DRINKS } from '@/lib/types';
 import { isWebNfcSupported, nfcController } from '@/lib/nfc';
-import { findGuestByTag, parseTagId, isGuestRegistered } from '@/lib/tag-utils';
+import { findGuestByTag, parseTagId, isGuestRegistered, isTagMatch } from '@/lib/tag-utils';
 import { calculateEffectiveLimit } from '@/lib/party-engine';
 import { soundSystem } from '@/lib/audio';
 import {
@@ -19,7 +19,7 @@ import {
   setStaffStationMode,
 } from '@/lib/auth';
 import { subscribeToTagRelay, sendTagRelayMessage } from '@/lib/tag-relay';
-import { Search, Users, X, Keyboard, RotateCcw, CheckCircle2, Zap } from 'lucide-react';
+import { Search, Users, X, Keyboard, RotateCcw, CheckCircle2, Zap, AlertCircle, ExternalLink, Link2 } from 'lucide-react';
 
 const DRINK_KEY_MAP: Record<string, DrinkType> = {
   '1': 'beer',
@@ -61,6 +61,7 @@ export default function BarmanPage() {
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [relayFlash, setRelayFlash] = useState<string | null>(null);
   const [unassignedTagPrompt, setUnassignedTagPrompt] = useState<string | null>(null);
+  const [unassignedHardwareUid, setUnassignedHardwareUid] = useState<string | null>(null);
   const [dockFilter, setDockFilter] = useState('');
   const dockSearchInputRef = useRef<HTMLInputElement>(null);
 
@@ -201,35 +202,47 @@ export default function BarmanPage() {
           });
         }
       }
+      // Also check if hardwareUid matches directly
+      if (!matched && hardwareUid && hardwareUid.length >= 4) {
+        matched = guests.find(g => isTagMatch(g, hardwareUid));
+        if (!matched) {
+          matched = (await fetchGuestByTag(hardwareUid)) || undefined;
+        }
+      }
 
       // Check if this tag belongs to an officially registered guest (has entered and has name)
       const isRegistered = isGuestRegistered(matched);
 
       if (!isRegistered) {
-        // UNREGISTERED STICKER: Take staff directly to door check-in and prompt to create new guest!
+        // UNREGISTERED OR UNBOUND WRISTBAND: Never kick the barman away!
+        // Show inline unassigned badge and allow 1-click binding to active guest or door link.
         const parsed = parseTagId(targetTag);
         const canonical = parsed.canonicalTag || targetTag;
-        soundSystem.playApprovedSound();
-        const pinParam = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('pin') : null;
-        const pinSuffix = pinParam ? `&pin=${encodeURIComponent(pinParam)}` : '';
-        router.push(`/door?tag=${encodeURIComponent(canonical)}&unregistered=1${pinSuffix}`);
+        setUnassignedTagPrompt(canonical);
+        setUnassignedHardwareUid(hardwareUid || targetTag);
+        soundSystem.playWarningSound();
+        setRelayFlash(`Wristband ${canonical} is not registered yet`);
+        setTimeout(() => setRelayFlash(null), 4000);
         return;
       }
 
       if (matched) {
         setUnassignedTagPrompt(null);
+        setUnassignedHardwareUid(null);
         setDockFilter('');
         // Immediately select the guest so they appear directly on the bar station!
         setSelectedGuestId(matched.id);
 
         // Auto-bind physical hardware chip UID so future ultra-fast taps always match immediately
-        if (hardwareUid && hardwareUid.length >= 6 && (!matched.notes || !matched.notes.includes(hardwareUid))) {
-          const cleanUid = hardwareUid.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        const candidateHwUid = hardwareUid || (targetTag && targetTag.length >= 6 && !targetTag.startsWith('TAG-') ? targetTag : null);
+        if (candidateHwUid && candidateHwUid.length >= 6 && (!matched.notes || !matched.notes.includes(candidateHwUid))) {
+          const cleanUid = candidateHwUid.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
           const existingNotes = (matched.notes || '').replace(/\[UID:[^\]]+\]/gi, '').trim();
           const newNotes = existingNotes ? `[UID:${cleanUid}] ${existingNotes}` : `[UID:${cleanUid}]`;
           updateGuest({
             id: matched.id,
             notes: newNotes,
+            hardware_uid: cleanUid,
           }).catch(() => {});
         }
 
@@ -257,19 +270,27 @@ export default function BarmanPage() {
         soundSystem.playWarningSound();
       }
     },
-    [guests, fetchGuestByTag, setSelectedGuestId, quickServeMode, settings, handleManualServe, router]
+    [guests, fetchGuestByTag, setSelectedGuestId, quickServeMode, settings, handleManualServe]
   );
 
-  const handleLinkUnassignedCard = async () => {
-    if (!unassignedTagPrompt || !activeGuest) return;
-    const tagToLink = unassignedTagPrompt;
+  const handleLinkUnassignedCard = async (guestOverride?: Guest) => {
+    const target = guestOverride || activeGuest;
+    if (!unassignedTagPrompt || !target) return;
+    const tagToLink = unassignedHardwareUid || unassignedTagPrompt;
+    const cleanUid = tagToLink.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    const existingNotes = (target.notes || '').replace(/\[UID:[^\]]+\]/gi, '').trim();
+    const newNotes = existingNotes ? `[UID:${cleanUid}] ${existingNotes}` : `[UID:${cleanUid}]`;
+
     await updateGuest({
-      id: activeGuest.id,
-      notes: `[UID:${tagToLink}]`,
-      hardware_uid: tagToLink,
+      id: target.id,
+      notes: newNotes,
+      hardware_uid: cleanUid,
     });
+    const promptDisplay = unassignedTagPrompt;
     setUnassignedTagPrompt(null);
-    setRelayFlash(`Linked physical card ${tagToLink} to ${activeGuest.name}!`);
+    setUnassignedHardwareUid(null);
+    setSelectedGuestId(target.id);
+    setRelayFlash(`Linked wristband ${promptDisplay} to ${target.name}!`);
     refresh();
     soundSystem.playApprovedSound();
   };
@@ -311,7 +332,7 @@ export default function BarmanPage() {
         refresh();
         setTimeout(() => setRelayFlash(null), 3500);
       } else if (msg.type === 'TAG_TAPPED' && (msg.tagId || msg.rawId)) {
-        handleSelectTag(msg.tagId || msg.rawId || '', msg.rawId);
+        handleSelectTag(msg.tagId || msg.rawId || '', msg.hardwareUid || msg.rawId);
         if (msg.isAssigned === false) {
           setRelayFlash(`Unassigned wristband tapped: ${msg.tagId}`);
           setTimeout(() => setRelayFlash(null), 4000);
@@ -465,6 +486,64 @@ export default function BarmanPage() {
               }}
               className="p-1 rounded-lg text-white/50 hover:text-white"
               title="Dismiss"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Unassigned Wristband Tapped Alert & 1-Click Linker */}
+      {unassignedTagPrompt && (
+        <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-sm animate-in fade-in duration-150">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+            <div>
+              <div className="font-bold text-xs text-amber-950 font-sans-clean flex items-center gap-1.5">
+                <span>Wristband</span>
+                <span className="font-mono bg-amber-500/20 px-1.5 py-0.5 rounded text-amber-950">
+                  {unassignedTagPrompt}
+                </span>
+                <span>is not registered yet</span>
+              </div>
+              <div className="text-[11px] text-amber-900/80 font-sans-clean mt-0.5">
+                {activeGuest ? (
+                  <>Link this physical wristband to <strong>{activeGuest.name}</strong> or register a new guest.</>
+                ) : (
+                  <>Select a guest from the roster to link, or open door registration.</>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {activeGuest && (
+              <button
+                type="button"
+                onClick={() => handleLinkUnassignedCard()}
+                className="px-3 py-1.5 bg-black text-white rounded-xl text-xs font-bold hover:bg-black/80 transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+              >
+                <Link2 className="w-3.5 h-3.5" />
+                <span>Link to {activeGuest.name}</span>
+              </button>
+            )}
+            <a
+              href={`/door?tag=${encodeURIComponent(unassignedTagPrompt)}&unregistered=1`}
+              target="_blank"
+              rel="noreferrer"
+              className="px-3 py-1.5 bg-white text-black border border-black/15 rounded-xl text-xs font-semibold hover:bg-black/5 transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Door Check-In ↗</span>
+            </a>
+            <button
+              type="button"
+              onClick={() => {
+                setUnassignedTagPrompt(null);
+                setUnassignedHardwareUid(null);
+              }}
+              className="p-1.5 text-black/40 hover:text-black rounded-lg cursor-pointer transition-colors"
+              title="Dismiss notice"
             >
               <X className="w-4 h-4" />
             </button>

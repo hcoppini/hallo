@@ -158,7 +158,7 @@ function notifyListeners(msg: TagRelayMessage) {
   if (msg.type === 'TAG_TAPPED') {
     const tapKey = (msg.tagId || msg.rawId || '').trim();
     const now = Date.now();
-    if (tapKey && tapKey === lastReceivedTapKey && now - lastReceivedTapTime < 1200) {
+    if (tapKey && tapKey === lastReceivedTapKey && now - lastReceivedTapTime < 500) {
       // Debounce duplicate tap delivered via dual broadcast (Local WebSocket + Supabase Cloud)
       return;
     }

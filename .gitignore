@@ -48,3 +48,5 @@ __pycache__/
 *.pyc
 *.log
 scratch/
+
+test_tap.py

@@ -21,7 +21,12 @@ if %ERRORLEVEL% NEQ 0 (
 netstat -ano | findstr :4567 | findstr LISTENING >nul
 if %ERRORLEVEL% NEQ 0 (
     echo Starting ACR122U NFC Bridge...
-    start /min "ACR122U NFC Bridge" cmd /c "python nfc_bridge.py"
+    where py >nul 2>nul
+    if %ERRORLEVEL% EQU 0 (
+        start /min "ACR122U NFC Bridge" cmd /c "py -3.12 nfc_bridge.py"
+    ) else (
+        start /min "ACR122U NFC Bridge" cmd /c "python nfc_bridge.py"
+    )
     timeout /t 1 /nobreak >nul
 ) else (
     echo ACR122U NFC Bridge is already active.

@@ -10,6 +10,7 @@ Broadcasts taps via local WebSocket (ws://127.0.0.1:4567) and Supabase Cloud Rea
 import asyncio
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -133,118 +134,136 @@ def parse_ndef(raw: bytes) -> str | None:
     return None
 
 
+def parse_tag_slug(slug: str) -> str:
+    s = slug.strip()
+    if s.isdigit():
+        num = int(s)
+        if 1 <= num <= 999:
+            return f"TAG-{num:03d}"
+    m = re.match(r'^(?:TAG|GUEST|ID)[-_#\s]*0*([1-9]\d{0,2})$', s, re.IGNORECASE)
+    if m:
+        return f"TAG-{int(m.group(1)):03d}"
+    return s
+
+
 def extract_ndef(raw: bytes) -> str | None:
     if not raw:
         return None
 
-    import re
-
-    # 1. Regex scan for /t/XX - highest priority and 100% accurate for wristband set IDs
-    m = re.search(rb'/t/(\d+)', raw)
+    # 1. Regex scan for /t/<slug> - highest priority and 100% accurate for wristband set IDs
+    m = re.search(rb'/t/([a-zA-Z0-9_\-]+)', raw)
     if m:
-        num = m.group(1).decode("utf-8", errors="replace")
-        return f"https://hallo-zkqp.vercel.app/t/{num}"
+        slug = m.group(1).decode("utf-8", errors="replace").strip()
+        if slug and slug.lower() not in ("http", "https"):
+            return parse_tag_slug(slug)
 
-    # 2. Regex scan for TAG-XXX
-    m2 = re.search(rb'(?:TAG|GUEST|ID)[-_]?(\d+)', raw, re.IGNORECASE)
+    # 2. Regex scan for TAG-XXX, ID-XXX, GUEST-XXX
+    m2 = re.search(rb'(?:TAG|GUEST|ID)[-_#\s]*0*([1-9]\d{0,2})(?:[^0-9]|$)', raw, re.IGNORECASE)
     if m2:
-        num = m2.group(1).decode("utf-8", errors="replace")
-        return f"TAG-{num.zfill(3)}"
+        num = int(m2.group(1).decode("utf-8", errors="replace"))
+        return f"TAG-{num:03d}"
 
     # 3. Standard NDEF parsing - ONLY if it's a complete valid record with /t/ or TAG
     parsed = parse_ndef(raw)
-    if parsed and ("/t/" in parsed or "TAG-" in parsed):
-        return parsed
-
-    # 4. Any full URL containing a path with at least 15 characters
-    m3 = re.search(rb'https?://[a-zA-Z0-9.\-_:/]{15,}', raw)
-    if m3:
-        candidate = m3.group(0).decode("utf-8", errors="replace").rstrip("/\x00")
-        if "/" in candidate.replace("https://", "").replace("http://", ""):
-            return candidate
+    if parsed:
+        clean = parsed.strip("\x00\r\n\t ")
+        m3 = re.search(r'/t/([a-zA-Z0-9_\-]+)', clean)
+        if m3:
+            slug = m3.group(1).strip()
+            if slug and slug.lower() not in ("http", "https"):
+                return parse_tag_slug(slug)
+        m4 = re.search(r'(?:TAG|GUEST|ID)[-_#\s]*0*([1-9]\d{0,2})(?:[^0-9]|$)', clean, re.IGNORECASE)
+        if m4:
+            return f"TAG-{int(m4.group(1)):03d}"
+        if clean.isdigit():
+            num = int(clean)
+            if 1 <= num <= 999:
+                return f"TAG-{num:03d}"
 
     return None
 
 
 def read_card_memory(hcard, proto) -> tuple[str | None, bytearray]:
     """
-    Reads card user memory for Mifare Classic 1K and Mifare Ultralight/NTAG:
-    - Mifare Classic 1K stores NDEF across Sector 1 (Blocks 4, 5, 6 = 48 bytes).
-    - Mifare Ultralight stores NDEF across Pages 4, 8, 12, 16.
-    Autodetects block architecture via Block 4 / Block 5 overlap.
+    Reads card user memory for Type 2 (NTAG213/215/216, Mifare Ultralight)
+    and Type 4 / Mifare Classic 1K tags:
+    - Type 2 tags: User memory starts at Page 4. Reads sequential 16-byte chunks (Pages 4, 8, 12, 16, 20).
+    - Mifare Classic 1K: Authenticates Sector 1 with Key A and reads Blocks 4, 5, 6.
+    - Fallback: Direct PN532 InDataExchange reads.
     """
     raw = bytearray()
 
-    # 1. Read Block 4 (first 16 bytes)
+    # Strategy 1: Type 2 / NTAG Sequential Read (Pages 4, 8, 12, 16, 20)
     hres, r4 = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, 4, 0x10])
-    if hres == SCARD_S_SUCCESS and len(r4) >= 18 and r4[-2] == 0x90:
+    if hres == SCARD_S_SUCCESS and len(r4) >= 18 and r4[-2] == 0x90 and r4[-1] == 0x00:
         raw.extend(r4[:-2])
 
-        # 2. Read Block 5 (16 bytes)
-        hres, r5 = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, 5, 0x10])
-        if hres == SCARD_S_SUCCESS and len(r5) >= 18 and r5[-2] == 0x90:
-            # Overlap check:
-            # On Mifare Ultralight, block 5 is Page 5..8 (so bytes 0..11 of r5 equal bytes 4..15 of r4).
-            # On Mifare Classic, block 5 is Sector 1 Block 1 (completely non-overlapping).
-            is_ultralight = (r5[:-2][:12] == r4[:-2][4:16])
+        p4_bytes = r4[:-2]
+        needed_bytes = 48
+        if 0x03 in p4_bytes:
+            idx = p4_bytes.index(0x03)
+            if idx + 1 < len(p4_bytes):
+                tlv_len = p4_bytes[idx + 1]
+                if tlv_len < 0xFF:
+                    needed_bytes = idx + 2 + tlv_len + 1
+                elif idx + 3 < len(p4_bytes):
+                    needed_bytes = idx + 4 + ((p4_bytes[idx + 2] << 8) | p4_bytes[idx + 3]) + 1
 
-            if is_ultralight:
-                # Mifare Ultralight: pages 8, 12, 16
-                for page in (8, 12, 16):
-                    hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, page, 0x10])
-                    if hres == SCARD_S_SUCCESS and len(r) >= 18 and r[-2] == 0x90:
-                        raw.extend(r[:-2])
-                    else:
-                        break
-                    time.sleep(0.003)
+        for next_page in (8, 12, 16, 20):
+            if len(raw) >= needed_bytes:
+                break
+            time.sleep(0.008)
+            hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, next_page, 0x10])
+            if hres == SCARD_S_SUCCESS and len(r) >= 18 and r[-2] == 0x90 and r[-1] == 0x00:
+                raw.extend(r[:-2])
             else:
-                # Mifare Classic 1K: Sector 1 has Blocks 4, 5, 6
-                raw.extend(r5[:-2])
-                hres, r6 = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, 6, 0x10])
-                if hres == SCARD_S_SUCCESS and len(r6) >= 18 and r6[-2] == 0x90:
-                    raw.extend(r6[:-2])
+                break
 
-    ndef = extract_ndef(raw)
-    if ndef:
-        log(f"NDEF read success: {ndef} (bytes={len(raw)})")
-        return ndef, raw
+        ndef = extract_ndef(raw)
+        if ndef:
+            log(f"NDEF read success (Type 2 NTAG): {ndef} ({len(raw)} bytes)")
+            return ndef, raw
 
-    # Strategy 2: PN532 Direct InDataExchange
-    raw_pn532 = bytearray()
-    for page in (4, 5, 6, 8, 12):
-        cmd = [0xFF, 0x00, 0x00, 0x00, 0x04, 0xD4, 0x42, 0x30, page]
-        hres, r = SCardTransmit(hcard, proto, cmd)
-        if hres == SCARD_S_SUCCESS and len(r) >= 21 and r[0] == 0xD5 and r[1] == 0x43 and r[2] == 0x00:
-            raw_pn532.extend(r[3:19])
-            cand = extract_ndef(raw_pn532)
-            if cand:
-                log(f"NDEF read via PN532 Direct: {cand}")
-                return cand, raw_pn532
-        time.sleep(0.003)
-
-    # Strategy 3: Authenticated Mifare Classic read
+    # Strategy 2: Authenticated Mifare Classic read (Sector 1, Blocks 4, 5, 6)
     raw_classic = bytearray()
     keys = [
-        [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
-        [0xD3, 0xF7, 0xD3, 0xF7, 0xD3, 0xF7],
-        [0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5],
+        [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],  # Transport key
+        [0xD3, 0xF7, 0xD3, 0xF7, 0xD3, 0xF7],  # NFC Forum NDEF key
+        [0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5],  # MAD key
     ]
     for k in keys:
         SCardTransmit(hcard, proto, [0xFF, 0x82, 0x00, 0x00, 0x06] + k)
         hres, r = SCardTransmit(hcard, proto, [0xFF, 0x86, 0x00, 0x00, 0x05, 0x01, 0x00, 0x04, 0x60, 0x00])
         if hres == SCARD_S_SUCCESS and len(r) >= 2 and r[-2] == 0x90:
             for b in (4, 5, 6):
+                time.sleep(0.005)
                 hres, r = SCardTransmit(hcard, proto, [0xFF, 0xB0, 0x00, b, 0x10])
                 if hres == SCARD_S_SUCCESS and len(r) >= 18 and r[-2] == 0x90:
                     raw_classic.extend(r[:-2])
             cand = extract_ndef(raw_classic)
             if cand:
-                log(f"NDEF read via Mifare Classic auth: {cand}")
+                log(f"NDEF read success (Mifare Classic): {cand}")
                 return cand, raw_classic
             break
 
-    best_raw = raw or raw_pn532 or raw_classic
-    log(f"NDEF unreadable: raw_len={len(best_raw)} hex={best_raw[:32].hex() if best_raw else 'empty'}")
+    # Strategy 3: PN532 Direct InDataExchange fallback
+    raw_pn532 = bytearray()
+    for page in (4, 8, 12, 16):
+        cmd = [0xFF, 0x00, 0x00, 0x00, 0x05, 0xD4, 0x40, 0x01, 0x30, page]
+        time.sleep(0.005)
+        hres, r = SCardTransmit(hcard, proto, cmd)
+        if hres == SCARD_S_SUCCESS and len(r) >= 19 and r[0] == 0xD5 and r[1] == 0x41 and r[2] == 0x00:
+            raw_pn532.extend(r[3:19])
+            cand = extract_ndef(raw_pn532)
+            if cand:
+                log(f"NDEF read success (PN532 Direct): {cand}")
+                return cand, raw_pn532
+        else:
+            break
+
+    best_raw = raw or raw_classic or raw_pn532
+    if best_raw:
+        log(f"NDEF unreadable: raw_len={len(best_raw)} hex={best_raw[:32].hex()}")
     return None, best_raw
 
 
