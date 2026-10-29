@@ -264,69 +264,7 @@ export default function DoorCheckInPage() {
     : null;
 
   return (
-    <div className="w-full py-2 sm:py-3 lg:py-4 space-y-4 animate-in fade-in duration-150">
-      {/* Top Station Header & Live Metrics Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-2 border-b border-black/8">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="font-display text-3xl sm:text-4xl font-bold lowercase text-black leading-none tracking-tight">
-              door check-in
-            </h1>
-            <span className="font-mono text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-black/5 text-black/60 border border-black/10">
-              reception desk
-            </span>
-          </div>
-          <p className="font-sans-clean text-xs text-black/50 mt-1">
-            wristband assignment, guest registration & access passes
-          </p>
-        </div>
-
-        {/* Real-time stats pills */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/[0.03] border border-black/8">
-            <span className="text-[11px] font-sans-clean text-black/50">admitted:</span>
-            <span className="font-mono text-xs font-bold text-black">{admittedCount}</span>
-          </div>
-
-          {importedGuests.length > 0 && (
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-900">
-              <span className="text-[11px] font-sans-clean text-amber-900/70">awaiting:</span>
-              <span className="font-mono text-xs font-bold text-amber-950">
-                {pendingExpectedGuests.length}
-              </span>
-            </div>
-          )}
-
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/[0.03] border border-black/8">
-            <span className="text-[11px] font-sans-clean text-black/50">next slot:</span>
-            <span className="font-mono text-xs font-bold text-black">
-              {parseTagId(nextFreeTag).tagNumber !== null
-                ? `#${parseTagId(nextFreeTag).tagNumber}`
-                : nextFreeTag}
-            </span>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setIsImportModalOpen(true)}
-            className="p-1.5 px-2.5 rounded-xl text-xs font-sans-clean text-black/60 hover:text-black bg-black/[0.03] hover:bg-black/[0.07] border border-black/8 transition-colors flex items-center gap-1.5 cursor-pointer ml-auto sm:ml-0"
-            title="Import or paste guest roster"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-black/50" />
-            <span className="hidden md:inline">import roster</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setIsBatchEncoderOpen(true)}
-            className="p-1.5 px-2.5 rounded-xl text-xs font-sans-clean text-black/60 hover:text-black bg-black/[0.03] hover:bg-black/[0.07] border border-black/8 transition-colors flex items-center gap-1.5 cursor-pointer"
-            title="Batch NFC Wristband Encoder"
-          >
-            <Smartphone className="w-3.5 h-3.5 text-black/50" />
-            <span className="hidden md:inline">batch encoder</span>
-          </button>
-        </div>
-      </div>
+    <div className="w-full py-1 sm:py-2 lg:py-3 space-y-3 sm:space-y-4 animate-in fade-in duration-150">
 
       {/* Mobile Tab Switcher (Check-In Desk vs Directory) */}
       <div className="lg:hidden flex items-center p-1 bg-black/[0.04] rounded-xl">

@@ -112,18 +112,27 @@ export function MobileHeader() {
               </span>
             </div>
           ) : (
-            <div className="flex items-center gap-3 shrink-0">
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
               <Link
                 href="/"
-                className="flex items-center gap-2.5 active:opacity-60 hover:opacity-75 transition-opacity shrink-0"
+                className="flex items-center gap-2 active:opacity-60 hover:opacity-75 transition-opacity shrink-0"
               >
-                {/* On Phone (< md), show current page title; on Tablet/Laptop (md+), show brand logo + active section pill */}
-                <span className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-black lowercase md:hidden">
-                  {getPageTitle()}
-                </span>
-                <span className="hidden md:inline font-display text-3xl lg:text-4xl font-bold tracking-tight text-black lowercase">
+                <span className="font-display text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-black lowercase">
                   lua // pass
                 </span>
+                {pathname !== '/' && (
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-black/5 text-black/60 border border-black/10">
+                    {pathname === '/door'
+                      ? 'door'
+                      : pathname === '/barman'
+                      ? 'bar'
+                      : pathname === '/admin'
+                      ? 'admin'
+                      : pathname === '/projector'
+                      ? 'stage'
+                      : 'pass'}
+                  </span>
+                )}
               </Link>
             </div>
           )}
