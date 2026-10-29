@@ -62,6 +62,8 @@ export default function BarmanPage() {
   const [relayFlash, setRelayFlash] = useState<string | null>(null);
   const [unassignedTagPrompt, setUnassignedTagPrompt] = useState<string | null>(null);
   const [unassignedHardwareUid, setUnassignedHardwareUid] = useState<string | null>(null);
+  const hardwareUidToGuestIdMap = useRef<Record<string, string>>({});
+  const lastSelectedAtRef = useRef<{ guestId: string; time: number }>({ guestId: '', time: 0 });
   const [dockFilter, setDockFilter] = useState('');
   const dockSearchInputRef = useRef<HTMLInputElement>(null);
 
@@ -188,6 +190,8 @@ export default function BarmanPage() {
       const targetTag = tagId || hardwareUid || '';
       if (!targetTag) return;
 
+      const cleanHwUid = (hardwareUid || (targetTag && targetTag.length >= 6 && !targetTag.startsWith('TAG-') ? targetTag : '')).replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+
       let matched = findGuestByTag(guests, targetTag);
       if (!matched) {
         matched = (await fetchGuestByTag(targetTag)) || undefined;
@@ -202,6 +206,11 @@ export default function BarmanPage() {
           });
         }
       }
+      // Check local cache of hardware UIDs
+      if (!matched && cleanHwUid && hardwareUidToGuestIdMap.current[cleanHwUid]) {
+        const cachedId = hardwareUidToGuestIdMap.current[cleanHwUid];
+        matched = guests.find(g => g.id === cachedId);
+      }
       // Also check if hardwareUid matches directly
       if (!matched && hardwareUid && hardwareUid.length >= 4) {
         matched = guests.find(g => isTagMatch(g, hardwareUid));
@@ -214,6 +223,25 @@ export default function BarmanPage() {
       const isRegistered = isGuestRegistered(matched);
 
       if (!isRegistered) {
+        // If a guest was selected within the last 3.5 seconds (or is active) and a raw hardware serial arrives,
+        // this is an echo of the same physical tag! Auto-link it to the active guest instead of overriding them!
+        const now = Date.now();
+        const candidateActiveGuest = activeGuest || (lastSelectedAtRef.current.guestId ? guests.find(g => g.id === lastSelectedAtRef.current.guestId) : null);
+        if (cleanHwUid && candidateActiveGuest && (now - lastSelectedAtRef.current.time < 3500)) {
+          hardwareUidToGuestIdMap.current[cleanHwUid] = candidateActiveGuest.id;
+          const existingNotes = (candidateActiveGuest.notes || '').replace(/\[UID:[^\]]+\]/gi, '').trim();
+          const newNotes = existingNotes ? `[UID:${cleanHwUid}] ${existingNotes}` : `[UID:${cleanHwUid}]`;
+          updateGuest({
+            id: candidateActiveGuest.id,
+            notes: newNotes,
+            hardware_uid: cleanHwUid,
+          }).catch(() => {});
+          soundSystem.playApprovedSound();
+          setRelayFlash(`Linked hardware serial ${cleanHwUid} to ${candidateActiveGuest.name}!`);
+          setTimeout(() => setRelayFlash(null), 3000);
+          return;
+        }
+
         // UNREGISTERED OR UNBOUND WRISTBAND: Never kick the barman away!
         // Show inline unassigned badge and allow 1-click binding to active guest or door link.
         const parsed = parseTagId(targetTag);
@@ -232,18 +260,20 @@ export default function BarmanPage() {
         setDockFilter('');
         // Immediately select the guest so they appear directly on the bar station!
         setSelectedGuestId(matched.id);
+        lastSelectedAtRef.current = { guestId: matched.id, time: Date.now() };
 
         // Auto-bind physical hardware chip UID so future ultra-fast taps always match immediately
-        const candidateHwUid = hardwareUid || (targetTag && targetTag.length >= 6 && !targetTag.startsWith('TAG-') ? targetTag : null);
-        if (candidateHwUid && candidateHwUid.length >= 6 && (!matched.notes || !matched.notes.includes(candidateHwUid))) {
-          const cleanUid = candidateHwUid.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-          const existingNotes = (matched.notes || '').replace(/\[UID:[^\]]+\]/gi, '').trim();
-          const newNotes = existingNotes ? `[UID:${cleanUid}] ${existingNotes}` : `[UID:${cleanUid}]`;
-          updateGuest({
-            id: matched.id,
-            notes: newNotes,
-            hardware_uid: cleanUid,
-          }).catch(() => {});
+        if (cleanHwUid && cleanHwUid.length >= 6) {
+          hardwareUidToGuestIdMap.current[cleanHwUid] = matched.id;
+          if (!matched.notes || !matched.notes.includes(cleanHwUid)) {
+            const existingNotes = (matched.notes || '').replace(/\[UID:[^\]]+\]/gi, '').trim();
+            const newNotes = existingNotes ? `[UID:${cleanHwUid}] ${existingNotes}` : `[UID:${cleanHwUid}]`;
+            updateGuest({
+              id: matched.id,
+              notes: newNotes,
+              hardware_uid: cleanHwUid,
+            }).catch(() => {});
+          }
         }
 
         if (quickServeMode) {
