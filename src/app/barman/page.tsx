@@ -72,7 +72,7 @@ export default function BarmanPage() {
   const [undoSeconds, setUndoSeconds] = useState(0);
 
   // Quick serve on tap: automatically serves the active drink upon tapping NFC wristband
-  const [quickServeMode, setQuickServeMode] = useState<boolean>(false);
+  const [quickServeMode, setQuickServeMode] = useState<boolean>(true);
 
   const toggleQuickServe = useCallback(() => {
     setQuickServeMode(prev => {
@@ -89,8 +89,12 @@ export default function BarmanPage() {
   // Load client-only preferences after mount to prevent hydration mismatch
   useEffect(() => {
     try {
-      if (localStorage.getItem('bar_quick_serve') === 'true') {
+      const saved = localStorage.getItem('bar_quick_serve');
+      if (saved !== null) {
+        setQuickServeMode(saved === 'true');
+      } else {
         setQuickServeMode(true);
+        localStorage.setItem('bar_quick_serve', 'true');
       }
     } catch {}
 
@@ -231,8 +235,11 @@ export default function BarmanPage() {
           hardwareUidToGuestIdMap.current[cleanHwUid] = candidateActiveGuest.id;
           const existingNotes = (candidateActiveGuest.notes || '').replace(/\[UID:[^\]]+\]/gi, '').trim();
           const newNotes = existingNotes ? `[UID:${cleanHwUid}] ${existingNotes}` : `[UID:${cleanHwUid}]`;
+          const parsedEcho = parseTagId(targetTag);
+          const isNdefEcho = parsedEcho.tagNumber !== null || targetTag.startsWith('TAG-') || targetTag.startsWith('ID-');
           updateGuest({
             id: candidateActiveGuest.id,
+            tag_id: isNdefEcho ? (parsedEcho.canonicalTag || targetTag) : candidateActiveGuest.tag_id,
             notes: newNotes,
             hardware_uid: cleanHwUid,
           }).catch(() => {});
@@ -319,8 +326,12 @@ export default function BarmanPage() {
     const existingNotes = (target.notes || '').replace(/\[UID:[^\]]+\]/gi, '').trim();
     const newNotes = existingNotes ? `[UID:${cleanUid}] ${existingNotes}` : `[UID:${cleanUid}]`;
 
+    const parsedTag = parseTagId(unassignedTagPrompt);
+    const isNdef = parsedTag.tagNumber !== null || unassignedTagPrompt.startsWith('TAG-') || unassignedTagPrompt.startsWith('ID-');
+
     await updateGuest({
       id: target.id,
+      tag_id: isNdef ? (parsedTag.canonicalTag || unassignedTagPrompt) : target.tag_id,
       notes: newNotes,
       hardware_uid: cleanUid,
     });
